@@ -3,6 +3,10 @@ from streamlit_gsheets import GSheetsConnection
 import streamlit as st
 from datetime import datetime
 
+def conectar_sheets():
+    """Função para estabelecer a conexão com o Google Sheets"""
+    return st.connection("gsheets", type=GSheetsConnection)
+
 def salvar_no_historico(df_novo):
     """
     Recebe o DataFrame do upload, limpa os espaços, 
@@ -10,22 +14,18 @@ def salvar_no_historico(df_novo):
     """
     try:
         # Conecta ao Google Sheets usando as configurações dos Secrets
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        conn = conectar_sheets()
         
         # 1. Limpeza de espaços (Strings)
-        # Remove espaços no início e fim de todas as células de texto
         df_novo = df_novo.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         
         # 2. Adiciona a data de hoje na coluna data_processamento
-        # Isso garante que cada linha saiba quando foi inserida
         df_novo['data_processamento'] = datetime.now().strftime('%d/%m/%Y')
         
-        # 3. Lê o histórico existente
-        # O ttl=0 garante que ele pegue a versão mais recente, sem cache
+        # 3. Lê o histórico existente (ttl=0 para evitar cache na hora de gravar)
         df_antigo = conn.read(worksheet="Historico", ttl=0)
         
         # 4. Empilha os novos dados
-        # Certifique-se de que os nomes das colunas são IDÊNTICOS
         df_final = pd.concat([df_antigo, df_novo], ignore_index=True)
         
         # 5. Atualiza a planilha no Google
