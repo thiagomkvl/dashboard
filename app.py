@@ -9,22 +9,20 @@ st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 def formatar_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# CSS para forçar o scroll interno e manter o bloco compacto
+# CSS para forçar o container nativo a ter scroll
 st.markdown("""
     <style>
+    /* Estiliza as métricas */
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
     
-    /* BLOCO DE ROLAGEM FORÇADA */
-    .scroll-box {
-        height: 500px;
-        overflow-y: scroll;
-        overflow-x: hidden;
+    /* CRIA A REGRA DE SCROLL PARA O CONTAINER */
+    [data-testid="stVerticalBlock"] > div:nth-child(10) {
+        max-height: 450px;
+        overflow-y: auto;
         border: 1px solid #d1d5db;
+        padding: 10px;
         border-radius: 10px;
-        padding: 15px;
         background-color: #f9fafb;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -44,7 +42,7 @@ def carregar_dados():
 df_hist = carregar_dados()
 
 # --- MENU LATERAL ---
-st.sidebar.title("Dívida Fornecedores")
+st.sidebar.title("Divida Fornecedores")
 aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Evolução Temporal", "Upload"])
 
 if not df_hist.empty:
@@ -61,10 +59,9 @@ if not df_hist.empty:
     if aba == "Dashboard Principal":
         st.title("Gestão de Passivo - SOS CARDIO")
         
-        # Métricas
+        # MÉTRICAS
         m1, m2, m3, m4 = st.columns(4)
         total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
-        
         m1.metric("Dívida Total", formatar_real(total_hoje))
         m2.metric("Total Vencido", formatar_real(total_vencido))
         m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
@@ -72,58 +69,48 @@ if not df_hist.empty:
 
         st.divider()
 
-        # --- GRÁFICOS ---
+        # GRÁFICOS
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("Curva ABC de Fornecedores")
-            opcoes_abc = ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)']
-            sel_abc = st.multiselect("Filtrar Classes:", opcoes_abc, default=opcoes_abc, key="f_abc_main")
+            sel_abc = st.multiselect("Filtrar Classes:", ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], default=['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], key="f_abc")
             df_pie = df_hoje[df_hoje['Classe ABC'].isin(sel_abc)]
-            fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
-                           color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+            fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
             st.plotly_chart(fig_p, use_container_width=True)
 
         with c2:
             st.subheader("Volume por Faixa (Ageing)")
             ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age_main")
-            df_bar_filt = df_hoje[df_hoje['Carteira'].isin(sel_cart)]
-            df_bar = df_bar_filt.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
+            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age")
+            df_bar = df_hoje[df_hoje['Carteira'].isin(sel_cart)].groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
             fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
             st.plotly_chart(fig_b, use_container_width=True)
 
         st.divider()
         
-        # --- BLOCO DE DETALHAMENTO COM ROLAGEM INTERNA ---
+        # --- BLOCO COM SCROLL (USANDO CONTAINER NATIVO) ---
         st.subheader("Detalhamento com Análise de Risco")
         
-        # Abertura da caixa de rolagem
-        st.markdown('<div class="scroll-box">', unsafe_allow_html=True)
-        
-        # Dados agrupados para os cabeçalhos dos expanders
-        df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
-            Total_Aberto=('Saldo_Limpo', 'sum'),
-            Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
-        ).sort_values('Total_Aberto', ascending=False).reset_index()
+        # Criamos o container
+        with st.container(height=450):
+            df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
+                Total_Aberto=('Saldo_Limpo', 'sum'),
+                Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
+            ).sort_values('Total_Aberto', ascending=False).reset_index()
 
-        # LOOP: Aqui todos os fornecedores são colocados dentro da DIV de scroll
-        for _, row in df_agrup.iterrows():
-            label = f"{row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
-            
-            with st.expander(label):
-                detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
-                detalhe['Saldo Atual'] = detalhe['Saldo_Limpo'].apply(formatar_real)
-                st.table(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']])
-        
-        # Fechamento da caixa de rolagem (SÓ AQUI ELA FECHA)
-        st.markdown('</div>', unsafe_allow_html=True)
+            for _, row in df_agrup.iterrows():
+                label = f"{row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+                with st.expander(label):
+                    detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
+                    detalhe['Saldo Atual'] = detalhe['Saldo_Limpo'].apply(formatar_real)
+                    st.table(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']])
 
-        # --- TUDO O QUE FOR COLOCADO ABAIXO DA DIV APARECERÁ NORMALMENTE NA PÁGINA ---
+        # --- TUDO ABAIXO FICARÁ FORA DO SCROLL ---
         st.divider()
-        st.subheader("Resumo de Próximos Vencimentos")
-        st.info("Indicadores adicionais que você queira incluir abaixo do bloco de fornecedores.")
+        st.subheader("Indicadores de Fluxo de Caixa")
+        st.info("Estas métricas estão fora do bloco de scroll e sempre visíveis ao descer a página.")
 
-    # --- ABAS ADICIONAIS ---
+    # ... (Restante do código: Evolução e Upload permanecem iguais)
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
         df_ev = df_hist.groupby('data_processamento')['Saldo_Limpo'].sum().reset_index()
@@ -143,4 +130,4 @@ if not df_hist.empty:
                 st.success("Dados salvos e histórico atualizado!")
                 st.rerun()
 else:
-    st.warning("Sem dados históricos carregados.")
+    st.warning("Sem dados históricos.")
