@@ -9,21 +9,22 @@ st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 def formatar_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# CSS Reforçado para o Scroll Interno
+# CSS para forçar o scroll interno e manter o bloco compacto
 st.markdown("""
     <style>
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; }
+    .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
     
-    /* ESTE É O BLOCO DA BARRA DE ROLAGEM */
+    /* BLOCO DE ROLAGEM FORÇADA */
     .scroll-box {
-        height: 450px;
+        height: 500px;
         overflow-y: scroll;
         overflow-x: hidden;
         border: 1px solid #d1d5db;
         border-radius: 10px;
-        padding: 20px;
+        padding: 15px;
         background-color: #f9fafb;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -43,7 +44,7 @@ def carregar_dados():
 df_hist = carregar_dados()
 
 # --- MENU LATERAL ---
-st.sidebar.title("Divida Fornecedores")
+st.sidebar.title("Dívida Fornecedores")
 aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Evolução Temporal", "Upload"])
 
 if not df_hist.empty:
@@ -60,6 +61,7 @@ if not df_hist.empty:
     if aba == "Dashboard Principal":
         st.title("Gestão de Passivo - SOS CARDIO")
         
+        # Métricas
         m1, m2, m3, m4 = st.columns(4)
         total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
         
@@ -75,7 +77,7 @@ if not df_hist.empty:
         with c1:
             st.subheader("Curva ABC de Fornecedores")
             opcoes_abc = ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)']
-            sel_abc = st.multiselect("Filtrar Classes:", opcoes_abc, default=opcoes_abc, key="f_abc_p")
+            sel_abc = st.multiselect("Filtrar Classes:", opcoes_abc, default=opcoes_abc, key="f_abc_main")
             df_pie = df_hoje[df_hoje['Classe ABC'].isin(sel_abc)]
             fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
                            color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
@@ -84,7 +86,7 @@ if not df_hist.empty:
         with c2:
             st.subheader("Volume por Faixa (Ageing)")
             ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age_b")
+            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age_main")
             df_bar_filt = df_hoje[df_hoje['Carteira'].isin(sel_cart)]
             df_bar = df_bar_filt.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
             fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
@@ -92,34 +94,38 @@ if not df_hist.empty:
 
         st.divider()
         
-        # --- BLOCO COM ROLAGEM REAL ---
-        st.subheader("Detalhamento com Analise de Risco")
+        # --- BLOCO DE DETALHAMENTO COM ROLAGEM INTERNA ---
+        st.subheader("Detalhamento com Análise de Risco")
         
-        # Usamos uma combinação de HTML e o contêiner do Streamlit
+        # Abertura da caixa de rolagem
         st.markdown('<div class="scroll-box">', unsafe_allow_html=True)
         
+        # Dados agrupados para os cabeçalhos dos expanders
         df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
             Total_Aberto=('Saldo_Limpo', 'sum'),
             Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
         ).sort_values('Total_Aberto', ascending=False).reset_index()
 
+        # LOOP: Aqui todos os fornecedores são colocados dentro da DIV de scroll
         for _, row in df_agrup.iterrows():
             label = f"{row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+            
             with st.expander(label):
                 detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
                 detalhe['Saldo Atual'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                 st.table(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']])
         
+        # Fechamento da caixa de rolagem (SÓ AQUI ELA FECHA)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- NOVOS INDICADORES LOGO ABAIXO ---
+        # --- TUDO O QUE FOR COLOCADO ABAIXO DA DIV APARECERÁ NORMALMENTE NA PÁGINA ---
         st.divider()
-        st.subheader("Indicadores de Fluxo de Caixa")
-        st.info("Aqui você pode inserir novos indicadores que ficarão fixos na base da página.")
+        st.subheader("Resumo de Próximos Vencimentos")
+        st.info("Indicadores adicionais que você queira incluir abaixo do bloco de fornecedores.")
 
-    # ... (Restante do código: Evolução e Upload permanecem iguais)
+    # --- ABAS ADICIONAIS ---
     elif aba == "Evolução Temporal":
-        st.title("Evolução da Inadimplencia")
+        st.title("Evolução da Inadimplência")
         df_ev = df_hist.groupby('data_processamento')['Saldo_Limpo'].sum().reset_index()
         df_ev['dt_ordem'] = pd.to_datetime(df_ev['data_processamento'], format='%d/%m/%Y')
         df_ev = df_ev.sort_values('dt_ordem')
@@ -128,13 +134,13 @@ if not df_hist.empty:
 
     elif aba == "Upload":
         st.title("Upload da Base")
-        uploaded = st.file_uploader("Selecione o arquivo", type=["xlsx"])
-        if uploaded and st.button("Salvar"):
+        uploaded = st.file_uploader("Selecione o arquivo Excel", type=["xlsx"])
+        if uploaded and st.button("Salvar Dados"):
             df_new = pd.read_excel(uploaded)
             df_push = df_new.copy()
             df_push.columns = df_push.columns.str.strip()
             if salvar_no_historico(df_push):
-                st.success("Salvo!")
+                st.success("Dados salvos e histórico atualizado!")
                 st.rerun()
 else:
-    st.warning("Sem dados.")
+    st.warning("Sem dados históricos carregados.")
