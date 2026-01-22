@@ -6,7 +6,7 @@ from database import salvar_no_historico, conectar_sheets
 # 1. CONFIGURAÇÃO E CSS
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
-# Função de formatação robusta para Real Brasileiro
+# Função de formatação para Real Brasileiro
 def formatar_real(valor):
     try:
         return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -18,7 +18,6 @@ st.markdown("""
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
     
-    /* Scroll interno fixo para o detalhamento */
     [data-testid="stVerticalBlock"] > div:nth-child(10) {
         max-height: 480px;
         overflow-y: auto;
@@ -63,7 +62,6 @@ if not df_hist.empty:
     if aba == "Dashboard Principal":
         st.title("Gestão de Passivo - SOS CARDIO")
         
-        # MÉTRICAS
         m1, m2, m3, m4 = st.columns(4)
         total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
         m1.metric("Dívida Total", formatar_real(total_hoje))
@@ -73,20 +71,19 @@ if not df_hist.empty:
 
         st.divider()
 
-        # GRÁFICOS
+        # GRÁFICOS INICIAIS
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("Curva ABC de Fornecedores")
-            sel_abc = st.multiselect("Filtrar Classes:", ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], default=['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], key="f_abc")
+            sel_abc = st.multiselect("Filtrar Classes:", ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], default=['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], key="f_abc_f")
             df_pie = df_hoje[df_hoje['Classe ABC'].isin(sel_abc)]
-            fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4, 
-                           color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+            fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
             st.plotly_chart(fig_p, use_container_width=True)
 
         with c2:
             st.subheader("Volume por Faixa (Ageing)")
             ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age")
+            sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age_f")
             df_bar = df_hoje[df_hoje['Carteira'].isin(sel_cart)].groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
             fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s')
             st.plotly_chart(fig_b, use_container_width=True)
@@ -108,11 +105,10 @@ if not df_hist.empty:
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-# --- BLOCO: RADAR DE PAGAMENTOS (DETALHADO POR FORNECEDOR - LIMPO) ---
+        # --- RADAR DE PAGAMENTOS (DIA/MÊS/ANO + SOMA NO TOPO) ---
         st.divider()
         st.subheader("🎯 Radar de Pagamentos - Detalhamento Diário")
 
-        # 1. Preparar Datas e Filtro de Mês
         hoje = pd.Timestamp.now().normalize()
         df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
         df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje].copy()
@@ -124,81 +120,72 @@ if not df_hist.empty:
             
             col_f1, col_f2 = st.columns([1, 2])
             with col_f1:
-                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis, key="sel_mes_clean")
+                mes_selecionado = st.selectbox("Selecione o Mês:", meses_disponiveis, key="sel_mes_final")
             
             df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].copy()
-            # Ordenar por data para garantir a sequência correta no eixo X
+            # Formata a data para exibir DD/MM/AAAA no eixo
+            df_mes['Data_Formatada'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
             df_mes = df_mes.sort_values('Vencimento_DT')
 
-            # 2. Gráfico de Colunas Empilhadas POR FORNECEDOR
-            # Criamos o gráfico sem os textos internos (text_auto=None)
+            # Gráfico POR FORNECEDOR
             fig_forn = px.bar(df_mes, 
-                              x='Vencimento_DT', 
+                              x='Data_Formatada', 
                               y='Saldo_Limpo', 
                               color='Beneficiario',
                               title=f"Cronograma de Pagamentos: {mes_selecionado}",
-                              labels={'Vencimento_DT': 'Dia', 'Saldo_Limpo': 'Valor (R$)', 'Beneficiario': 'Fornecedor'},
+                              labels={'Data_Formatada': 'Data de Vencimento', 'Saldo_Limpo': 'Valor (R$)'},
                               color_discrete_sequence=px.colors.qualitative.Prism)
 
-            # --- AJUSTES TÉCNICOS PARA LIMPEZA E EXIBIÇÃO DE TODOS OS DIAS ---
-            # 1. Forçar a exibição do TOTAL no topo
-            # Criamos um dataframe de apoio com os totais por dia
-            df_totais = df_mes.groupby('Vencimento_DT')['Saldo_Limpo'].sum().reset_index()
-            
+            # Cálculo e Adição das somas no topo das pilhas
+            df_totais = df_mes.groupby('Data_Formatada')['Saldo_Limpo'].sum().reset_index()
             for i, row in df_totais.iterrows():
                 fig_forn.add_annotation(
-                    x=row['Vencimento_DT'],
+                    x=row['Data_Formatada'],
                     y=row['Saldo_Limpo'],
                     text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>",
                     showarrow=False,
-                    yshift=10, # Joga o texto um pouco para cima da barra
-                    font=dict(size=10, color="#333")
+                    yshift=12,
+                    font=dict(size=11, color="#1f1f1f")
                 )
 
             fig_forn.update_layout(
-                xaxis_type='category', # Força a exibição de todos os dias como categorias individuais
-                xaxis_tickformat='%d/%m',
+                xaxis_type='category',
                 barmode='stack',
                 showlegend=False, 
                 hovermode="x unified",
-                height=550,
-                yaxis=dict(showticklabels=True, title="Total Diário (R$)"),
-                xaxis=dict(tickangle=-45, title="Dia do Vencimento") # Inclina os dias para não sobrepor
+                height=600,
+                xaxis=dict(tickangle=-45)
             )
             
-            # Limpa o balão de ajuda para ser direto
             fig_forn.update_traces(hovertemplate="<b>%{fullData.name}</b>: R$ %{y:,.2f}<extra></extra>")
-
             st.plotly_chart(fig_forn, use_container_width=True)
-            st.caption("💡 O valor no topo de cada barra indica o total de desembolso do dia. Passe o mouse para ver a divisão por fornecedor.")
 
-            # 3. Tabela: Top 15 Maiores Pagamentos Previstos
+            # Tabela Top 15 Maiores
             st.divider()
-            st.write("📋 **Top 15 Maiores Pagamentos Previstos (Visão Estratégica)**")
+            st.write("📋 **Top 15 Maiores Pagamentos Previstos**")
             df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
             df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
-            
-            st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC', 'Carteira']])
+            st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
         else:
-            st.info("Nenhum vencimento futuro encontrado.")
+            st.info("Nenhum vencimento futuro.")
 
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
         df_ev = df_hist.groupby('data_processamento')['Saldo_Limpo'].sum().reset_index()
         df_ev['dt_ordem'] = pd.to_datetime(df_ev['data_processamento'], format='%d/%m/%Y')
         df_ev = df_ev.sort_values('dt_ordem')
-        fig_ev = px.line(df_ev, x='data_processamento', y='Saldo_Limpo', markers=True, title="Passivo Total Acumulado")
+        fig_ev = px.line(df_ev, x='data_processamento', y='Saldo_Limpo', markers=True, title="Passivo Total")
         st.plotly_chart(fig_ev, use_container_width=True)
 
     elif aba == "Upload":
         st.title("Upload da Base")
-        uploaded = st.file_uploader("Selecione o arquivo Excel do Hospital", type=["xlsx"])
-        if uploaded and st.button("🚀 Salvar e Atualizar Dashboard"):
+        uploaded = st.file_uploader("Selecione o arquivo Excel", type=["xlsx"])
+        if uploaded and st.button("Salvar e Atualizar"):
             df_new = pd.read_excel(uploaded)
             df_push = df_new.copy()
             df_push.columns = df_push.columns.str.strip()
             if salvar_no_historico(df_push):
-                st.success("Dados arquivados com sucesso!")
+                st.success("Dados salvos!")
                 st.rerun()
 else:
-    st.warning("Aguardando o primeiro upload para carregar o histórico.")
+    st.warning("Aguardando upload.")
