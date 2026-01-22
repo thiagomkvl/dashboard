@@ -108,9 +108,9 @@ if not df_hist.empty:
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-# --- BLOCO: RADAR DE PAGAMENTOS (COLUNAS EMPILHADAS DIA A DIA) ---
+# --- BLOCO: RADAR DE PAGAMENTOS (DETALHADO POR FORNECEDOR) ---
         st.divider()
-        st.subheader("🎯 Radar de Pagamentos - Projeção Diária")
+        st.subheader("🎯 Radar de Pagamentos - Detalhamento Diário")
 
         # 1. Preparar Datas e Filtro de Mês
         hoje = pd.Timestamp.now().normalize()
@@ -118,51 +118,44 @@ if not df_hist.empty:
         df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje].copy()
 
         if not df_futuro.empty:
-            # Filtro de Mês para o Gráfico
+            # Filtro de Mês
             df_futuro['Mes_Ref'] = df_futuro['Vencimento_DT'].dt.strftime('%m/%Y')
             meses_disponiveis = sorted(df_futuro['Mes_Ref'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
             
             col_f1, col_f2 = st.columns([1, 2])
             with col_f1:
-                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis)
+                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis, key="sel_mes_radar")
             
-            df_mes_filtrado = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].copy()
+            df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].copy()
 
-            # 2. Métricas Contextuais do Mês
-            c_p1, c_p2, c_p3 = st.columns(3)
-            total_mes = df_mes_filtrado['Saldo_Limpo'].sum()
-            c_p1.metric(f"Comprometido em {mes_selecionado}", formatar_real(total_mes))
-            c_p2.metric("Média de Saída Diária", formatar_real(total_mes / 30))
-            c_p3.metric("Dias com Vencimentos", len(df_mes_filtrado['Vencimento_DT'].unique()))
-
-            # 3. Gráfico de Colunas Empilhadas (Dia por Dia)
-            # Agrupamos por data e classe para criar o empilhamento
-            df_chart = df_mes_filtrado.groupby(['Vencimento_DT', 'Classe ABC'])['Saldo_Limpo'].sum().reset_index()
+            # 2. Gráfico de Colunas Empilhadas POR FORNECEDOR
+            # Agrupamos por data e fornecedor
+            df_chart_forn = df_mes.groupby(['Vencimento_DT', 'Beneficiario'])['Saldo_Limpo'].sum().reset_index()
             
-            fig_col = px.bar(df_chart, 
-                             x='Vencimento_DT', 
-                             y='Saldo_Limpo', 
-                             color='Classe ABC',
-                             title=f"Volume Diário de Vencimentos: {mes_selecionado}",
-                             labels={'Vencimento_DT': 'Dia do Mês', 'Saldo_Limpo': 'Total (R$)'},
-                             color_discrete_map={
-                                 'Classe A (80%)': '#004a99', 
-                                 'Classe B (15%)': '#ffcc00', 
-                                 'Classe C (5%)': '#d1d5db'
-                             },
-                             text_auto='.2s') # Mostra o valor simplificado no topo das barras
+            fig_forn = px.bar(df_chart_forn, 
+                              x='Vencimento_DT', 
+                              y='Saldo_Limpo', 
+                              color='Beneficiario',
+                              title=f"Cronograma de Pagamentos por Fornecedor: {mes_selecionado}",
+                              labels={'Vencimento_DT': 'Dia', 'Saldo_Limpo': 'Valor (R$)', 'Beneficiario': 'Fornecedor'},
+                              text_auto='.2s',
+                              color_discrete_sequence=px.colors.qualitative.Prism)
 
-            fig_col.update_layout(
+            fig_forn.update_layout(
                 xaxis_tickformat='%d/%m',
-                xaxis_title="Dia de Vencimento",
-                yaxis_title="Volume Financeiro (R$)",
                 barmode='stack',
-                hovermode="x unified" # Mostra todos os valores do dia ao passar o mouse
+                showlegend=False, # Ocultamos a legenda lateral porque pode ficar gigante
+                hovermode="x unified",
+                height=500
             )
             
-            st.plotly_chart(fig_col, use_container_width=True)
+            # Customizando o hover para mostrar o nome do fornecedor e o valor de forma limpa
+            fig_forn.update_traces(hovertemplate="<b>%{fullData.name}</b><br>Valor: R$ %{y:,.2f}<extra></extra>")
 
-            # 4. Tabela: 15 MAIORES PAGAMENTOS PREVISTOS
+            st.plotly_chart(fig_forn, use_container_width=True)
+            st.caption("💡 Passe o mouse sobre as barras para ver o nome de cada fornecedor e o valor individual do dia.")
+
+            # 3. Tabela: Top 15 Maiores Pagamentos Previstos
             st.divider()
             st.write("📋 **Top 15 Maiores Pagamentos Previstos (Visão Estratégica)**")
             df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
@@ -170,7 +163,7 @@ if not df_hist.empty:
             
             st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC', 'Carteira']])
         else:
-            st.info("Nenhum vencimento futuro encontrado nos dados carregados.")
+            st.info("Nenhum vencimento futuro encontrado.")
 
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
