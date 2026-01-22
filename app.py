@@ -108,7 +108,7 @@ if not df_hist.empty:
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-# --- BLOCO: RADAR DE PAGAMENTOS (DETALHADO POR FORNECEDOR) ---
+# --- BLOCO: RADAR DE PAGAMENTOS (DETALHADO POR FORNECEDOR - LIMPO) ---
         st.divider()
         st.subheader("🎯 Radar de Pagamentos - Detalhamento Diário")
 
@@ -124,36 +124,53 @@ if not df_hist.empty:
             
             col_f1, col_f2 = st.columns([1, 2])
             with col_f1:
-                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis, key="sel_mes_radar")
+                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis, key="sel_mes_clean")
             
             df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].copy()
+            # Ordenar por data para garantir a sequência correta no eixo X
+            df_mes = df_mes.sort_values('Vencimento_DT')
 
             # 2. Gráfico de Colunas Empilhadas POR FORNECEDOR
-            # Agrupamos por data e fornecedor
-            df_chart_forn = df_mes.groupby(['Vencimento_DT', 'Beneficiario'])['Saldo_Limpo'].sum().reset_index()
-            
-            fig_forn = px.bar(df_chart_forn, 
+            # Criamos o gráfico sem os textos internos (text_auto=None)
+            fig_forn = px.bar(df_mes, 
                               x='Vencimento_DT', 
                               y='Saldo_Limpo', 
                               color='Beneficiario',
-                              title=f"Cronograma de Pagamentos por Fornecedor: {mes_selecionado}",
+                              title=f"Cronograma de Pagamentos: {mes_selecionado}",
                               labels={'Vencimento_DT': 'Dia', 'Saldo_Limpo': 'Valor (R$)', 'Beneficiario': 'Fornecedor'},
-                              text_auto='.2s',
                               color_discrete_sequence=px.colors.qualitative.Prism)
 
+            # --- AJUSTES TÉCNICOS PARA LIMPEZA E EXIBIÇÃO DE TODOS OS DIAS ---
+            # 1. Forçar a exibição do TOTAL no topo
+            # Criamos um dataframe de apoio com os totais por dia
+            df_totais = df_mes.groupby('Vencimento_DT')['Saldo_Limpo'].sum().reset_index()
+            
+            for i, row in df_totais.iterrows():
+                fig_forn.add_annotation(
+                    x=row['Vencimento_DT'],
+                    y=row['Saldo_Limpo'],
+                    text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>",
+                    showarrow=False,
+                    yshift=10, # Joga o texto um pouco para cima da barra
+                    font=dict(size=10, color="#333")
+                )
+
             fig_forn.update_layout(
+                xaxis_type='category', # Força a exibição de todos os dias como categorias individuais
                 xaxis_tickformat='%d/%m',
                 barmode='stack',
-                showlegend=False, # Ocultamos a legenda lateral porque pode ficar gigante
+                showlegend=False, 
                 hovermode="x unified",
-                height=500
+                height=550,
+                yaxis=dict(showticklabels=True, title="Total Diário (R$)"),
+                xaxis=dict(tickangle=-45, title="Dia do Vencimento") # Inclina os dias para não sobrepor
             )
             
-            # Customizando o hover para mostrar o nome do fornecedor e o valor de forma limpa
-            fig_forn.update_traces(hovertemplate="<b>%{fullData.name}</b><br>Valor: R$ %{y:,.2f}<extra></extra>")
+            # Limpa o balão de ajuda para ser direto
+            fig_forn.update_traces(hovertemplate="<b>%{fullData.name}</b>: R$ %{y:,.2f}<extra></extra>")
 
             st.plotly_chart(fig_forn, use_container_width=True)
-            st.caption("💡 Passe o mouse sobre as barras para ver o nome de cada fornecedor e o valor individual do dia.")
+            st.caption("💡 O valor no topo de cada barra indica o total de desembolso do dia. Passe o mouse para ver a divisão por fornecedor.")
 
             # 3. Tabela: Top 15 Maiores Pagamentos Previstos
             st.divider()
