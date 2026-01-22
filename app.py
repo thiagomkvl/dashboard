@@ -4,15 +4,23 @@ import plotly.express as px
 from database import salvar_no_historico, conectar_sheets
 
 # 1. CONFIGURAÇÃO E CSS
-st.set_page_config(page_title="SOS CARDIO - Dívida Fornecedores", layout="wide")
+st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
 def formatar_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 st.markdown("""
     <style>
-    .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; }
+    .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; }
+    .scroll-container {
+        max-height: 450px;
+        overflow-y: auto;
+        padding: 15px;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        background-color: #f9fafb;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -31,79 +39,98 @@ def carregar_dados():
 df_hist = carregar_dados()
 
 # --- MENU LATERAL ---
-st.sidebar.title("🏥 Menu Principal")
-aba = st.sidebar.radio("Selecione o Painel:", ["Dívida Fornecedores", "Evolução Temporal", "Upload de Dados"])
+st.sidebar.title("🏥 Dívida Fornecedores")
+aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Evolução Temporal", "Upload"])
 
 if not df_hist.empty:
     ultima_data = df_hist['data_processamento'].max()
     df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
 
-    # --- ABA 1: DÍVIDA ATUAL ---
-    if aba == "Dívida Fornecedores":
-        st.title("📊 Gestão de Dívida com Fornecedores")
-        st.info(f"Exibindo dados da última atualização: {ultima_data}")
+    # --- LÓGICA CURVA ABC (Calculada sobre a foto de hoje) ---
+    df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+    total_hoje = df_abc['Saldo_Limpo'].sum()
+    df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
+    df_abc['Classe ABC'] = df_abc['Acumulado'].apply(lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)'))
+    
+    # Merge da classificação de volta para o DF principal
+    df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Dívida Total", formatar_real(df_hoje['Saldo_Limpo'].sum()))
-        m2.metric("Fornecedores Ativos", len(df_hoje['Beneficiario'].unique()))
-        m3.metric("Maior Título", formatar_real(df_hoje['Saldo_Limpo'].max()))
+    if aba == "Dashboard Principal":
+        st.title("📊 Gestão de Passivo - SOS CARDIO")
+        
+        # Métricas
+        m1, m2, m3, m4 = st.columns(4)
+        total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
+        
+        m1.metric("Dívida Total", formatar_real(total_hoje))
+        m2.metric("Total Vencido", formatar_real(total_vencido), delta=f"{(total_vencido/total_hoje)*100:.1f}%", delta_color="inverse")
+        m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
+        m4.metric("Qtd Classe A", len(df_abc[df_abc['Classe ABC'] == 'Classe A (80%)']))
 
         st.divider()
 
+        # --- GRÁFICOS ---
         c1, c2 = st.columns(2)
+
         with c1:
-            # Filtro local do gráfico de pizza
-            opcoes_cat = sorted(df_hoje['Carteira'].unique())
-            sel_cat = st.multiselect("Filtrar Categorias (Pizza):", opcoes_cat, default=opcoes_cat, key="f_pizza")
-            df_p = df_hoje[df_hoje['Carteira'].isin(sel_cat)]
-            fig_p = px.pie(df_p, values='Saldo_Limpo', names='Carteira', hole=0.4, title="Distribuição por Faixa")
+            st.subheader("🍕 Curva ABC de Fornecedores")
+            # Filtro local ABC
+            opcoes_abc = ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)']
+            sel_abc = st.multiselect("Filtrar Classes:", opcoes_abc, default=opcoes_abc, key="f_abc")
+            
+            df_pie = df_hoje[df_hoje['Classe ABC'].isin(sel_abc)]
+            fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
+                           color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
             st.plotly_chart(fig_p, use_container_width=True)
 
         with c2:
-            # Filtro local do gráfico de barras
-            top_n = st.slider("Mostrar Top Fornecedores:", 5, 30, 10, key="f_bar")
-            df_b = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).head(top_n).reset_index()
-            fig_b = px.bar(df_b, x='Beneficiario', y='Saldo_Limpo', title=f"Top {top_n} Devedores", color_discrete_sequence=['#004a99'])
+            st.subheader("📊 Volume por Faixa (Ageing)")
+            ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
+            df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
+            fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
             st.plotly_chart(fig_b, use_container_width=True)
 
         st.divider()
-        st.subheader("📋 Detalhamento (Drill-down)")
         
-        # Agrupamento para o cabeçalho do expander
-        df_agrup = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+        # --- BLOCO DE DETALHAMENTO ---
+        st.subheader("📋 Detalhamento com Análise de Risco")
+        st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
         
-        for _, row in df_agrup.iterrows():
-            with st.expander(f"🏢 {row['Beneficiario']} — Total: {formatar_real(row['Saldo_Limpo'])}"):
-                # Mostra as linhas individuais desse fornecedor
-                detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']][['Vencimento', 'Saldo Atual', 'Carteira']]
-                st.table(detalhe)
+        df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
+            Total_Aberto=('Saldo_Limpo', 'sum'),
+            Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
+        ).sort_values('Total_Aberto', ascending=False).reset_index()
 
-    # --- ABA 2: EVOLUÇÃO ---
+        for _, row in df_agrup.iterrows():
+            # Identificador visual para Classe A
+            prefixo = "⭐" if row['Classe ABC'] == 'Classe A (80%)' else "🔹"
+            label = f"{prefixo} {row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+            
+            with st.expander(label):
+                detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
+                detalhe['Saldo Atual'] = detalhe['Saldo_Limpo'].apply(formatar_real)
+                st.table(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']])
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- ABA EVOLUÇÃO (MESMA LÓGICA ANTERIOR) ---
     elif aba == "Evolução Temporal":
-        st.title("📈 Evolução da Dívida")
+        st.title("📈 Evolução da Inadimplência")
         df_ev = df_hist.groupby('data_processamento')['Saldo_Limpo'].sum().reset_index()
-        # Ordenação correta por data
         df_ev['dt_ordem'] = pd.to_datetime(df_ev['data_processamento'], format='%d/%m/%Y')
         df_ev = df_ev.sort_values('dt_ordem')
-        
-        fig_ev = px.line(df_ev, x='data_processamento', y='Saldo_Limpo', title="Tendência da Dívida Total", markers=True)
+        fig_ev = px.line(df_ev, x='data_processamento', y='Saldo_Limpo', title="Tendência do Passivo Total", markers=True)
         st.plotly_chart(fig_ev, use_container_width=True)
-        st.dataframe(df_ev[['data_processamento', 'Saldo_Limpo']].rename(columns={'Saldo_Limpo': 'Total (R$)'}))
 
-    # --- ABA 3: UPLOAD ---
-    elif aba == "Upload de Dados":
-        st.title("⚙️ Atualizar Base de Dados")
-        uploaded = st.file_uploader("Suba o arquivo original (.xlsx ou .csv)", type=["xlsx", "csv"])
-        if uploaded and st.button("🚀 Processar e Arquivar no Google Sheets"):
-            df_new = pd.read_excel(uploaded) if uploaded.name.endswith('.xlsx') else pd.read_csv(uploaded, encoding='latin-1', sep=None, engine='python')
-            
-            # Mapeamento para garantir o padrão do banco
+    elif aba == "Upload":
+        st.title("⚙️ Upload da Base")
+        uploaded = st.file_uploader("Selecione o arquivo Excel", type=["xlsx"])
+        if uploaded and st.button("🚀 Processar"):
+            df_new = pd.read_excel(uploaded)
             df_push = df_new.copy()
             df_push.columns = df_push.columns.str.strip()
-            # Mapeie aqui se os nomes das colunas variarem
             if salvar_no_historico(df_push):
-                st.success("Sucesso! Os dados foram empilhados no histórico.")
+                st.success("Salvo!")
                 st.rerun()
-
 else:
-    st.warning("Aguardando o primeiro upload para carregar o histórico.")
+    st.warning("Sem dados históricos.")
