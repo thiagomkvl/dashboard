@@ -37,9 +37,7 @@ def carregar_dados():
         conn = conectar_sheets()
         df = conn.read(worksheet="Historico", ttl=60)
         if not df.empty:
-            # Garante que nomes de fornecedores como "Caixa Econômica" não quebrem por encoding
             df['Beneficiario'] = df['Beneficiario'].astype(str).str.strip()
-            # Limpeza numérica robusta
             df['Saldo_Limpo'] = pd.to_numeric(df['Saldo Atual'], errors='coerce').fillna(0)
         return df
     except:
@@ -97,7 +95,6 @@ if not df_hist.empty:
         
         # --- BLOCO COM SCROLL (FORNECEDORES) ---
         st.subheader("Detalhamento com Análise de Risco")
-        
         with st.container(height=480):
             df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
                 Total_Aberto=('Saldo_Limpo', 'sum'),
@@ -105,30 +102,50 @@ if not df_hist.empty:
             ).sort_values('Total_Aberto', ascending=False).reset_index()
 
             for _, row in df_agrup.iterrows():
-                # Formatação dos nomes e valores no rótulo
                 label = f"{row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
                 with st.expander(label):
                     detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
-                    # Correção da exibição do R$ nas tabelas internas
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-        # --- NOVO INDICADOR: FLUXO DE CAIXA SEMANAL ---
+        # --- NOVO BLOCO: RADAR DE PAGAMENTOS (PONTUAL E PREDITIVO) ---
         st.divider()
-        st.subheader("📅 Projeção de Pagamentos (Fluxo Semanal)")
-        
-        # Processamento de datas para o gráfico semanal
+        st.subheader("🎯 Radar de Pagamentos - Curto Prazo")
+
+        # Processamento de Datas
+        hoje = pd.Timestamp.now().normalize()
         df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-        df_semanal = df_hoje.dropna(subset=['Vencimento_DT']).copy()
-        df_semanal['Semana'] = df_semanal['Vencimento_DT'].dt.to_period('W').apply(lambda r: r.start_time.strftime('%d/%m'))
         
-        fluxo_grafico = df_semanal.groupby('Semana')['Saldo_Limpo'].sum().reset_index()
-        
-        fig_fluxo = px.bar(fluxo_grafico, x='Semana', y='Saldo_Limpo', 
-                           title="Volume de Vencimentos por Início de Semana",
-                           color_discrete_sequence=['#d62728'], text_auto='.3s')
-        fig_fluxo.update_layout(yaxis_title="Total R$", xaxis_title="Semana de Vencimento")
-        st.plotly_chart(fig_fluxo, use_container_width=True)
+        # Filtro de futuro (agenda de pagamentos)
+        df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje].copy().sort_values('Vencimento_DT')
+
+        # Métricas de Tesouraria
+        c_p1, c_p2, c_p3 = st.columns(3)
+        vence_hoje = df_futuro[df_futuro['Vencimento_DT'] == hoje]['Saldo_Limpo'].sum()
+        vence_7d = df_futuro[df_futuro['Vencimento_DT'] <= hoje + pd.Timedelta(days=7)]['Saldo_Limpo'].sum()
+        vence_15d = df_futuro[df_futuro['Vencimento_DT'] <= hoje + pd.Timedelta(days=15)]['Saldo_Limpo'].sum()
+
+        c_p1.metric("Vencendo Hoje", formatar_real(vence_hoje))
+        c_p2.metric("Próximos 7 Dias", formatar_real(vence_7d))
+        c_p3.metric("Próximos 15 Dias", formatar_real(vence_15d))
+
+        if not df_futuro.empty:
+            # Gráfico de Cronograma (Scatter Plot para identificar "picos" de saída)
+            fig_radar = px.scatter(df_futuro, x='Vencimento_DT', y='Saldo_Limpo', 
+                                 size='Saldo_Limpo', color='Classe ABC',
+                                 hover_name='Beneficiario',
+                                 title="Distribuição de Vencimentos Futuros (Tamanho = Impacto Financeiro)",
+                                 labels={'Vencimento_DT': 'Data', 'Saldo_Limpo': 'Valor'},
+                                 color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+            st.plotly_chart(fig_radar, use_container_width=True)
+
+            # Tabela de Agenda
+            st.write("📋 **Próximos 15 Desembolsos Programados**")
+            df_agenda = df_futuro.head(15)[['Vencimento', 'Beneficiario', 'Saldo_Limpo', 'Classe ABC']]
+            df_agenda['Valor'] = df_agenda['Saldo_Limpo'].apply(formatar_real)
+            st.table(df_agenda[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
+        else:
+            st.info("Nenhum vencimento futuro encontrado nos dados carregados.")
 
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
