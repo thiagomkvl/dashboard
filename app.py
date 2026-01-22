@@ -108,9 +108,9 @@ if not df_hist.empty:
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-# --- BLOCO: RADAR DE PAGAMENTOS (FOCO MENSAL E MAIORES VALORES) ---
+# --- BLOCO: RADAR DE PAGAMENTOS (COLUNAS EMPILHADAS DIA A DIA) ---
         st.divider()
-        st.subheader("🎯 Radar de Pagamentos - Análise Mensal")
+        st.subheader("🎯 Radar de Pagamentos - Projeção Diária")
 
         # 1. Preparar Datas e Filtro de Mês
         hoje = pd.Timestamp.now().normalize()
@@ -126,34 +126,45 @@ if not df_hist.empty:
             with col_f1:
                 mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis)
             
-            df_mes_filtrado = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].sort_values('Vencimento_DT')
+            df_mes_filtrado = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].copy()
 
-            # 2. Métricas de Tesouraria (Baseadas no mês selecionado)
+            # 2. Métricas Contextuais do Mês
             c_p1, c_p2, c_p3 = st.columns(3)
             total_mes = df_mes_filtrado['Saldo_Limpo'].sum()
-            maior_pag = df_mes_filtrado['Saldo_Limpo'].max()
-            qtd_pag = len(df_mes_filtrado)
+            c_p1.metric(f"Comprometido em {mes_selecionado}", formatar_real(total_mes))
+            c_p2.metric("Média de Saída Diária", formatar_real(total_mes / 30))
+            c_p3.metric("Dias com Vencimentos", len(df_mes_filtrado['Vencimento_DT'].unique()))
 
-            c_p1.metric(f"Total em {mes_selecionado}", formatar_real(total_mes))
-            c_p2.metric("Maior Saída do Mês", formatar_real(maior_pag))
-            c_p3.metric("Qtd. de Pagamentos", qtd_pag)
-
-            # 3. Gráfico de Cronograma Mensal (Bolhas maiores para melhor visualização)
-            fig_radar = px.scatter(df_mes_filtrado, x='Vencimento_DT', y='Saldo_Limpo', 
-                                 size='Saldo_Limpo', color='Classe ABC',
-                                 hover_name='Beneficiario',
-                                 size_max=50, # Aumenta o tamanho máximo das bolhas
-                                 title=f"Distribuição de Vencimentos: {mes_selecionado}",
-                                 labels={'Vencimento_DT': 'Dia do Vencimento', 'Saldo_Limpo': 'Valor'},
-                                 color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+            # 3. Gráfico de Colunas Empilhadas (Dia por Dia)
+            # Agrupamos por data e classe para criar o empilhamento
+            df_chart = df_mes_filtrado.groupby(['Vencimento_DT', 'Classe ABC'])['Saldo_Limpo'].sum().reset_index()
             
-            fig_radar.update_layout(xaxis_tickformat='%d/%m') # Mostra apenas o dia/mês no eixo X
-            st.plotly_chart(fig_radar, use_container_width=True)
+            fig_col = px.bar(df_chart, 
+                             x='Vencimento_DT', 
+                             y='Saldo_Limpo', 
+                             color='Classe ABC',
+                             title=f"Volume Diário de Vencimentos: {mes_selecionado}",
+                             labels={'Vencimento_DT': 'Dia do Mês', 'Saldo_Limpo': 'Total (R$)'},
+                             color_discrete_map={
+                                 'Classe A (80%)': '#004a99', 
+                                 'Classe B (15%)': '#ffcc00', 
+                                 'Classe C (5%)': '#d1d5db'
+                             },
+                             text_auto='.2s') # Mostra o valor simplificado no topo das barras
 
-            # 4. Tabela: 15 MAIORES PAGAMENTOS PREVISTOS (Geral Futuro)
+            fig_col.update_layout(
+                xaxis_tickformat='%d/%m',
+                xaxis_title="Dia de Vencimento",
+                yaxis_title="Volume Financeiro (R$)",
+                barmode='stack',
+                hovermode="x unified" # Mostra todos os valores do dia ao passar o mouse
+            )
+            
+            st.plotly_chart(fig_col, use_container_width=True)
+
+            # 4. Tabela: 15 MAIORES PAGAMENTOS PREVISTOS
             st.divider()
             st.write("📋 **Top 15 Maiores Pagamentos Previstos (Visão Estratégica)**")
-            # Aqui filtramos o TOP 15 por VALOR de todo o futuro disponível
             df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
             df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
             
