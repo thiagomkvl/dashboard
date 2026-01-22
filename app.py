@@ -5,104 +5,96 @@ import plotly.express as px
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
-# Estilização CSS para visual corporativo
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
     .stMetric { 
-        background-color: #ffffff; 
-        padding: 15px; 
-        border-radius: 10px; 
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border-left: 5px solid #004a99;
+        background-color: #ffffff; padding: 15px; border-radius: 10px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #004a99;
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏥 Dashboard Estratégico de Fornecedores - SOS CARDIO")
-st.sidebar.header("Painel de Controle")
+st.title("🏥 Dashboard Inteligente de Fornecedores - SOS CARDIO")
 
-# 2. UPLOAD DO ARQUIVO
-file = st.sidebar.file_uploader("Carregar Base PARA_AIRTABLE_SOS_CARDIO.csv", type="csv")
+# 2. UPLOAD DO ARQUIVO (Aceita o original do hospital)
+file = st.sidebar.file_uploader("Suba o arquivo original (fornecedores.csv)", type="csv")
 
 if file:
-    # --- LEITURA ROBUSTA (Resolve ParserError e UnicodeDecodeError) ---
     try:
-        # sep=None com engine='python' detecta automaticamente o separador (, ou ;)
-        # on_bad_lines='skip' pula linhas com erro de formatação (vírgulas extras no texto)
+        # Detecta separador e encoding automaticamente
         df = pd.read_csv(file, sep=None, encoding='latin-1', engine='python', on_bad_lines='skip')
     except Exception as e:
-        st.error(f"Erro crítico ao ler o arquivo: {e}")
+        st.error(f"Erro ao ler arquivo: {e}")
         st.stop()
 
-    # Limpeza de espaços nos nomes das colunas
-    df.columns = df.columns.str.strip()
-
-    # --- VALIDAÇÃO DE COLUNAS ---
-    colunas_foco = ['Saldo Atual', 'Dias venc.', 'Classe ABC', 'Beneficiario', 'Carteira de Atraso']
-    faltantes = [c for c in colunas_foco if c not in df.columns]
+    # --- PROCESSAMENTO AUTOMÁTICO (A IA faz o trabalho aqui) ---
     
-    if faltantes:
-        st.error(f"⚠️ Colunas não encontradas: {', '.join(faltantes)}")
-        st.info("O sistema espera um CSV com as colunas calculadas previamente.")
-        st.stop()
-
-    # 3. MÉTRICAS EXECUTIVAS
-    total_divida = df['Saldo Atual'].sum()
-    vencido_30 = df[df['Dias venc.'] > 30]['Saldo Atual'].sum()
-    qtd_fornecedores = len(df['Beneficiario'].unique())
+    # Limpar nomes de colunas (tirar acentos e espaços)
+    df.columns = df.columns.str.strip().str.replace('Ã¡', 'a').str.replace('Ã§Ã£', 'ca').str.replace('Ã­', 'i').str.replace('Ã³', 'o').str.replace('Ã©', 'e').str.replace('í', 'i').str.replace('á', 'a')
     
+    # Identificar colunas corretas mesmo com variações de nome
+    col_benef = 'Beneficiario' if 'Beneficiario' in df.columns else df.columns[0]
+    col_saldo = 'Saldo Atual' if 'Saldo Atual' in df.columns else df.columns[1]
+    col_dias = 'Dias venc.' if 'Dias venc.' in df.columns else 'Dias venc'
+
+    # Função para limpar moeda (R$ 1.234,56 -> 1234.56)
+    def clean_currency(x):
+        if isinstance(x, str):
+            x = x.replace('R$', '').replace('.', '').replace(',', '.').strip()
+            try: return float(x)
+            except: return 0.0
+        return x
+
+    df['Saldo_Limpo'] = df[col_saldo].apply(clean_currency)
+
+    # Cálculo da Curva ABC (Rating)
+    supplier_agg = df.groupby(col_benef)['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+    total_debt = supplier_agg['Saldo_Limpo'].sum()
+    supplier_agg['Acumulado'] = supplier_agg['Saldo_Limpo'].cumsum() / total_debt
+    
+    def get_abc(pct):
+        if pct <= 0.80: return 'Classe A'
+        elif pct <= 0.95: return 'Classe B'
+        return 'Classe C'
+    
+    supplier_agg['Classe ABC'] = supplier_agg['Acumulado'].apply(get_abc)
+    df = df.merge(supplier_agg[[col_benef, 'Classe ABC']], on=col_benef, how='left')
+
+    # Cálculo da Carteira de Atraso (Ageing)
+    def get_ageing(days):
+        try:
+            d = int(days)
+            if d < 0: return 'A Vencer'
+            elif d <= 15: return '0-15 dias'
+            elif d <= 30: return '16-30 dias'
+            elif d <= 60: return '31-60 dias'
+            elif d <= 90: return '61-90 dias'
+            else: return '> 90 dias'
+        except: return 'Indefinido'
+
+    df['Carteira'] = df[col_dias].apply(get_ageing)
+
+    # 3. EXIBIÇÃO DO DASHBOARD
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
-    m1.metric("Exposição Total", f"R$ {total_divida:,.2f}")
-    m2.metric("Inadimplência > 30 dias", f"R$ {vencido_30:,.2f}", delta="Risco de Operação", delta_color="inverse")
-    m3.metric("Total de Fornecedores", qtd_fornecedores)
+    m1.metric("Dívida Total", f"R$ {total_debt:,.2f}")
+    m2.metric("Fornecedores Críticos (A)", len(supplier_agg[supplier_agg['Classe ABC'] == 'Classe A']))
+    m3.metric("Atraso > 90 dias", f"R$ {df[df['Carteira'] == '> 90 dias']['Saldo_Limpo'].sum():,.2f}")
 
-    # 4. GRÁFICOS ANALÍTICOS
-    st.markdown("---")
-    col_abc, col_ageing = st.columns([1, 1])
+    # Gráficos
+    c1, c2 = st.columns(2)
+    with c1:
+        fig_pie = px.pie(df, values='Saldo_Limpo', names='Classe ABC', title="Distribuição por Rating", hole=.4)
+        st.plotly_chart(fig_pie)
+    with c2:
+        ageing_order = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
+        fig_bar = px.bar(df.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ageing_order).reset_index(), 
+                         x='Carteira', y='Saldo_Limpo', title="Dívida por Tempo de Atraso")
+        st.plotly_chart(fig_bar)
 
-    with col_abc:
-        st.subheader("Concentração por Rating (ABC)")
-        fig_abc = px.pie(df, values='Saldo Atual', names='Classe ABC', hole=0.4,
-                         color_discrete_map={'Classe A': '#d62728', 'Classe B': '#ff7f0e', 'Classe C': '#2ca02c'})
-        st.plotly_chart(fig_abc, use_container_width=True)
-
-    with col_ageing:
-        st.subheader("Dívida por Faixa de Atraso")
-        ageing_sum = df.groupby('Carteira de Atraso')['Saldo Atual'].sum().reset_index()
-        # Ordenação manual para o gráfico
-        ordem = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '91-180 dias', '> 180 dias']
-        ageing_sum['Carteira de Atraso'] = pd.Categorical(ageing_sum['Carteira de Atraso'], categories=ordem, ordered=True)
-        ageing_sum = ageing_sum.sort_values('Carteira de Atraso')
-        
-        fig_bar = px.bar(ageing_sum, x='Carteira de Atraso', y='Saldo Atual', color_discrete_sequence=['#004a99'])
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    # 5. MATRIZ DE PRIORIZAÇÃO
-    st.markdown("---")
-    st.subheader("🎯 Matriz de Decisão: Onde Negociar?")
-    
-    pivot = df.pivot_table(index='Carteira de Atraso', columns='Classe ABC', values='Saldo Atual', aggfunc='sum').fillna(0)
-    # Reordenar linhas conforme a lógica de tempo
-    pivot = pivot.reindex([o for o in ordem if o in pivot.index])
-    
-    st.table(pivot.style.format("R$ {:,.2f}").background_gradient(cmap='Reds'))
-
-    # 6. TABELA DETALHADA DE NEGOCIAÇÃO
-    st.markdown("---")
-    st.subheader("📋 Detalhamento para Negociação (Top Classe A)")
-    
-    # Filtro para ver apenas Classe A por padrão
-    exibir_classe = st.multiselect("Filtrar por Classe:", options=['Classe A', 'Classe B', 'Classe C'], default=['Classe A'])
-    
-    df_filtered = df[df['Classe ABC'].isin(exibir_classe)].sort_values('Saldo Atual', ascending=False)
-    
-    st.dataframe(
-        df_filtered[['Beneficiario', 'Saldo Atual', 'Carteira de Atraso', 'Vencimento', 'status']], 
-        use_container_width=True
-    )
+    st.subheader("📋 Lista de Prioridade para Negociação (Classe A)")
+    st.dataframe(df[df['Classe ABC'] == 'Classe A'].sort_values('Saldo_Limpo', ascending=False)[[col_benef, 'Saldo_Limpo', 'Carteira', 'Vencimento']], use_container_width=True)
 
 else:
-    st.info("👆 Por favor, carregue o arquivo CSV na barra lateral para iniciar a análise.")
-    st.image("https://via.placeholder.com/800x400.png?text=Aguardando+Dados+do+Hospital+SOS+CARDIO", use_container_width=True)
+    st.info("Aguardando o arquivo 'fornecedores.csv' para gerar o dashboard automaticamente.")
