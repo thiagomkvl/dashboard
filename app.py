@@ -108,42 +108,56 @@ if not df_hist.empty:
                     detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                     st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
-        # --- NOVO BLOCO: RADAR DE PAGAMENTOS (PONTUAL E PREDITIVO) ---
+# --- BLOCO: RADAR DE PAGAMENTOS (FOCO MENSAL E MAIORES VALORES) ---
         st.divider()
-        st.subheader("🎯 Radar de Pagamentos - Curto Prazo")
+        st.subheader("🎯 Radar de Pagamentos - Análise Mensal")
 
-        # Processamento de Datas
+        # 1. Preparar Datas e Filtro de Mês
         hoje = pd.Timestamp.now().normalize()
         df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-        
-        # Filtro de futuro (agenda de pagamentos)
-        df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje].copy().sort_values('Vencimento_DT')
-
-        # Métricas de Tesouraria
-        c_p1, c_p2, c_p3 = st.columns(3)
-        vence_hoje = df_futuro[df_futuro['Vencimento_DT'] == hoje]['Saldo_Limpo'].sum()
-        vence_7d = df_futuro[df_futuro['Vencimento_DT'] <= hoje + pd.Timedelta(days=7)]['Saldo_Limpo'].sum()
-        vence_15d = df_futuro[df_futuro['Vencimento_DT'] <= hoje + pd.Timedelta(days=15)]['Saldo_Limpo'].sum()
-
-        c_p1.metric("Vencendo Hoje", formatar_real(vence_hoje))
-        c_p2.metric("Próximos 7 Dias", formatar_real(vence_7d))
-        c_p3.metric("Próximos 15 Dias", formatar_real(vence_15d))
+        df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje].copy()
 
         if not df_futuro.empty:
-            # Gráfico de Cronograma (Scatter Plot para identificar "picos" de saída)
-            fig_radar = px.scatter(df_futuro, x='Vencimento_DT', y='Saldo_Limpo', 
+            # Filtro de Mês para o Gráfico
+            df_futuro['Mes_Ref'] = df_futuro['Vencimento_DT'].dt.strftime('%m/%Y')
+            meses_disponiveis = sorted(df_futuro['Mes_Ref'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
+            
+            col_f1, col_f2 = st.columns([1, 2])
+            with col_f1:
+                mes_selecionado = st.selectbox("Selecione o Mês para Análise:", meses_disponiveis)
+            
+            df_mes_filtrado = df_futuro[df_futuro['Mes_Ref'] == mes_selecionado].sort_values('Vencimento_DT')
+
+            # 2. Métricas de Tesouraria (Baseadas no mês selecionado)
+            c_p1, c_p2, c_p3 = st.columns(3)
+            total_mes = df_mes_filtrado['Saldo_Limpo'].sum()
+            maior_pag = df_mes_filtrado['Saldo_Limpo'].max()
+            qtd_pag = len(df_mes_filtrado)
+
+            c_p1.metric(f"Total em {mes_selecionado}", formatar_real(total_mes))
+            c_p2.metric("Maior Saída do Mês", formatar_real(maior_pag))
+            c_p3.metric("Qtd. de Pagamentos", qtd_pag)
+
+            # 3. Gráfico de Cronograma Mensal (Bolhas maiores para melhor visualização)
+            fig_radar = px.scatter(df_mes_filtrado, x='Vencimento_DT', y='Saldo_Limpo', 
                                  size='Saldo_Limpo', color='Classe ABC',
                                  hover_name='Beneficiario',
-                                 title="Distribuição de Vencimentos Futuros (Tamanho = Impacto Financeiro)",
-                                 labels={'Vencimento_DT': 'Data', 'Saldo_Limpo': 'Valor'},
+                                 size_max=50, # Aumenta o tamanho máximo das bolhas
+                                 title=f"Distribuição de Vencimentos: {mes_selecionado}",
+                                 labels={'Vencimento_DT': 'Dia do Vencimento', 'Saldo_Limpo': 'Valor'},
                                  color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+            
+            fig_radar.update_layout(xaxis_tickformat='%d/%m') # Mostra apenas o dia/mês no eixo X
             st.plotly_chart(fig_radar, use_container_width=True)
 
-            # Tabela de Agenda
-            st.write("📋 **Próximos 15 Desembolsos Programados**")
-            df_agenda = df_futuro.head(15)[['Vencimento', 'Beneficiario', 'Saldo_Limpo', 'Classe ABC']]
-            df_agenda['Valor'] = df_agenda['Saldo_Limpo'].apply(formatar_real)
-            st.table(df_agenda[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
+            # 4. Tabela: 15 MAIORES PAGAMENTOS PREVISTOS (Geral Futuro)
+            st.divider()
+            st.write("📋 **Top 15 Maiores Pagamentos Previstos (Visão Estratégica)**")
+            # Aqui filtramos o TOP 15 por VALOR de todo o futuro disponível
+            df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
+            df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
+            
+            st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC', 'Carteira']])
         else:
             st.info("Nenhum vencimento futuro encontrado nos dados carregados.")
 
