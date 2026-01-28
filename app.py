@@ -211,4 +211,4 @@ if check_password():
 
     if st.sidebar.button("🔒 Sair"):
         st.session_state["password_correct"] = False
-        st.rerun()vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        st.rerun()
