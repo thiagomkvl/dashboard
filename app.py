@@ -13,7 +13,6 @@ st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 def check_password():
     """Retorna True se o usuário digitou a senha correta ou já está logado."""
     def password_entered():
-        # Proteção contra KeyError: verifica se a chave existe antes de comparar
         if "password" in st.session_state:
             if st.session_state["password"] == st.secrets["PASSWORD"]:
                 st.session_state["password_correct"] = True
@@ -21,17 +20,14 @@ def check_password():
             else:
                 st.session_state["password_correct"] = False
 
-    # Se já estiver logado, retorna True
     if st.session_state.get("password_correct"):
         return True
 
-    # Tela de Login centralizada
     st.markdown("<h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center;'>Acesso Restrito - Gestão Financeira</h3>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        # Usamos o 'on_change' para processar assim que der Enter
         st.text_input("Digite a senha de acesso:", type="password", on_change=password_entered, key="password")
         if st.session_state.get("password_correct") == False:
             st.error("😕 Senha incorreta.")
@@ -50,7 +46,6 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto = remover_acentos(str(texto))
     if alinhar == 'esquerda':
         return texto[:tamanho].ljust(tamanho, preenchimento)
-    # Limpa números para campos de valor/conta
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
 
@@ -68,7 +63,6 @@ def gerar_cnab240(df_selecionado, h):
     linhas = []
     hoje = datetime.now()
     
-    # Registro 0: Header de Arquivo
     header_arq = (
         "00100000" + " " * 9 + "2" + 
         formatar_campo(h['cnpj'], 14, '0', 'direita') +
@@ -82,7 +76,6 @@ def gerar_cnab240(df_selecionado, h):
     )
     linhas.append(header_arq.ljust(240))
 
-    # Registro 1: Header de Lote
     header_lote = (
         "00100011C2001046 " + "2" +
         formatar_campo(h['cnpj'], 14, '0', 'direita') +
@@ -96,10 +89,8 @@ def gerar_cnab240(df_selecionado, h):
 
     for i, row in df_selecionado.reset_index(drop=True).iterrows():
         n_seq = i + 1
-        # Usando o nome da coluna vindo da sua aba processada no Sheets
         valor_pag = int(float(row['VALOR_PAGAMENTO']) * 100)
         
-        # Segmento A
         seg_a = (
             "00100013" + formatar_campo(n_seq * 2 - 1, 5, '0', 'direita') + "A" +
             "00001000" + formatar_campo(row.get('BANCO_FAVORECIDO', '001'), 3, '0', 'direita') +
@@ -113,7 +104,6 @@ def gerar_cnab240(df_selecionado, h):
         )
         linhas.append(seg_a.ljust(240))
         
-        # Segmento B
         seg_b = (
             "00100013" + formatar_campo(n_seq * 2, 5, '0', 'direita') + "B" +
             " " * 3 + "2" + formatar_campo(row.get('cnpj_beneficiario', '0'), 14, '0', 'direita') + 
@@ -121,14 +111,13 @@ def gerar_cnab240(df_selecionado, h):
         )
         linhas.append(seg_b.ljust(240))
 
-    # Trailers
     linhas.append(("00100015" + " " * 9 + formatar_campo(len(linhas) + 1, 6, '0', 'direita') + "0" * 100).ljust(240))
     linhas.append(("00199999" + " " * 9 + "000001" + formatar_campo(len(linhas) + 1, 6, '0', 'direita')).ljust(240))
 
     return "\r\n".join(linhas)
 
 # ==========================================
-# 3. LÓGICA DO APP (NAVEGAÇÃO)
+# 3. LÓGICA DO APP E DASHBOARD
 # ==========================================
 if check_password():
     @st.cache_data(ttl=60)
@@ -149,7 +138,6 @@ if check_password():
 
     if aba == "Pagamentos Unicred":
         st.title("🔌 Gerador CNAB 240 - Unicred")
-        
         st.sidebar.subheader("Dados Bancários Hospital")
         h_dados = {
             'cnpj': st.sidebar.text_input("CNPJ SOS Cardio:", "00000000000000"),
@@ -161,7 +149,6 @@ if check_password():
         try:
             conn = conectar_sheets()
             df_dia = conn.read(worksheet="Pagamentos_Dia", ttl=0)
-            
             if not df_dia.empty:
                 st.write(f"📋 **{len(df_dia)}** títulos encontrados para processamento hoje.")
                 if 'Pagar?' not in df_dia.columns:
@@ -188,10 +175,57 @@ if check_password():
 
     elif aba == "Dashboard Principal":
         if not df_hist.empty:
-            # [Seu código de visualização do Dashboard Principal...]
+            ultima_data = df_hist['data_processamento'].max()
+            df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
+
+            df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+            total_hoje = df_abc['Saldo_Limpo'].sum()
+            df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
+            df_abc['Classe ABC'] = df_abc['Acumulado'].apply(
+                lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)')
+            )
+            df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
+
             st.title("Gestão de Passivo - SOS CARDIO")
-            st.info("Utilize as abas laterais para navegar pelos módulos.")
+            st.write(f"📅 Dados da base: **{ultima_data}**")
             
+            m1, m2, m3, m4 = st.columns(4)
+            total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
+            m1.metric("Dívida Total", formatar_real(total_hoje))
+            m2.metric("Total Vencido", formatar_real(total_vencido))
+            m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
+            m4.metric("Qtd Classe A", len(df_abc[df_abc['Classe ABC'] == 'Classe A (80%)']))
+
+            st.divider()
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("Curva ABC")
+                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
+                             color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+                st.plotly_chart(fig_p, use_container_width=True)
+
+            with c2:
+                st.subheader("Ageing por Faixa")
+                ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
+                df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
+                fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
+                st.plotly_chart(fig_b, use_container_width=True)
+
+            st.divider()
+            st.subheader("Análise por Fornecedor")
+            df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
+                Total_Aberto=('Saldo_Limpo', 'sum'),
+                Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
+            ).sort_values('Total_Aberto', ascending=False).reset_index()
+
+            for _, row in df_agrup.iterrows():
+                label = f"{row['Beneficiario']} | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+                with st.expander(label):
+                    detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
+                    st.dataframe(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']], use_container_width=True, hide_index=True)
+        else:
+            st.warning("Histórico vazio. Faça o upload dos dados.")
+
     elif aba == "Upload":
         st.title("Upload da Base de Histórico")
         uploaded = st.file_uploader("Selecione o arquivo Excel do Tasy", type=["xlsx"])
@@ -201,7 +235,6 @@ if check_password():
                 st.success("Dados salvos!")
                 st.rerun()
 
-    # Logout na barra lateral
     if st.sidebar.button("🔒 Sair / Bloquear App"):
         st.session_state["password_correct"] = False
         st.rerun()
