@@ -6,7 +6,7 @@ from datetime import datetime
 import unicodedata
 
 # ==========================================
-# 1. CONFIGURAÇÃO E SEGURANÇA (LOGIN)
+# 1. CONFIGURAÇÃO, CSS E SEGURANÇA (LOGIN)
 # ==========================================
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
@@ -41,16 +41,18 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
 
-# CSS ORIGINAL
+# CSS ORIGINAL (MANTIDO)
 st.markdown("""
     <style>
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
-    [data-testid="stVerticalBlock"] > div:nth-child(10) { max-height: 480px; overflow-y: auto; border: 1px solid #d1d5db; padding: 15px; border-radius: 10px; background-color: #f9fafb; }
+    [data-testid="stVerticalBlock"] > div:nth-child(10) {
+        max-height: 480px; overflow-y: auto; border: 1px solid #d1d5db; padding: 15px; border-radius: 10px; background-color: #f9fafb;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTOR CNAB 240 ---
+# --- MOTOR CNAB 240 (UNICRED) ---
 def gerar_cnab240(df_sel, h):
     l = []
     hoje = datetime.now()
@@ -68,8 +70,8 @@ def gerar_cnab240(df_sel, h):
 # 3. LÓGICA DO APP
 # ==========================================
 if check_password():
-    @st.cache_data(ttl=300) # Cache de 5 min para evitar requisições excessivas
-    def carregar_dados():
+    @st.cache_data(ttl=300)
+    def carregar_dados_hist():
         try:
             conn = conectar_sheets()
             df = conn.read(worksheet="Historico", ttl=300)
@@ -79,14 +81,14 @@ if check_password():
             return df
         except: return pd.DataFrame()
 
-    df_hist = carregar_dados()
+    df_hist = carregar_dados_hist()
 
     st.sidebar.title("Menu SOS CARDIO")
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Evolução Temporal", "Upload"])
 
-    # ---------------------------------------------------------
-    # ABA: DASHBOARD PRINCIPAL (SEM ALTERAÇÕES CONFORME PEDIDO)
-    # ---------------------------------------------------------
+    # ------------------------------------------
+    # ABA: DASHBOARD PRINCIPAL (SEM ALTERAÇÕES)
+    # ------------------------------------------
     if aba == "Dashboard Principal":
         if not df_hist.empty:
             ultima_data = df_hist['data_processamento'].max()
@@ -136,7 +138,7 @@ if check_password():
                         st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
             st.divider()
-            st.subheader("🎯 Radar de Pagamentos")
+            st.subheader("🎯 Radar de Pagamentos - Detalhamento Diário")
             hoje_dt = pd.Timestamp.now().normalize()
             df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
             df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje_dt].copy()
@@ -147,55 +149,60 @@ if check_password():
                 df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_sel].copy()
                 df_mes['Data_Formatada'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
                 df_mes = df_mes.sort_values('Vencimento_DT')
-                fig_forn = px.bar(df_mes, x='Data_Formatada', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=600)
+                fig_forn = px.bar(df_mes, x='Data_Formatada', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=600, color_discrete_sequence=px.colors.qualitative.Prism)
+                df_totais = df_mes.groupby('Data_Formatada')['Saldo_Limpo'].sum().reset_index()
+                for i, row in df_totais.iterrows():
+                    fig_forn.add_annotation(x=row['Data_Formatada'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12, font=dict(size=11))
+                fig_forn.update_layout(xaxis_type='category', showlegend=False, xaxis=dict(tickangle=-45))
                 st.plotly_chart(fig_forn, use_container_width=True)
+                st.write("📋 **Top 15 Maiores Pagamentos Previstos**")
+                df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
+                df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
+                st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
 
-    # ---------------------------------------------------------
-    # ABA: PAGAMENTOS UNICRED (OTIMIZADA COM CACHE E BOTAO)
-    # ---------------------------------------------------------
+    # ------------------------------------------
+    # ABA: PAGAMENTOS UNICRED (LOGICA OTIMIZADA)
+    # ------------------------------------------
     elif aba == "Pagamentos Unicred":
-        st.title("🔌 Conversor Unicred (Otimizado)")
-        
-        # Dados do Hospital na Sidebar
-        st.sidebar.subheader("Dados do Hospital")
-        h_d = {
-            'cnpj': st.sidebar.text_input("CNPJ:", "00000000000000"),
-            'convenio': st.sidebar.text_input("Convênio:"),
-            'ag': st.sidebar.text_input("Agência:"),
-            'cc': st.sidebar.text_input("Conta:")
-        }
+        st.title("🔌 Conversor Unicred - Gestão de Remessa")
+        st.sidebar.subheader("Configurações Hospital")
+        h_d = {'cnpj': st.sidebar.text_input("CNPJ:"), 'convenio': st.sidebar.text_input("Convênio:"), 'ag': st.sidebar.text_input("Agência:"), 'cc': st.sidebar.text_input("Conta:")}
 
-        # Lógica de Botão para evitar requisições automáticas
-        if st.button("🔄 Buscar Títulos do Sheets"):
+        # Carregamento Automático Único (Memória)
+        if 'df_pagamentos' not in st.session_state:
             try:
                 conn = conectar_sheets()
                 df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
                 if not df_p.empty:
                     if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
                     st.session_state['df_pagamentos'] = df_p
-                    st.success("Dados carregados com sucesso!")
                 else:
-                    st.warning("Aba 'Pagamentos_Dia' está vazia.")
-            except:
-                st.error("Erro ao conectar ao Google Sheets.")
+                    st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'Nr. Titulo', 'DATA_PAGAMENTO', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO', 'cnpj_beneficiario', 'CHAVE_PIX'])
+            except: st.error("Erro ao carregar dados.")
 
-        # Se houver dados na memória, exibe a edição e o botão de remessa
         if 'df_pagamentos' in st.session_state:
-            st.info("💡 Edite abaixo e clique em 'Gerar Remessa'. Nenhuma requisição ao Google será feita agora.")
+            st.info("💡 Edite ou adicione títulos abaixo. Clique em 'Salvar' para atualizar o Google Sheets.")
             
-            # Editor de Dados (Interação local, não gasta API)
-            ed_df = st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True)
-            
-            df_final = ed_df[ed_df['Pagar?'] == True]
-            
-            if not df_final.empty:
-                st.metric("Total Selecionado", formatar_real(df_final['VALOR_PAGAMENTO'].sum()))
-                
-                if st.button("🛠️ Gerar Arquivo .REM"):
-                    txt = gerar_cnab240(df_final, h_d)
-                    st.download_button("📥 Baixar Arquivo", txt, f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt")
-            else:
-                st.warning("Selecione ao menos um título para gerar a remessa.")
+            # Editor Dinâmico (Permite adicionar linhas)
+            df_editado = st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True, num_rows="dynamic")
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("💾 Salvar Alterações no Google Sheets"):
+                    try:
+                        conn = conectar_sheets()
+                        conn.update(worksheet="Pagamentos_Dia", data=df_editado)
+                        st.session_state['df_pagamentos'] = df_editado
+                        st.success("✅ Google Sheets sincronizado!")
+                    except: st.error("Erro ao salvar.")
+
+            with col_btn2:
+                df_final = df_editado[df_editado['Pagar?'] == True]
+                if not df_final.empty:
+                    total_rem = df_final['VALOR_PAGAMENTO'].astype(float).sum()
+                    if st.button(f"🚀 Gerar Remessa ({formatar_real(total_rem)})"):
+                        txt = gerar_cnab240(df_final, h_d)
+                        st.download_button("📥 Baixar .REM", txt, f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt")
 
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
