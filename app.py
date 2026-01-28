@@ -41,13 +41,20 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
 
-# CSS ORIGINAL (MANTIDO)
+# CSS ORIGINAL E CUSTOMIZAÇÃO DE BOTÕES
 st.markdown("""
     <style>
     .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
     [data-testid="stVerticalBlock"] > div:nth-child(10) {
         max-height: 480px; overflow-y: auto; border: 1px solid #d1d5db; padding: 15px; border-radius: 10px; background-color: #f9fafb;
+    }
+    /* Estilização para botões alinhados */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -86,9 +93,7 @@ if check_password():
     st.sidebar.title("Menu SOS CARDIO")
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Evolução Temporal", "Upload"])
 
-    # ------------------------------------------
-    # ABA: DASHBOARD PRINCIPAL (SEM ALTERAÇÕES)
-    # ------------------------------------------
+    # --- ABA: DASHBOARD PRINCIPAL ---
     if aba == "Dashboard Principal":
         if not df_hist.empty:
             ultima_data = df_hist['data_processamento'].max()
@@ -160,15 +165,11 @@ if check_password():
                 df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
                 st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
 
-    # ------------------------------------------
-    # ABA: PAGAMENTOS UNICRED (LOGICA OTIMIZADA)
-    # ------------------------------------------
+    # --- ABA: PAGAMENTOS UNICRED (VISUAL HARMONIZADO) ---
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred - Gestão de Remessa")
-        st.sidebar.subheader("Configurações Hospital")
-        h_d = {'cnpj': st.sidebar.text_input("CNPJ:"), 'convenio': st.sidebar.text_input("Convênio:"), 'ag': st.sidebar.text_input("Agência:"), 'cc': st.sidebar.text_input("Conta:")}
-
-        # Carregamento Automático Único (Memória)
+        
+        # 1. Carregamento Automático Inicial
         if 'df_pagamentos' not in st.session_state:
             try:
                 conn = conectar_sheets()
@@ -178,31 +179,50 @@ if check_password():
                     st.session_state['df_pagamentos'] = df_p
                 else:
                     st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'Nr. Titulo', 'DATA_PAGAMENTO', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO', 'cnpj_beneficiario', 'CHAVE_PIX'])
-            except: st.error("Erro ao carregar dados.")
+            except: st.error("Erro ao carregar dados do Google Sheets.")
 
+        # 2. Layout de Botões Harmonizados logo abaixo do Título
+        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
+        
+        with col_b1:
+            if st.button("💾 Salvar na Planilha", help="Sincroniza as alterações com o Google Sheets"):
+                try:
+                    conn = conectar_sheets()
+                    conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
+                    st.success("✅ Sincronizado!")
+                except: st.error("Erro ao salvar.")
+        
+        with col_b2:
+            # Botão de Rerun para resetar memória local e puxar do sheets de novo
+            if st.button("🔄 Recarregar Dados", help="Descarta mudanças não salvas e puxa os dados novos do Sheets"):
+                if 'df_pagamentos' in st.session_state:
+                    del st.session_state['df_pagamentos']
+                st.rerun()
+
+        with col_b3:
+            # Cálculo de total em tempo real baseado no que está marcado
+            if 'df_pagamentos' in st.session_state:
+                df_final = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
+                total_pag = df_final['VALOR_PAGAMENTO'].astype(float).sum()
+                st.download_button(
+                    label=f"🚀 Gerar Remessa ({formatar_real(total_pag)})",
+                    data=gerar_cnab240(df_final, {'cnpj': '00000000000000', 'convenio': '0', 'ag': '0', 'cc': '0'}), # Ajuste aqui com seus campos reais
+                    file_name=f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt",
+                    mime="text/plain"
+                )
+
+        st.divider()
+
+        # 3. Área da Tabela
         if 'df_pagamentos' in st.session_state:
-            st.info("💡 Edite ou adicione títulos abaixo. Clique em 'Salvar' para atualizar o Google Sheets.")
-            
-            # Editor Dinâmico (Permite adicionar linhas)
-            df_editado = st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True, num_rows="dynamic")
-
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("💾 Salvar Alterações no Google Sheets"):
-                    try:
-                        conn = conectar_sheets()
-                        conn.update(worksheet="Pagamentos_Dia", data=df_editado)
-                        st.session_state['df_pagamentos'] = df_editado
-                        st.success("✅ Google Sheets sincronizado!")
-                    except: st.error("Erro ao salvar.")
-
-            with col_btn2:
-                df_final = df_editado[df_editado['Pagar?'] == True]
-                if not df_final.empty:
-                    total_rem = df_final['VALOR_PAGAMENTO'].astype(float).sum()
-                    if st.button(f"🚀 Gerar Remessa ({formatar_real(total_rem)})"):
-                        txt = gerar_cnab240(df_final, h_d)
-                        st.download_button("📥 Baixar .REM", txt, f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt")
+            st.info("💡 Clique em '+' no final da tabela para adicionar novos pagamentos manualmente.")
+            # Atualiza o state conforme a edição na tela
+            st.session_state['df_pagamentos'] = st.data_editor(
+                st.session_state['df_pagamentos'], 
+                hide_index=True, 
+                use_container_width=True, 
+                num_rows="dynamic"
+            )
 
     elif aba == "Evolução Temporal":
         st.title("Evolução da Inadimplência")
