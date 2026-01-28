@@ -6,12 +6,11 @@ from datetime import datetime
 import unicodedata
 
 # ==========================================
-# 1. CONFIGURAÇÃO, CSS E SEGURANÇA (LOGIN)
+# 1. CONFIGURAÇÃO, CSS E SEGURANÇA
 # ==========================================
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
 def check_password():
-    """Retorna True se o usuário digitou a senha correta ou já está logado."""
     def password_entered():
         if "password" in st.session_state:
             if st.session_state["password"] == st.secrets["PASSWORD"]:
@@ -48,13 +47,6 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
         return texto[:tamanho].ljust(tamanho, preenchimento)
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
-
-st.markdown("""
-    <style>
-    .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
-    </style>
-    """, unsafe_allow_html=True)
 
 # ==========================================
 # 2. MOTOR DE GERAÇÃO CNAB 240 (UNICRED)
@@ -117,7 +109,7 @@ def gerar_cnab240(df_selecionado, h):
     return "\r\n".join(linhas)
 
 # ==========================================
-# 3. LÓGICA DO APP E DASHBOARD
+# 3. LÓGICA DO APP
 # ==========================================
 if check_password():
     @st.cache_data(ttl=60)
@@ -136,7 +128,81 @@ if check_password():
     st.sidebar.title("Módulos SOS CARDIO")
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Upload"])
 
-    if aba == "Pagamentos Unicred":
+    # ------------------------------------------
+    # ABA: DASHBOARD PRINCIPAL (VERSÃO COMPLETA)
+    # ------------------------------------------
+    if aba == "Dashboard Principal":
+        if not df_hist.empty:
+            ultima_data = df_hist['data_processamento'].max()
+            df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
+
+            # Processamento ABC
+            df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+            total_hoje = df_abc['Saldo_Limpo'].sum()
+            df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
+            df_abc['Classe ABC'] = df_abc['Acumulado'].apply(lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)'))
+            df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
+
+            st.title("Gestão de Passivo - SOS CARDIO")
+            st.write(f"📅 Última atualização da base: **{ultima_data}**")
+
+            m1, m2, m3, m4 = st.columns(4)
+            total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
+            m1.metric("Dívida Total", formatar_real(total_hoje))
+            m2.metric("Total Vencido", formatar_real(total_vencido), delta_color="inverse")
+            m3.metric("Fornecedores Ativos", len(df_hoje['Beneficiario'].unique()))
+            m4.metric("Qtd Classe A", len(df_abc[df_abc['Classe ABC'] == 'Classe A (80%)']))
+
+            st.divider()
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("Concentração por Classe (ABC)")
+                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
+                             color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+                st.plotly_chart(fig_p, use_container_width=True)
+
+            with c2:
+                st.subheader("Ageing - Volume por Faixa")
+                ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
+                df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
+                fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
+                st.plotly_chart(fig_b, use_container_width=True)
+
+            st.divider()
+            
+            # Detalhamento por Fornecedor com Expansores
+            st.subheader("🔍 Detalhamento por Fornecedor")
+            df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
+                Total_Aberto=('Saldo_Limpo', 'sum'),
+                Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
+            ).sort_values('Total_Aberto', ascending=False).reset_index()
+
+            for _, row in df_agrup.iterrows():
+                label = f"{row['Beneficiario']} | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+                with st.expander(label):
+                    detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
+                    st.dataframe(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']], use_container_width=True, hide_index=True)
+
+            # Radar de Vencimentos Futuros
+            st.divider()
+            st.subheader("🎯 Radar de Pagamentos (Próximos Dias)")
+            df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
+            hoje_dt = pd.Timestamp.now().normalize()
+            df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje_dt].sort_values('Vencimento_DT')
+
+            if not df_futuro.empty:
+                fig_radar = px.bar(df_futuro, x='Vencimento', y='Saldo_Limpo', color='Beneficiario', barmode='stack')
+                st.plotly_chart(fig_radar, use_container_width=True)
+            else:
+                st.info("Não há títulos a vencer para datas futuras na base atual.")
+        else:
+            st.warning("⚠️ Histórico vazio. Por favor, realize o upload dos dados.")
+
+    # ------------------------------------------
+    # ABA: PAGAMENTOS UNICRED
+    # ------------------------------------------
+    elif aba == "Pagamentos Unicred":
         st.title("🔌 Gerador CNAB 240 - Unicred")
         st.sidebar.subheader("Dados Bancários Hospital")
         h_dados = {
@@ -150,7 +216,7 @@ if check_password():
             conn = conectar_sheets()
             df_dia = conn.read(worksheet="Pagamentos_Dia", ttl=0)
             if not df_dia.empty:
-                st.write(f"📋 **{len(df_dia)}** títulos encontrados para processamento hoje.")
+                st.write(f"📋 **{len(df_dia)}** títulos filtrados para hoje.")
                 if 'Pagar?' not in df_dia.columns:
                     df_dia.insert(0, 'Pagar?', True)
                 
@@ -169,72 +235,23 @@ if check_password():
                         )
                         st.success("Arquivo pronto! Valide no portal da Unicred.")
             else:
-                st.warning("Aba 'Pagamentos_Dia' está vazia ou sem títulos para hoje.")
+                st.warning("Aba 'Pagamentos_Dia' está vazia.")
         except Exception as e:
-            st.error(f"Erro ao conectar ao Google Sheets: {e}")
+            st.error(f"Erro na conexão com Sheets: {e}")
 
-    elif aba == "Dashboard Principal":
-        if not df_hist.empty:
-            ultima_data = df_hist['data_processamento'].max()
-            df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
-
-            df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
-            total_hoje = df_abc['Saldo_Limpo'].sum()
-            df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
-            df_abc['Classe ABC'] = df_abc['Acumulado'].apply(
-                lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)')
-            )
-            df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
-
-            st.title("Gestão de Passivo - SOS CARDIO")
-            st.write(f"📅 Dados da base: **{ultima_data}**")
-            
-            m1, m2, m3, m4 = st.columns(4)
-            total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
-            m1.metric("Dívida Total", formatar_real(total_hoje))
-            m2.metric("Total Vencido", formatar_real(total_vencido))
-            m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
-            m4.metric("Qtd Classe A", len(df_abc[df_abc['Classe ABC'] == 'Classe A (80%)']))
-
-            st.divider()
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("Curva ABC")
-                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4,
-                             color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
-                st.plotly_chart(fig_p, use_container_width=True)
-
-            with c2:
-                st.subheader("Ageing por Faixa")
-                ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-                df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
-                fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'])
-                st.plotly_chart(fig_b, use_container_width=True)
-
-            st.divider()
-            st.subheader("Análise por Fornecedor")
-            df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
-                Total_Aberto=('Saldo_Limpo', 'sum'),
-                Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
-            ).sort_values('Total_Aberto', ascending=False).reset_index()
-
-            for _, row in df_agrup.iterrows():
-                label = f"{row['Beneficiario']} | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
-                with st.expander(label):
-                    detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
-                    st.dataframe(detalhe[['Vencimento', 'Saldo Atual', 'Carteira']], use_container_width=True, hide_index=True)
-        else:
-            st.warning("Histórico vazio. Faça o upload dos dados.")
-
+    # ------------------------------------------
+    # ABA: UPLOAD
+    # ------------------------------------------
     elif aba == "Upload":
         st.title("Upload da Base de Histórico")
         uploaded = st.file_uploader("Selecione o arquivo Excel do Tasy", type=["xlsx"])
         if uploaded and st.button("Salvar e Atualizar"):
             df_new = pd.read_excel(uploaded)
             if salvar_no_historico(df_new):
-                st.success("Dados salvos!")
+                st.success("Dados salvos com sucesso!")
                 st.rerun()
 
+    # Botão de Logout na barra lateral
     if st.sidebar.button("🔒 Sair / Bloquear App"):
         st.session_state["password_correct"] = False
         st.rerun()
