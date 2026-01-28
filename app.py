@@ -41,14 +41,11 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
 
-# CSS PARA APROXIMAR COMPONENTES
 st.markdown("""
     <style>
     .stMetric { background-color: white; padding: 10px; border-radius: 10px; border-left: 5px solid #004a99; }
-    [data-testid="stVerticalBlock"] > div:nth-child(10) { max-height: 480px; overflow-y: auto; }
-    /* Ajuste de margem dos botões */
     .stButton button { width: 100%; }
-    div[data-testid="column"] { padding: 0 5px !important; }
+    div[data-testid="column"] { padding: 0 2px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -70,142 +67,114 @@ if check_password():
     conn = conectar_sheets()
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Evolução Temporal", "Upload"])
 
-    # ------------------------------------------
-    # ABA: DASHBOARD PRINCIPAL (ORIGINAL)
-    # ------------------------------------------
+    # --- ABA: DASHBOARD PRINCIPAL ---
     if aba == "Dashboard Principal":
         df_hist = conn.read(worksheet="Historico", ttl=300)
         if not df_hist.empty:
             df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
             ultima_data = df_hist['data_processamento'].max()
             df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
-            df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
-            total_hoje = df_abc['Saldo_Limpo'].sum()
-            df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
-            df_abc['Classe ABC'] = df_abc['Acumulado'].apply(lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)'))
-            df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
-
+            
             st.title("Gestão de Passivo - SOS CARDIO")
             m1, m2, m3, m4 = st.columns(4)
+            total_hoje = df_hoje['Saldo_Limpo'].sum()
             total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
             m1.metric("Dívida Total", formatar_real(total_hoje))
             m2.metric("Total Vencido", formatar_real(total_vencido))
             m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
-            m4.metric("Qtd Classe A", len(df_abc[df_abc['Classe ABC'] == 'Classe A (80%)']))
+            m4.metric("Última Atualização", ultima_data)
 
             st.divider()
             c1, c2 = st.columns(2)
             with c1:
                 st.subheader("Curva ABC")
-                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+                df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
+                df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
+                df_abc['Classe ABC'] = df_abc['Acumulado'].apply(lambda x: 'Classe A' if x <= 0.8 else ('Classe B' if x <= 0.95 else 'Classe C'))
+                fig_p = px.pie(df_abc, values='Saldo_Limpo', names='Classe ABC', hole=0.4)
                 st.plotly_chart(fig_p, use_container_width=True)
             with c2:
                 st.subheader("Ageing")
                 ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
                 df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
-                fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s')
-                st.plotly_chart(fig_b, use_container_width=True)
+                st.plotly_chart(px.bar(df_bar, x='Carteira', y='Saldo_Limpo'), use_container_width=True)
 
             st.divider()
             st.subheader("Detalhamento por Fornecedor")
             with st.container(height=480):
-                df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
-                    Total_Aberto=('Saldo_Limpo', 'sum'),
-                    Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
-                ).sort_values('Total_Aberto', ascending=False).reset_index()
-                for _, row in df_agrup.iterrows():
-                    label = f"{row['Beneficiario']} | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
-                    with st.expander(label):
-                        detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
-                        detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
-                        st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
+                for forn in df_hoje['Beneficiario'].unique()[:20]: # Exemplo top 20
+                    with st.expander(f"🏢 {forn}"):
+                        st.table(df_hoje[df_hoje['Beneficiario'] == forn][['Vencimento', 'Saldo Atual', 'Carteira']])
 
-            st.divider()
-            st.subheader("🎯 Radar de Pagamentos")
-            df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-            df_mes = df_hoje[df_hoje['Vencimento_DT'] >= pd.Timestamp.now().normalize()].copy()
-            if not df_mes.empty:
-                df_mes['Data_Formatada'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
-                fig_forn = px.bar(df_mes.sort_values('Vencimento_DT'), x='Data_Formatada', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=500)
-                df_totais = df_mes.groupby('Data_Formatada')['Saldo_Limpo'].sum().reset_index()
-                for i, row in df_totais.iterrows():
-                    fig_forn.add_annotation(x=row['Data_Formatada'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12)
-                st.plotly_chart(fig_forn, use_container_width=True)
-
-    # ------------------------------------------
-    # ABA: PAGAMENTOS UNICRED (OTIMIZADA)
-    # ------------------------------------------
+    # --- ABA: PAGAMENTOS UNICRED ---
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred - Gestão de Remessa")
 
-        # 1. Carregamento Único
         if 'df_pagamentos' not in st.session_state:
             df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
             if not df_p.empty:
-                # Garante que Pagar? seja booleano para o checklist aparecer
                 if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
-                df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
+                # CORREÇÃO CRÍTICA: Converter para bool e preencher nulos
+                df_p['Pagar?'] = df_p['Pagar?'].astype(bool).fillna(True)
                 st.session_state['df_pagamentos'] = df_p
             else:
                 st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'DATA_PAGAMENTO', 'CHAVE_PIX', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA', 'cnpj_beneficiario'])
 
-        # 2. Botões Aproximados e Harmonizados
-        c_btn1, c_btn2, c_btn3, c_btn4 = st.columns([1, 1, 1, 1.5])
+        # Botões Aproximados
+        col_btn = st.columns([0.8, 0.8, 0.8, 1.2, 2])
         
-        with c_btn1:
-            # JANELA FLUTUANTE PARA NOVO PAGAMENTO
-            with st.popover("➕ Novo Título"):
-                st.write("Inserir Dados do Fornecedor")
-                n_fav = st.text_input("Nome Favorecido")
-                n_val = st.number_input("Valor", min_value=0.0, format="%.2f")
-                n_data = st.date_input("Vencimento", datetime.now())
-                n_cnpj = st.text_input("CNPJ Favorecido")
-                n_pix = st.text_input("Chave PIX")
-                n_banco = st.text_input("Banco (ex: 001)", "001")
-                n_ag = st.text_input("Agência", "0000")
-                n_cc = st.text_input("Conta", "00000")
-                n_dg = st.text_input("Dígito", "0")
-                
-                if st.button("Adicionar à Lista"):
-                    novo_row = pd.DataFrame([{
-                        'Pagar?': True, 'NOME_FAVORECIDO': n_fav, 'VALOR_PAGAMENTO': n_val,
-                        'DATA_PAGAMENTO': n_data.strftime('%d/%m/%Y'), 'CHAVE_PIX': n_pix,
-                        'BANCO_FAVORECIDO': n_banco, 'AGENCIA_FAVORECIDA': n_ag,
-                        'CONTA_FAVORECIDA': n_cc, 'DIGITO_CONTA_FAVORECIDA': n_dg, 'cnpj_beneficiario': n_cnpj
+        with col_btn[0]:
+            with st.popover("➕ Novo"):
+                st.write("Dados do Pagamento")
+                f_nome = st.text_input("Fornecedor")
+                f_val = st.number_input("Valor", min_value=0.0)
+                f_data = st.date_input("Data", datetime.now())
+                f_cnpj = st.text_input("CNPJ")
+                f_pix = st.text_input("PIX")
+                if st.button("Adicionar"):
+                    nova_linha = pd.DataFrame([{
+                        'Pagar?': True, 'NOME_FAVORECIDO': f_nome, 'VALOR_PAGAMENTO': f_val,
+                        'DATA_PAGAMENTO': f_data.strftime('%d/%m/%Y'), 'CHAVE_PIX': f_pix,
+                        'BANCO_FAVORECIDO': '001', 'AGENCIA_FAVORECIDA': '0', 'CONTA_FAVORECIDA': '0',
+                        'DIGITO_CONTA_FAVORECIDA': '0', 'cnpj_beneficiario': f_cnpj
                     }])
-                    st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo_row], ignore_index=True)
+                    st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], nova_linha], ignore_index=True)
                     st.rerun()
 
-        with c_btn2:
-            if st.button("💾 Salvar Planilha"):
+        with col_btn[1]:
+            if st.button("💾 Salvar"):
                 conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
-                st.success("Sincronizado!")
+                st.toast("Salvo no Google Sheets!", icon="✅")
 
-        with c_btn3:
-            if st.button("🔄 Atualizar"):
+        with col_btn[2]:
+            if st.button("🔄 Limpar"):
                 del st.session_state['df_pagamentos']
                 st.rerun()
 
-        with c_btn4:
-            df_final = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
-            if not df_final.empty:
-                v_total = df_final['VALOR_PAGAMENTO'].astype(float).sum()
-                st.download_button(f"🚀 Remessa ({formatar_real(v_total)})", 
-                                 gerar_cnab240(df_final, {'cnpj': '00000000000000', 'convenio': '0', 'ag': '0', 'cc': '0'}),
+        with col_btn[3]:
+            df_rem = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
+            if not df_rem.empty:
+                total_rem = df_rem['VALOR_PAGAMENTO'].astype(float).sum()
+                st.download_button(f"🚀 Remessa ({formatar_real(total_rem)})", 
+                                 gerar_cnab240(df_rem, {'cnpj': '00000000000000', 'convenio': '0', 'ag': '0', 'cc': '0'}),
                                  f"REM_{datetime.now().strftime('%d%m')}.txt")
 
         st.divider()
 
-        # 3. Editor de Dados com Checklist
+        # Editor corrigido
         st.session_state['df_pagamentos'] = st.data_editor(
             st.session_state['df_pagamentos'],
-            column_config={"Pagar?": st.column_config.CheckboxColumn("Pagar?", default=True)},
-            hide_index=True, use_container_width=True
+            column_config={
+                "Pagar?": st.column_config.CheckboxColumn("Pagar?"),
+                "VALOR_PAGAMENTO": st.column_config.NumberColumn("Valor", format="R$ %.2f")
+            },
+            hide_index=True, 
+            use_container_width=True
         )
 
     elif aba == "Upload":
         st.title("Upload da Base")
-        up = st.file_uploader("Arquivo Tasy", type=["xlsx"])
+        up = st.file_uploader("Arquivo", type=["xlsx"])
         if up and st.button("Processar"):
             if salvar_no_historico(pd.read_excel(up)): st.success("Ok!"); st.rerun()
 
