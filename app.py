@@ -6,7 +6,7 @@ from datetime import datetime
 import unicodedata
 
 # ==========================================
-# 1. CONFIGURAÇÃO, CSS E SEGURANÇA (LOGIN)
+# 1. CONFIGURAÇÃO E SEGURANÇA
 # ==========================================
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
@@ -23,7 +23,7 @@ def check_password():
     st.markdown("<h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.text_input("Digite a senha de acesso:", type="password", on_change=password_entered, key="password")
+        st.text_input("Senha:", type="password", on_change=password_entered, key="password")
     return False
 
 # --- FUNÇÕES DE SUPORTE ---
@@ -41,61 +41,42 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto_num = "".join(filter(str.isdigit, str(texto)))
     return texto_num[:tamanho].rjust(tamanho, preenchimento)
 
-# CSS ORIGINAL E CUSTOMIZAÇÃO DE BOTÕES
+# CSS PARA APROXIMAR COMPONENTES
 st.markdown("""
     <style>
-    .stMetric { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #004a99; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stExpander { border: 1px solid #e6e9ef; border-radius: 8px; margin-bottom: 5px; background-color: white; }
-    [data-testid="stVerticalBlock"] > div:nth-child(10) {
-        max-height: 480px; overflow-y: auto; border: 1px solid #d1d5db; padding: 15px; border-radius: 10px; background-color: #f9fafb;
-    }
-    /* Estilização para botões alinhados */
-    div.stButton > button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        font-weight: bold;
-    }
+    .stMetric { background-color: white; padding: 10px; border-radius: 10px; border-left: 5px solid #004a99; }
+    [data-testid="stVerticalBlock"] > div:nth-child(10) { max-height: 480px; overflow-y: auto; }
+    /* Ajuste de margem dos botões */
+    .stButton button { width: 100%; }
+    div[data-testid="column"] { padding: 0 5px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTOR CNAB 240 (UNICRED) ---
+# --- MOTOR CNAB 240 ---
 def gerar_cnab240(df_sel, h):
     l = []
     hoje = datetime.now()
     l.append((f"00100000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000").ljust(240))
     l.append((f"00100011C2001046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{' '*80}{hoje.strftime('%d%m%Y')}{'0'*8}").ljust(240))
     for i, r in df_sel.reset_index(drop=True).iterrows():
-        v = int(float(r['VALOR_PAGAMENTO']) * 100)
-        l.append((f"00100013{formatar_campo(i*2+1,5,'0','r')}A00001000{formatar_campo(r.get('BANCO_FAVORECIDO','001'),3,'0','r')}{formatar_campo(r.get('AGENCIA_FAVORECIDA','0'),5,'0','r')} {formatar_campo(r.get('CONTA_FAVORECIDA','0'),12,'0','r')}{formatar_campo(r.get('DIGITO','0'),1)} {formatar_campo(r['NOME_FAVORECIDO'],30)}{formatar_campo(r.get('Nr. Titulo',''),20)}{pd.to_datetime(r['DATA_PAGAMENTO']).strftime('%d%m%Y')}BRL{'0'*15}{formatar_campo(v,15,'0','r')}{' '*40}00").ljust(240))
+        v = int(float(str(r['VALOR_PAGAMENTO']).replace(',','.')) * 100)
+        l.append((f"00100013{formatar_campo(i*2+1,5,'0','r')}A00001000{formatar_campo(r.get('BANCO_FAVORECIDO','001'),3,'0','r')}{formatar_campo(r.get('AGENCIA_FAVORECIDA','0'),5,'0','r')} {formatar_campo(r.get('CONTA_FAVORECIDA','0'),12,'0','r')}{formatar_campo(r.get('DIGITO_CONTA_FAVORECIDA','0'),1)} {formatar_campo(r['NOME_FAVORECIDO'],30)}{formatar_campo(r.get('Nr. Titulo',''),20)}{pd.to_datetime(r['DATA_PAGAMENTO']).strftime('%d%m%Y')}BRL{'0'*15}{formatar_campo(v,15,'0','r')}{' '*40}00").ljust(240))
         l.append((f"00100013{formatar_campo(i*2+2,5,'0','r')}B   2{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}{' '*100}{formatar_campo(r.get('CHAVE_PIX',''),35)}").ljust(240))
     l.append((f"00100015{' '*9}{formatar_campo(len(l)+1,6,'0','r')}{'0'*100}").ljust(240))
     l.append((f"00199999{' '*9}000001{formatar_campo(len(l)+1,6,'0','r')}").ljust(240))
     return "\r\n".join(l)
 
-# ==========================================
-# 3. LÓGICA DO APP
-# ==========================================
 if check_password():
-    @st.cache_data(ttl=300)
-    def carregar_dados_hist():
-        try:
-            conn = conectar_sheets()
-            df = conn.read(worksheet="Historico", ttl=300)
-            if not df.empty:
-                df['Beneficiario'] = df['Beneficiario'].astype(str).str.strip()
-                df['Saldo_Limpo'] = pd.to_numeric(df['Saldo Atual'], errors='coerce').fillna(0)
-            return df
-        except: return pd.DataFrame()
-
-    df_hist = carregar_dados_hist()
-
-    st.sidebar.title("Menu SOS CARDIO")
+    conn = conectar_sheets()
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Evolução Temporal", "Upload"])
 
-    # --- ABA: DASHBOARD PRINCIPAL ---
+    # ------------------------------------------
+    # ABA: DASHBOARD PRINCIPAL (ORIGINAL)
+    # ------------------------------------------
     if aba == "Dashboard Principal":
+        df_hist = conn.read(worksheet="Historico", ttl=300)
         if not df_hist.empty:
+            df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
             ultima_data = df_hist['data_processamento'].max()
             df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
             df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
@@ -115,129 +96,119 @@ if check_password():
             st.divider()
             c1, c2 = st.columns(2)
             with c1:
-                st.subheader("Curva ABC de Fornecedores")
-                sel_abc = st.multiselect("Filtrar Classes:", ['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], default=['Classe A (80%)', 'Classe B (15%)', 'Classe C (5%)'], key="f_abc")
-                df_pie = df_hoje[df_hoje['Classe ABC'].isin(sel_abc)]
-                fig_p = px.pie(df_pie, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
+                st.subheader("Curva ABC")
+                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
                 st.plotly_chart(fig_p, use_container_width=True)
             with c2:
-                st.subheader("Volume por Faixa (Ageing)")
+                st.subheader("Ageing")
                 ordem_cart = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-                sel_cart = st.multiselect("Filtrar Faixas:", ordem_cart, default=ordem_cart, key="f_age")
-                df_bar = df_hoje[df_hoje['Carteira'].isin(sel_cart)].groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
+                df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem_cart).reset_index().fillna(0)
                 fig_b = px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s')
                 st.plotly_chart(fig_b, use_container_width=True)
 
             st.divider()
-            st.subheader("Detalhamento com Análise de Risco")
+            st.subheader("Detalhamento por Fornecedor")
             with st.container(height=480):
                 df_agrup = df_hoje.groupby(['Beneficiario', 'Classe ABC']).agg(
                     Total_Aberto=('Saldo_Limpo', 'sum'),
                     Total_Vencido=('Saldo_Limpo', lambda x: df_hoje.loc[x.index][df_hoje.loc[x.index, 'Carteira'] != 'A Vencer']['Saldo_Limpo'].sum())
                 ).sort_values('Total_Aberto', ascending=False).reset_index()
                 for _, row in df_agrup.iterrows():
-                    label = f"{row['Beneficiario']} ({row['Classe ABC']}) | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
+                    label = f"{row['Beneficiario']} | Aberto: {formatar_real(row['Total_Aberto'])} | Vencido: {formatar_real(row['Total_Vencido'])}"
                     with st.expander(label):
                         detalhe = df_hoje[df_hoje['Beneficiario'] == row['Beneficiario']].copy()
                         detalhe['Valor'] = detalhe['Saldo_Limpo'].apply(formatar_real)
                         st.table(detalhe[['Vencimento', 'Valor', 'Carteira']])
 
             st.divider()
-            st.subheader("🎯 Radar de Pagamentos - Detalhamento Diário")
-            hoje_dt = pd.Timestamp.now().normalize()
+            st.subheader("🎯 Radar de Pagamentos")
             df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-            df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= hoje_dt].copy()
-            if not df_futuro.empty:
-                df_futuro['Mes_Ref'] = df_futuro['Vencimento_DT'].dt.strftime('%m/%Y')
-                meses_disp = sorted(df_futuro['Mes_Ref'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-                mes_sel = st.selectbox("Selecione o Mês:", meses_disp)
-                df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_sel].copy()
+            df_mes = df_hoje[df_hoje['Vencimento_DT'] >= pd.Timestamp.now().normalize()].copy()
+            if not df_mes.empty:
                 df_mes['Data_Formatada'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
-                df_mes = df_mes.sort_values('Vencimento_DT')
-                fig_forn = px.bar(df_mes, x='Data_Formatada', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=600, color_discrete_sequence=px.colors.qualitative.Prism)
+                fig_forn = px.bar(df_mes.sort_values('Vencimento_DT'), x='Data_Formatada', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=500)
                 df_totais = df_mes.groupby('Data_Formatada')['Saldo_Limpo'].sum().reset_index()
                 for i, row in df_totais.iterrows():
-                    fig_forn.add_annotation(x=row['Data_Formatada'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12, font=dict(size=11))
-                fig_forn.update_layout(xaxis_type='category', showlegend=False, xaxis=dict(tickangle=-45))
+                    fig_forn.add_annotation(x=row['Data_Formatada'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12)
                 st.plotly_chart(fig_forn, use_container_width=True)
-                st.write("📋 **Top 15 Maiores Pagamentos Previstos**")
-                df_maiores = df_futuro.sort_values('Saldo_Limpo', ascending=False).head(15)
-                df_maiores['Valor'] = df_maiores['Saldo_Limpo'].apply(formatar_real)
-                st.table(df_maiores[['Vencimento', 'Beneficiario', 'Valor', 'Classe ABC']])
 
-    # --- ABA: PAGAMENTOS UNICRED (VISUAL HARMONIZADO) ---
+    # ------------------------------------------
+    # ABA: PAGAMENTOS UNICRED (OTIMIZADA)
+    # ------------------------------------------
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred - Gestão de Remessa")
-        
-        # 1. Carregamento Automático Inicial
-        if 'df_pagamentos' not in st.session_state:
-            try:
-                conn = conectar_sheets()
-                df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
-                if not df_p.empty:
-                    if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
-                    st.session_state['df_pagamentos'] = df_p
-                else:
-                    st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'Nr. Titulo', 'DATA_PAGAMENTO', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO', 'cnpj_beneficiario', 'CHAVE_PIX'])
-            except: st.error("Erro ao carregar dados do Google Sheets.")
 
-        # 2. Layout de Botões Harmonizados logo abaixo do Título
-        col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
+        # 1. Carregamento Único
+        if 'df_pagamentos' not in st.session_state:
+            df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
+            if not df_p.empty:
+                # Garante que Pagar? seja booleano para o checklist aparecer
+                if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
+                df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
+                st.session_state['df_pagamentos'] = df_p
+            else:
+                st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'DATA_PAGAMENTO', 'CHAVE_PIX', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA', 'cnpj_beneficiario'])
+
+        # 2. Botões Aproximados e Harmonizados
+        c_btn1, c_btn2, c_btn3, c_btn4 = st.columns([1, 1, 1, 1.5])
         
-        with col_b1:
-            if st.button("💾 Salvar na Planilha", help="Sincroniza as alterações com o Google Sheets"):
-                try:
-                    conn = conectar_sheets()
-                    conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
-                    st.success("✅ Sincronizado!")
-                except: st.error("Erro ao salvar.")
-        
-        with col_b2:
-            # Botão de Rerun para resetar memória local e puxar do sheets de novo
-            if st.button("🔄 Recarregar Dados", help="Descarta mudanças não salvas e puxa os dados novos do Sheets"):
-                if 'df_pagamentos' in st.session_state:
-                    del st.session_state['df_pagamentos']
+        with c_btn1:
+            # JANELA FLUTUANTE PARA NOVO PAGAMENTO
+            with st.popover("➕ Novo Título"):
+                st.write("Inserir Dados do Fornecedor")
+                n_fav = st.text_input("Nome Favorecido")
+                n_val = st.number_input("Valor", min_value=0.0, format="%.2f")
+                n_data = st.date_input("Vencimento", datetime.now())
+                n_cnpj = st.text_input("CNPJ Favorecido")
+                n_pix = st.text_input("Chave PIX")
+                n_banco = st.text_input("Banco (ex: 001)", "001")
+                n_ag = st.text_input("Agência", "0000")
+                n_cc = st.text_input("Conta", "00000")
+                n_dg = st.text_input("Dígito", "0")
+                
+                if st.button("Adicionar à Lista"):
+                    novo_row = pd.DataFrame([{
+                        'Pagar?': True, 'NOME_FAVORECIDO': n_fav, 'VALOR_PAGAMENTO': n_val,
+                        'DATA_PAGAMENTO': n_data.strftime('%d/%m/%Y'), 'CHAVE_PIX': n_pix,
+                        'BANCO_FAVORECIDO': n_banco, 'AGENCIA_FAVORECIDA': n_ag,
+                        'CONTA_FAVORECIDA': n_cc, 'DIGITO_CONTA_FAVORECIDA': n_dg, 'cnpj_beneficiario': n_cnpj
+                    }])
+                    st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo_row], ignore_index=True)
+                    st.rerun()
+
+        with c_btn2:
+            if st.button("💾 Salvar Planilha"):
+                conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
+                st.success("Sincronizado!")
+
+        with c_btn3:
+            if st.button("🔄 Atualizar"):
+                del st.session_state['df_pagamentos']
                 st.rerun()
 
-        with col_b3:
-            # Cálculo de total em tempo real baseado no que está marcado
-            if 'df_pagamentos' in st.session_state:
-                df_final = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
-                total_pag = df_final['VALOR_PAGAMENTO'].astype(float).sum()
-                st.download_button(
-                    label=f"🚀 Gerar Remessa ({formatar_real(total_pag)})",
-                    data=gerar_cnab240(df_final, {'cnpj': '00000000000000', 'convenio': '0', 'ag': '0', 'cc': '0'}), # Ajuste aqui com seus campos reais
-                    file_name=f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt",
-                    mime="text/plain"
-                )
+        with c_btn4:
+            df_final = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
+            if not df_final.empty:
+                v_total = df_final['VALOR_PAGAMENTO'].astype(float).sum()
+                st.download_button(f"🚀 Remessa ({formatar_real(v_total)})", 
+                                 gerar_cnab240(df_final, {'cnpj': '00000000000000', 'convenio': '0', 'ag': '0', 'cc': '0'}),
+                                 f"REM_{datetime.now().strftime('%d%m')}.txt")
 
         st.divider()
 
-        # 3. Área da Tabela
-        if 'df_pagamentos' in st.session_state:
-            st.info("💡 Clique em '+' no final da tabela para adicionar novos pagamentos manualmente.")
-            # Atualiza o state conforme a edição na tela
-            st.session_state['df_pagamentos'] = st.data_editor(
-                st.session_state['df_pagamentos'], 
-                hide_index=True, 
-                use_container_width=True, 
-                num_rows="dynamic"
-            )
-
-    elif aba == "Evolução Temporal":
-        st.title("Evolução da Inadimplência")
-        df_ev = df_hist.groupby('data_processamento')['Saldo_Limpo'].sum().reset_index()
-        df_ev['dt_ordem'] = pd.to_datetime(df_ev['data_processamento'], format='%d/%m/%Y')
-        fig_ev = px.line(df_ev.sort_values('dt_ordem'), x='data_processamento', y='Saldo_Limpo', markers=True)
-        st.plotly_chart(fig_ev, use_container_width=True)
+        # 3. Editor de Dados com Checklist
+        st.session_state['df_pagamentos'] = st.data_editor(
+            st.session_state['df_pagamentos'],
+            column_config={"Pagar?": st.column_config.CheckboxColumn("Pagar?", default=True)},
+            hide_index=True, use_container_width=True
+        )
 
     elif aba == "Upload":
         st.title("Upload da Base")
-        up = st.file_uploader("Excel do Tasy", type=["xlsx"])
-        if up and st.button("Salvar"):
-            df_n = pd.read_excel(up)
-            if salvar_no_historico(df_n): st.success("Ok!"); st.rerun()
+        up = st.file_uploader("Arquivo Tasy", type=["xlsx"])
+        if up and st.button("Processar"):
+            if salvar_no_historico(pd.read_excel(up)): st.success("Ok!"); st.rerun()
 
     if st.sidebar.button("🔒 Sair"):
         st.session_state["password_correct"] = False
-        st.rerun()
+        st.rerun()vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
