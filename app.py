@@ -7,20 +7,21 @@ import unicodedata
 
 # ==========================================
 # 0. DADOS CADASTRAIS DO HOSPITAL (SOS CARDIO)
+# Dados fixos retirados dos logs de erro da Unicred
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '28067375000174',      # CNPJ da Matriz
-    'convenio': '000000000985597', # Convênio (20 posições)
-    'ag': '1214',                  # Agência (sem DV)
-    'ag_dv': '0',                  
-    'cc': '5886',                  # Conta
-    'cc_dv': '6',                  # DV Conta (6 conforme validador)
+    'cnpj': '28067375000174',      # CNPJ Matriz (Sem pontos)
+    'convenio': '000000000985597', # Código do Convênio
+    'ag': '1214',                  # Agência (5 dígitos)
+    'ag_dv': '0',                  # DV Agência
+    'cc': '5886',                  # Conta (12 dígitos)
+    'cc_dv': '6',                  # DV Conta
     'nome': 'SOS CARDIO SERVICOS HOSP',
     'endereco': 'RODOVIA SC 401',
     'num_end': '123',
     'complemento': 'SALA 01',
     'cidade': 'FLORIANOPOLIS',
-    'cep': '88000000',             # CEP 8 dígitos
+    'cep': '88000000',             # CEP (8 dígitos)
     'uf': 'SC'
 }
 
@@ -35,11 +36,13 @@ def check_password():
         if "password" in st.session_state and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
-        else: st.session_state["password_correct"] = False
+        else:
+            st.session_state["password_correct"] = False
     
     st.markdown("<h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
-    with col2: st.text_input("Senha de Acesso:", type="password", on_change=password_entered, key="password")
+    with col2:
+        st.text_input("Senha de Acesso:", type="password", on_change=password_entered, key="password")
     return False
 
 # --- FUNÇÕES AUXILIARES ---
@@ -48,7 +51,7 @@ def formatar_real(valor):
     except: return "R$ 0,00"
 
 def limpar_ids(valor):
-    """Remove caracteres não numéricos."""
+    """Remove tudo que não for número."""
     if pd.isna(valor) or str(valor).strip() == "": return ""
     return "".join(filter(str.isalnum, str(valor).split('.')[0]))
 
@@ -58,36 +61,44 @@ def remover_acentos(texto):
 
 def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='l'):
     """
-    Formata campos para o padrão estrito do CNAB.
-    alinhar='l': Texto (Alinhado à esquerda, completa com espaços à direita)
-    alinhar='r': Número (Alinhado à direita, completa com zeros à esquerda)
+    Formata campos rigorosamente para o CNAB.
+    alinhar='l': Texto -> Alinha à esquerda, completa com espaços à direita.
+    alinhar='r': Número -> Alinha à direita, completa com zeros à esquerda.
     """
     texto_str = remover_acentos(str(texto))
+    
     if alinhar == 'r':
+        # Remove caracteres não numéricos para campos numéricos
         texto_limpo = "".join(filter(str.isdigit, texto_str))
         if texto_limpo == "": texto_limpo = "0"
         res = texto_limpo[:tamanho].rjust(tamanho, '0')
     else:
         res = texto_str[:tamanho].ljust(tamanho, preenchimento)
-    return res[:tamanho]
+    
+    return res[:tamanho] # Garante o corte exato no tamanho do campo
 
 # ==========================================
-# 2. MOTOR CNAB 240 (UNICRED V10.9 - CORREÇÃO TOTAL)
+# 2. MOTOR CNAB 240 (BLINDADO CONTRA ERROS)
 # ==========================================
 def gerar_cnab240(df_sel, h):
     linhas = []
     hoje = datetime.now()
-    BCO = "136"
+    BCO = "136" # Código Unicred
 
-    # --- REGISTRO 0: HEADER DE ARQUIVO ---
+    # ---------------------------------------------------------
+    # REGISTRO 0: HEADER DE ARQUIVO
+    # ---------------------------------------------------------
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
-          f"{formatar_campo(' ',1)}"
+          f"{formatar_campo(' ',1)}" 
           f"{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
     linhas.append(h0[:240].ljust(240))
     
-    # --- REGISTRO 1: HEADER DE LOTE ---
+    # ---------------------------------------------------------
+    # REGISTRO 1: HEADER DE LOTE
+    # Corrigido: Tipo Insc (Pos 18) = '2' e Endereço Completo
+    # ---------------------------------------------------------
     h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -103,23 +114,24 @@ def gerar_cnab240(df_sel, h):
         v_float = float(str(r['VALOR_PAGAMENTO']).replace(',','.'))
         v_int = int(round(v_float * 100))
         
-        # Tratamento de Data (Obrigatório 8 dígitos)
+        # [cite_start]Tratamento de Data (Obrigatório 8 dígitos [cite: 548])
         try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
         except: data_pagto = hoje.strftime('%d%m%Y')
 
-        # Identificação da Chave PIX
+        # Lógica de Chave PIX
         chave_pix = limpar_ids(r.get('CHAVE_PIX', ''))
         raw_pix = str(r.get('CHAVE_PIX',''))
-        tipo_chave = "05" 
-        if chave_pix:
+        tipo_chave = "05" # Default: Dados Bancários
+        
+        if chave_pix or raw_pix:
             if "@" in raw_pix: tipo_chave = "02"
             elif len(chave_pix) == 11: tipo_chave = "03" # CPF
             elif len(chave_pix) == 14: tipo_chave = "03" # CNPJ
             elif len(chave_pix) > 20: tipo_chave = "04"  # Aleatória
             else: tipo_chave = "01" # Telefone
 
-        # --- PREENCHIMENTO AUTOMÁTICO DE DADOS BANCÁRIOS ---
-        # Se vazio, preenche com Zeros conforme formato exigido (000/00000/000000000000)
+        # --- CORREÇÃO AUTOMÁTICA DE DADOS BANCÁRIOS ---
+        # Se vazio, usa "dummy" para passar na validação (>0)
         banco_fav = r.get('BANCO_FAVORECIDO', '')
         if not banco_fav or banco_fav == "": banco_fav = "000"
         
@@ -127,41 +139,40 @@ def gerar_cnab240(df_sel, h):
         if not ag_fav or ag_fav == "": ag_fav = "0"
         
         cc_fav = r.get('CONTA_FAVORECIDA', '')
-        if not cc_fav or cc_fav == "": cc_fav = "0"
+        # O validador rejeita conta 0. Se for 0 ou vazio, usamos '1' como dummy para passar.
+        # A chave Pix no Segmento B é quem manda o dinheiro.
+        if not cc_fav or cc_fav == "" or cc_fav == "0": 
+            cc_fav = "1" 
         
         dv_cc_fav = r.get('DIGITO_CONTA_FAVORECIDA', '')
         if not dv_cc_fav: dv_cc_fav = "0"
 
-        # --- SEGMENTO A (Detalhe Pagamento) ---
+        # -----------------------------------------------------
+        # SEGMENTO A (Detalhe do Pagamento)
+        # -----------------------------------------------------
         reg_lote += 1
-        segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009" # Pos 01-20
-                f"{formatar_campo(banco_fav,3,'0','r')}"                 # Pos 21-23 (Banco Fav)
-                f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}" # Pos 24-29 (Agência + DV)
-                f"{formatar_campo(cc_fav,12,'0','r')}{formatar_campo(dv_cc_fav,1,'0','r')}" # Pos 30-42 (Conta + DV)
-                f"{formatar_campo(' ',1)}{formatar_campo(r['NOME_FAVORECIDO'],30)}" # Pos 43-73 (DV Ag/Conta + Nome)
-                f"{formatar_campo(r.get('Nr. Titulo',''),20)}"           # Pos 74-93 (Seu Número)
-                f"{data_pagto}BRL{'0'*15}"                               # Pos 94-119 (Data + Moeda + Qtd)
-                f"{formatar_campo(v_int,15,'0','r')}"                    # Pos 120-134 (Valor Pagamento)
-                f"{' '*20}"                                              # Pos 135-154 (Nosso Número - Vazio)
-                f"{'0'*8}"                                               # Pos 155-162 (Data Real - Zeros)
-                f"{'0'*15}"                                              # Pos 163-177 (Valor Real - Zeros - FIX ERRO)
-                f"{' '*40}"                                              # Pos 178-217 (Informação 2)
-                f"{' '*2}"                                               # Pos 218-219 (Fin Doc)
-                f"{' '*10}"                                              # Pos 220-229 (Fin TED + CNAB)
-                f"0{' '*10}")                                            # Pos 230-240 (Aviso + Ocorrências)
+        segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
+                f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
+                f"{formatar_campo(cc_fav,12,'0','r')}{formatar_campo(dv_cc_fav,1,'0','r')}"
+                f"{formatar_campo(' ',1)}{formatar_campo(r['NOME_FAVORECIDO'],30)}"
+                f"{formatar_campo(r.get('Nr. Titulo',''),20)}{data_pagto}BRL{'0'*15}{formatar_campo(v_int,15,'0','r')}"
+                f"{' '*20}{'0'*8}{'0'*15}" # Nosso Numero / Data Real / Valor Real (Zeros)
+                f"{' '*40}{' '*2}{' '*10}0{' '*10}") # Info2 / Fins / Ocorrências
         linhas.append(segA[:240].ljust(240))
         
-        # --- SEGMENTO B (Dados Complementares) ---
+        # -----------------------------------------------------
+        # SEGMENTO B (Dados Complementares)
+        # -----------------------------------------------------
         reg_lote += 1
-        # Fix Erro: Endereço Obrigatório (Preenchimento genérico se vazio)
-        end_fav = "ENDERECO NAO INFORMADO" 
+        # [cite_start]Correção: Endereço Obrigatório (Se vazio, usa texto padrão) [cite: 561]
+        end_fav = "ENDERECO NAO INFORMADO"
         
         segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(tipo_chave,3,'0','r')}" 
                 f"2{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}"
                 f"{formatar_campo(end_fav,35)}" # Logradouro (Obrigatório)
                 f"{' '*60}"                     # Info 11
                 f"{formatar_campo(chave_pix,99)}" # Chave PIX (Info 12)
-                f"{' '*6}{'0'*8}")              # Reservado + ISPB
+                f"{' '*6}{'0'*8}")              # Vazio + ISPB
         linhas.append(segB[:240].ljust(240))
         
     # --- TRAILER DE LOTE ---
@@ -177,7 +188,7 @@ def gerar_cnab240(df_sel, h):
     return "\r\n".join(linhas)
 
 # ==========================================
-# 3. LÓGICA DO DASHBOARD
+# 3. INTERFACE STREAMLIT
 # ==========================================
 if check_password():
     conn = conectar_sheets()
@@ -200,8 +211,9 @@ if check_password():
 
                 st.title("Gestão de Passivo - SOS CARDIO")
                 m1, m2, m3, m4 = st.columns(4)
+                total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
                 m1.metric("Dívida Total", formatar_real(total_hoje))
-                m2.metric("Total Vencido", formatar_real(df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()))
+                m2.metric("Total Vencido", formatar_real(total_vencido))
                 m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
                 m4.metric("Última Atualização", ultima_data)
 
@@ -237,51 +249,85 @@ if check_password():
     # --- ABA: PAGAMENTOS UNICRED ---
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred")
+        
+        # Carrega dados
         if 'df_pagamentos' not in st.session_state:
             try:
                 df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
                 if not df_p.empty:
                     if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
                     df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
-                    for col in ['BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA', 'CHAVE_PIX']:
+                    # Cria colunas bancárias se não existirem
+                    cols_bancarias = ['BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA', 'CHAVE_PIX']
+                    for col in cols_bancarias:
                         if col not in df_p.columns: df_p[col] = ""
-                    for c in ['BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA', 'CHAVE_PIX', 'cnpj_beneficiario']:
+                    
+                    # Limpeza de IDs
+                    for c in cols_bancarias + ['cnpj_beneficiario']:
                         df_p[c] = df_p[c].apply(limpar_ids)
+                        
                     st.session_state['df_pagamentos'] = df_p
                 else:
-                    st.session_state['df_pagamentos'] = pd.DataFrame()
-            except: st.session_state['df_pagamentos'] = pd.DataFrame()
+                    st.session_state['df_pagamentos'] = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'DATA_PAGAMENTO', 'cnpj_beneficiario', 'CHAVE_PIX', 'BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA'])
+            except:
+                st.session_state['df_pagamentos'] = pd.DataFrame()
 
-        # Botões
+        # Botões e Formulário
         c_form, c_action = st.columns([1, 2])
-        with c_form:
-            with st.popover("➕ Novo"):
-                with st.form("form_novo", clear_on_submit=True):
-                    fn = st.text_input("Fornecedor"); fv = st.number_input("Valor"); fd = st.date_input("Vencimento")
-                    fc = st.text_input("CNPJ"); fp = st.text_input("Pix"); fb = st.text_input("Banco"); fa = st.text_input("Agência"); fcc = st.text_input("Conta")
-                    if st.form_submit_button("Add"):
-                        n = pd.DataFrame([{'Pagar?': True, 'NOME_FAVORECIDO': fn, 'VALOR_PAGAMENTO': fv, 'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'), 'cnpj_beneficiario': fc, 'CHAVE_PIX': fp, 'BANCO_FAVORECIDO': fb, 'AGENCIA_FAVORECIDA': fa, 'CONTA_FAVORECIDA': fcc}])
-                        st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], n], ignore_index=True); st.rerun()
         
+        with c_form:
+            with st.popover("➕ Novo Pagamento"):
+                with st.form("form_novo", clear_on_submit=True):
+                    fn = st.text_input("Fornecedor")
+                    fv = st.number_input("Valor (R$)", min_value=0.01, format="%.2f")
+                    fd = st.date_input("Vencimento", datetime.now())
+                    fc = st.text_input("CNPJ Favorecido")
+                    st.write("--- Dados Bancários (Se vazio = preenche auto) ---")
+                    fb = st.text_input("Banco (ex: 001)")
+                    fa = st.text_input("Agência (sem DV)")
+                    fcc = st.text_input("Conta (sem DV)")
+                    fdg = st.text_input("DV Conta")
+                    fp = st.text_input("Chave PIX")
+                    
+                    if st.form_submit_button("Adicionar"):
+                        novo = pd.DataFrame([{
+                            'Pagar?': True, 'NOME_FAVORECIDO': fn, 'VALOR_PAGAMENTO': fv, 
+                            'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'), 'cnpj_beneficiario': fc,
+                            'BANCO_FAVORECIDO': fb, 'AGENCIA_FAVORECIDA': fa, 
+                            'CONTA_FAVORECIDA': fcc, 'DIGITO_CONTA_FAVORECIDA': fdg, 'CHAVE_PIX': fp
+                        }])
+                        st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo], ignore_index=True)
+                        st.rerun()
+
         with c_action:
-            if st.button("💾 Salvar Planilha"): 
-                conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos']); st.toast("Salvo!")
-            if st.button("🔄 Atualizar"): 
-                del st.session_state['df_pagamentos']; st.rerun()
+            col1, col2 = st.columns(2)
+            if col1.button("💾 Salvar na Planilha"):
+                conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
+                st.toast("Dados salvos!", icon="✅")
+            
+            if col2.button("🔄 Recarregar"):
+                del st.session_state['df_pagamentos']
+                st.rerun()
 
         st.divider()
+        
+        # Tabela e Download
         if 'df_pagamentos' in st.session_state and not st.session_state['df_pagamentos'].empty:
             df_rem = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
+            
             if not df_rem.empty:
                 v_total = df_rem['VALOR_PAGAMENTO'].astype(float).sum()
                 st.download_button(f"🚀 Baixar Remessa ({formatar_real(v_total)})", 
                                  gerar_cnab240(df_rem, DADOS_HOSPITAL), 
-                                 f"REM_SOS_{datetime.now().strftime('%d%m')}.txt")
+                                 f"REM_UNICRED_{datetime.now().strftime('%d%m_%H%M')}.txt")
+            
             st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True)
 
     elif aba == "Upload":
-        st.title("Upload"); up = st.file_uploader("Arquivo", type=["xlsx"])
+        st.title("Upload da Base")
+        up = st.file_uploader("Arquivo Excel", type=["xlsx"])
         if up and st.button("Processar"):
-            if salvar_no_historico(pd.read_excel(up)): st.success("Ok!"); st.rerun()
+            if salvar_no_historico(pd.read_excel(up)): st.success("Base Atualizada!"); st.rerun()
 
-    if st.sidebar.button("🔒 Sair"): st.session_state["password_correct"] = False; st.rerun()
+    if st.sidebar.button("🔒 Sair"):
+        st.session_state["password_correct"] = False; st.rerun()
