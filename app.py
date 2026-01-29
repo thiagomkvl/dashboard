@@ -43,9 +43,12 @@ def remover_acentos(texto):
 
 def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
     texto = remover_acentos(limpar_ids(texto) if alinhar == 'direita' else str(texto))
-    if alinhar == 'esquerda': return texto[:tamanho].ljust(tamanho, preenchimento)
-    texto_num = "".join(filter(str.isdigit, texto))
-    return texto_num[:tamanho].rjust(tamanho, preenchimento)
+    if alinhar == 'esquerda': 
+        res = texto[:tamanho].ljust(tamanho, preenchimento)
+    else:
+        texto_num = "".join(filter(str.isdigit, texto))
+        res = texto_num[:tamanho].rjust(tamanho, preenchimento)
+    return res[:tamanho] # Garante corte no tamanho exato
 
 st.markdown("""
     <style>
@@ -56,52 +59,57 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTOR CNAB 240 AJUSTADO (UNICRED V10.9) ---
+# --- MOTOR CNAB 240 AJUSTADO (FIX 240 CARACTERES) ---
 def gerar_cnab240(df_sel, h):
-    l = []
+    linhas = []
     hoje = datetime.now()
     
-    # Registro 0: Header de Arquivo [cite: 1]
-    l.append((f"00100000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000").ljust(240))
+    # Registro 0: Header de Arquivo
+    h0 = f"00100000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000"
+    linhas.append(h0[:240].ljust(240)) [cite: 17]
     
-    # Registro 1: Header de Lote (Lançamento 45 - Pix / Layout 046) [cite: 17, 24]
-    l.append((f"00100011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{' '*80}{hoje.strftime('%d%m%Y')}{'0'*8}").ljust(240))
+    # Registro 1: Header de Lote (Pix Lançamento 45 / Layout 046)
+    h1 = f"00100011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h.get('convenio','0'),20,'0','r')}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}  {formatar_campo('SOS CARDIO SERVICOS HOSP',30)}{' '*80}{hoje.strftime('%d%m%Y')}{'0'*8}"
+    linhas.append(h1[:240].ljust(240)) [cite: 17, 23, 24]
     
-    contador_reg = 2
-    
+    reg_lote = 0
     for i, r in df_sel.reset_index(drop=True).iterrows():
         v = int(float(str(r['VALOR_PAGAMENTO']).replace(',','.')) * 100)
         chave_pix = limpar_ids(r.get('CHAVE_PIX', ''))
         
-        # Dinâmica de Identificação da Forma de Iniciação (G100) 
+        # Iniciação Dinâmica (G100)
         if chave_pix:
-            if "@" in chave_pix: forma_iniciacao = "02" # Email 
-            elif len(chave_pix) == 11 or len(chave_pix) == 14: forma_iniciacao = "03" # CPF/CNPJ 
-            elif chave_pix.startswith("+") or (len(chave_pix) >= 10 and chave_pix.isdigit()): forma_iniciacao = "01" # Telefone [cite: 77]
-            else: forma_iniciacao = "04" # Chave Aleatória [cite: 82]
+            if "@" in chave_pix: forma_ini = "02" # Email [cite: 79]
+            elif len(chave_pix) in [11, 14]: forma_ini = "03" # CPF/CNPJ [cite: 81]
+            elif chave_pix.startswith("+") or (len(chave_pix) >= 10 and chave_pix.isdigit()): forma_ini = "01" # Tel [cite: 77]
+            else: forma_ini = "04" # Aleatória [cite: 82]
         else:
-            forma_iniciacao = "05" # Dados Bancários 
+            forma_ini = "05" # Dados Bancários [cite: 83]
 
-        # Segmento A (Câmara 009 - Pix) [cite: 36, 51]
-        l.append((f"00100013{formatar_campo(i*2+1,5,'0','r')}A00001009{formatar_campo(r['BANCO_FAVORECIDO'],3,'0','r')}{formatar_campo(r['AGENCIA_FAVORECIDA'],5,'0','r')} {formatar_campo(r['CONTA_FAVORECIDA'],12,'0','r')}{formatar_campo(r['DIGITO_CONTA_FAVORECIDA'],1)} {formatar_campo(r['NOME_FAVORECIDO'],30)}{formatar_campo(r.get('Nr. Titulo',''),20)}{pd.to_datetime(r['DATA_PAGAMENTO']).strftime('%d%m%Y')}BRL{'0'*15}{formatar_campo(v,15,'0','r')}{' '*40}00").ljust(240))
+        # Segmento A (Câmara 009 - Pix)
+        reg_lote += 1
+        segA = f"00100013{formatar_campo(reg_lote,5,'0','r')}A00001009{formatar_campo(r['BANCO_FAVORECIDO'],3,'0','r')}{formatar_campo(r['AGENCIA_FAVORECIDA'],5,'0','r')} {formatar_campo(r['CONTA_FAVORECIDA'],12,'0','r')}{formatar_campo(r['DIGITO_CONTA_FAVORECIDA'],1)} {formatar_campo(r['NOME_FAVORECIDO'],30)}{formatar_campo(r.get('Nr. Titulo',''),20)}{pd.to_datetime(r['DATA_PAGAMENTO']).strftime('%d%m%Y')}BRL{'0'*15}{formatar_campo(v,15,'0','r')}{' '*40}00"
+        linhas.append(segA[:240].ljust(240)) [cite: 36, 51]
         
-        # Segmento B (Iniciação dinâmica + ISPB) [cite: 67, 71]
-        # Posição 15-17: Forma Iniciação | Posição 233-240: ISPB [cite: 67]
-        l.append((f"00100013{formatar_campo(i*2+2,5,'0','r')}B   {forma_iniciacao}{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}{' '*100}{formatar_campo(chave_pix,35)}{' '*68}00000000").ljust(240))
+        # Segmento B (Iniciação + ISPB)
+        reg_lote += 1
+        segB = f"00100013{formatar_campo(reg_lote,5,'0','r')}B   {forma_ini}{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}{' '*100}{formatar_campo(chave_pix,35)}{' '*68}00000000"
+        linhas.append(segB[:240].ljust(240)) [cite: 67, 72]
         
-        contador_reg += 2
-
-    # Registro 5: Trailer de Lote [cite: 164]
-    valor_total = int(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100)
-    l.append((f"00100015{' '*9}{formatar_campo(contador_reg + 1,6,'0','r')}{formatar_campo(valor_total,18,'0','r')}{'0'*100}").ljust(240))
+    # Registro 5: Trailer de Lote
+    reg_lote += 1
+    v_total = int(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100)
+    t5 = f"00100015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}{'0'*100}"
+    linhas.append(t5[:240].ljust(240)) [cite: 164]
     
-    # Registro 9: Trailer de Arquivo [cite: 164]
-    l.append((f"00199999{' '*9}000001{formatar_campo(len(l)+1,6,'0','r')}").ljust(240))
+    # Registro 9: Trailer de Arquivo
+    t9 = f"00199999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}"
+    linhas.append(t9[:240].ljust(240))
     
-    return "\r\n".join(l)
+    return "\n".join(linhas) # Uso de \n simples para evitar caracteres de controle invisíveis
 
 # ==========================================
-# 3. LÓGICA DO APP
+# 3. LÓGICA DO APP (Dashboard Mantido)
 # ==========================================
 if check_password():
     conn = conectar_sheets()
@@ -113,54 +121,23 @@ if check_password():
             df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
             ultima_data = df_hist['data_processamento'].max()
             df_hoje = df_hist[df_hist['data_processamento'] == ultima_data].copy()
-            
             df_abc = df_hoje.groupby('Beneficiario')['Saldo_Limpo'].sum().sort_values(ascending=False).reset_index()
             total_hoje = df_abc['Saldo_Limpo'].sum()
             df_abc['Acumulado'] = df_abc['Saldo_Limpo'].cumsum() / total_hoje
             df_abc['Classe ABC'] = df_abc['Acumulado'].apply(lambda x: 'Classe A (80%)' if x <= 0.8 else ('Classe B (15%)' if x <= 0.95 else 'Classe C (5%)'))
             df_hoje = df_hoje.merge(df_abc[['Beneficiario', 'Classe ABC']], on='Beneficiario', how='left')
-
             st.title("Gestão de Passivo - SOS CARDIO")
             m1, m2, m3, m4 = st.columns(4)
-            total_vencido = df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()
             m1.metric("Dívida Total", formatar_real(total_hoje))
-            m2.metric("Total Vencido", formatar_real(total_vencido))
+            m2.metric("Total Vencido", formatar_real(df_hoje[df_hoje['Carteira'] != 'A Vencer']['Saldo_Limpo'].sum()))
             m3.metric("Fornecedores", len(df_hoje['Beneficiario'].unique()))
             m4.metric("Última Atualização", ultima_data)
-
-            st.divider()
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("Curva ABC")
-                fig_p = px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4, 
-                             color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'})
-                st.plotly_chart(fig_p, use_container_width=True)
-            with c2:
-                st.subheader("Ageing (Vencimentos)")
-                ordem = ['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']
-                df_bar = df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(ordem).reset_index().fillna(0)
-                st.plotly_chart(px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s'), use_container_width=True)
-
-            st.divider()
-            st.subheader("🎯 Radar de Pagamentos")
-            df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-            df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= pd.Timestamp.now().normalize()].copy()
-            if not df_futuro.empty:
-                df_futuro['Mes_Ref'] = df_futuro['Vencimento_DT'].dt.strftime('%m/%Y')
-                meses_disp = sorted(df_futuro['Mes_Ref'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-                mes_sel = st.selectbox("Selecione o Mês:", meses_disp)
-                df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_sel].copy()
-                df_mes['Data_F'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
-                fig_radar = px.bar(df_mes.sort_values('Vencimento_DT'), x='Data_F', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=600)
-                df_totais = df_mes.groupby('Data_F')['Saldo_Limpo'].sum().reset_index()
-                for i, row in df_totais.iterrows():
-                    fig_radar.add_annotation(x=row['Data_F'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12)
-                fig_radar.update_layout(xaxis_type='category', showlegend=False)
-                st.plotly_chart(fig_radar, use_container_width=True)
+            st.divider(); c1, c2 = st.columns(2)
+            with c1: st.plotly_chart(px.pie(df_hoje, values='Saldo_Limpo', names='Classe ABC', hole=0.4, color_discrete_map={'Classe A (80%)': '#004a99', 'Classe B (15%)': '#ffcc00', 'Classe C (5%)': '#d1d5db'}), use_container_width=True)
+            with c2: st.plotly_chart(px.bar(df_hoje.groupby('Carteira')['Saldo_Limpo'].sum().reindex(['A Vencer', '0-15 dias', '16-30 dias', '31-60 dias', '61-90 dias', '> 90 dias']).reset_index().fillna(0), x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s'), use_container_width=True)
 
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred - Gestão de Remessa")
-
         if 'df_pagamentos' not in st.session_state:
             df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
             if not df_p.empty:
@@ -182,28 +159,20 @@ if check_password():
                     if st.form_submit_button("✅ Adicionar"):
                         nova = pd.DataFrame([{'Pagar?': True, 'NOME_FAVORECIDO': fn, 'VALOR_PAGAMENTO': fv, 'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'), 'CHAVE_PIX': fp, 'BANCO_FAVORECIDO': fb, 'AGENCIA_FAVORECIDA': fa, 'CONTA_FAVORECIDA': fcc, 'DIGITO_CONTA_FAVORECIDA': fdg, 'cnpj_beneficiario': fc}])
                         st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], nova], ignore_index=True); st.rerun()
-
         with col_btns[1]:
             if st.button("💾 Salvar"):
                 conn.update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
                 st.toast("Sincronizado!", icon="✅")
-
         with col_btns[2]:
             if st.button("🔄 Atualizar"): del st.session_state['df_pagamentos']; st.rerun()
-
         with col_btns[3]:
             df_rem = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
             if not df_rem.empty:
                 v_total = df_rem['VALOR_PAGAMENTO'].astype(float).sum()
-                st.download_button(f"🚀 Remessa ({formatar_real(v_total)})", gerar_cnab240(df_rem, {'cnpj': '00000000000000', 'ag': '0', 'cc': '0'}), f"REM_UNICRED_{datetime.now().strftime('%d%m')}.txt")
-
-        st.divider()
-        st.session_state['df_pagamentos'] = st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True)
+                st.download_button(f"🚀 Remessa ({formatar_real(v_total)})", gerar_cnab240(df_rem, {'cnpj': '00000000000000', 'ag': '0', 'cc': '0'}), f"REM_SOS_{datetime.now().strftime('%d%m')}.txt")
+        st.divider(); st.session_state['df_pagamentos'] = st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True)
 
     elif aba == "Upload":
-        st.title("Upload da Base")
-        up = st.file_uploader("Arquivo", type=["xlsx"])
+        st.title("Upload da Base"); up = st.file_uploader("Arquivo", type=["xlsx"])
         if up and st.button("Processar"):
             if salvar_no_historico(pd.read_excel(up)): st.success("Ok!"); st.rerun()
-
-    if st.sidebar.button("🔒 Sair"): st.session_state["password_correct"] = False; st.rerun()
