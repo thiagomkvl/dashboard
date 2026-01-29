@@ -309,8 +309,8 @@ if check_password():
     # ----------------------------------------
     # MÓDULO 2: COCKPIT OPERACIONAL
     # ----------------------------------------
-    elif aba == "🎛️ Cockpit Operacional":
-        st.title("🎛️ Cockpit de Pagamentos")
+    elif aba == "Automação Pagamentos":
+        st.title("Automação Pagamentos")
         st.caption("Central de geração de remessas CNAB 240 (Pix e Boletos)")
 
         # Carregar/Inicializar Sessão
