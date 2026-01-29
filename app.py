@@ -10,7 +10,7 @@ import unicodedata
 # Dados fixos retirados dos logs de erro da Unicred
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '28067375000174',      # CNPJ Matriz (Sem pontos)
+    'cnpj': '85307098000187',      # CNPJ Matriz (Sem pontos)
     'convenio': '000000000985597', # Código do Convênio
     'ag': '1214',                  # Agência (5 dígitos)
     'ag_dv': '0',                  # DV Agência
