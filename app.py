@@ -7,9 +7,10 @@ import re
 
 # ==========================================
 # 0. DADOS CADASTRAIS (SOS CARDIO)
+# CNPJ JÁ ATUALIZADO
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '85307098000187',      # SEU CNPJ REAL
+    'cnpj': '85307098000187',      # CNPJ REAL ATUALIZADO
     'convenio': '000000000985597', # SEU CONVÊNIO
     'ag': '1214',                  # AGÊNCIA
     'ag_dv': '0',
@@ -25,7 +26,7 @@ DADOS_HOSPITAL = {
 }
 
 # ==========================================
-# 1. FUNÇÕES AUXILIARES
+# 1. CONFIGURAÇÃO E FUNÇÕES
 # ==========================================
 st.set_page_config(page_title="SOS CARDIO - Cockpit Financeiro", layout="wide")
 
@@ -34,7 +35,6 @@ def formatar_real(valor):
     except: return "R$ 0,00"
 
 def limpar_ids(valor):
-    """Mantém apenas números."""
     if pd.isna(valor) or str(valor).strip() == "": return ""
     return "".join(filter(str.isalnum, str(valor).split('.')[0]))
 
@@ -43,11 +43,6 @@ def remover_acentos(texto):
     return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn').upper()
 
 def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='l'):
-    """
-    Formata campos rigorosamente para o CNAB.
-    alinhar='l': Texto (Alinhado à esquerda, completa com espaços à direita)
-    alinhar='r': Número (Alinhado à direita, completa com zeros à esquerda)
-    """
     texto_str = remover_acentos(str(texto))
     if alinhar == 'r':
         texto_limpo = "".join(filter(str.isdigit, texto_str))
@@ -58,18 +53,15 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='l'):
     return res[:tamanho]
 
 def identificar_tipo_pagamento(linha):
-    """Detecta se é BOLETO ou PIX pelo tamanho do código."""
     dado = str(linha.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     dado_limpo = "".join(filter(str.isdigit, dado))
-    
-    # Boletos: Código de Barras (44) ou Linha Digitável (~47/48)
     if len(dado_limpo) >= 44:
         return 'BOLETO'
     else:
         return 'PIX'
 
 # ==========================================
-# 2. MOTOR CNAB - PIX (Layout 045 - Seg A/B)
+# 2. MOTOR CNAB - PIX (Layout 045)
 # ==========================================
 def gerar_cnab_pix(df_sel, h):
     linhas = []
@@ -84,6 +76,7 @@ def gerar_cnab_pix(df_sel, h):
     linhas.append(h0[:240].ljust(240))
     
     # Header Lote (Pix = 45)
+    # Nota: Pix usa '01' nas posições 223-224 (Forma Lancamento/Servico) e espaços no final
     h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -101,9 +94,8 @@ def gerar_cnab_pix(df_sel, h):
 
         chave_pix = limpar_ids(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-        
-        # Tipo Chave
         tipo_chave = "05"
+        
         if chave_pix or raw_pix:
             if "@" in raw_pix: tipo_chave = "02"
             elif len(chave_pix) == 11: tipo_chave = "03"
@@ -111,13 +103,10 @@ def gerar_cnab_pix(df_sel, h):
             elif len(chave_pix) > 20: tipo_chave = "04"
             else: tipo_chave = "01"
 
-        # Dados Bancários (Vacina para Conta Zerada)
         banco_fav = r.get('BANCO_FAVORECIDO', '') or "000"
         ag_fav = r.get('AGENCIA_FAVORECIDA', '') or "0"
         cc_fav = r.get('CONTA_FAVORECIDA', '')
         dv_cc_fav = r.get('DIGITO_CONTA_FAVORECIDA', '') or "0"
-        
-        # Se conta vazia ou 0, força '1'
         if not cc_fav or cc_fav == "" or int(limpar_ids(cc_fav) or 0) == 0: cc_fav = "1"
 
         # Segmento A
@@ -132,11 +121,8 @@ def gerar_cnab_pix(df_sel, h):
         
         # Segmento B
         reg_lote += 1
-        
-        # Lógica CPF (1) vs CNPJ (2) - CORREÇÃO DE VALIDAÇÃO
         doc_fav = limpar_ids(r.get('cnpj_beneficiario', ''))
-        tipo_insc = "2" # Default CNPJ
-        if len(doc_fav) == 11: tipo_insc = "1" # CPF
+        tipo_insc = "1" if len(doc_fav) == 11 else "2"
         
         segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(tipo_chave,3,'0','r')}" 
                 f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}"
@@ -144,11 +130,15 @@ def gerar_cnab_pix(df_sel, h):
                 f"{formatar_campo(chave_pix,99)}{' '*6}{'0'*8}")
         linhas.append(segB[:240].ljust(240))
         
-    # Trailers
+    # Trailer Lote (Pix)
     reg_lote += 1
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
-    t5 = f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}{'0'*18}{' '*171}"
+    # Ajuste preciso de espaços para fechar 240
+    # 41 chars fixos iniciais + 199 de finalização (18 zeros + 6 zeros + 165 brancos + 10 brancos)
+    t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
+          f"{'0'*18}{'0'*6}{' '*165}{' '*10}")
     linhas.append(t5[:240].ljust(240))
+    
     t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
     
@@ -170,13 +160,15 @@ def gerar_cnab_boleto(df_sel, h):
     linhas.append(h0[:240].ljust(240))
     
     # Header Lote (31 = Pagamento Títulos Outros Bancos)
+    # CORREÇÃO CRÍTICA: Fim da linha com espaços (Pos 223-240) em vez de '01'
     h1 = (f"{BCO}00011C2031030 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
           f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{' '*40}"
           f"{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}"
           f"{formatar_campo(h.get('complemento',' '),15)}{formatar_campo(h['cidade'],20)}"
-          f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}01{' '*10}")
+          f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}"
+          f"{' '*18}") # FIX: 223-240 (Espaços em branco, remove o '01')
     linhas.append(h1[:240].ljust(240))
     
     reg_lote = 0
@@ -185,34 +177,35 @@ def gerar_cnab_boleto(df_sel, h):
         try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
         except: data_pagto = hoje.strftime('%d%m%Y')
 
-        # Limpeza Código Barras
         cod_barras = "".join(filter(str.isdigit, str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))))
-        if len(cod_barras) > 44: cod_barras = cod_barras[:44] # Segurança
+        if len(cod_barras) > 44: cod_barras = cod_barras[:44] 
 
-        # Segmento J (Layout Padrão Febraban/Unicred)
+        # Segmento J
         reg_lote += 1
-        segJ = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}J000" # 01-17 (Inclusão)
-                f"{formatar_campo(cod_barras,44,'0','r')}" # 18-61 (Cod Barras)
-                f"{formatar_campo(r['NOME_FAVORECIDO'],30)}" # 62-91 (Nome)
-                f"{data_pagto}" # 92-99 (Vencimento)
-                f"{formatar_campo(v_int,15,'0','r')}" # 100-114 (Valor Título)
-                f"{formatar_campo(0,15,'0','r')}" # 115-129 (Desconto)
-                f"{formatar_campo(0,15,'0','r')}" # 130-144 (Acréscimo)
-                f"{data_pagto}" # 145-152 (Data Pagamento)
-                f"{formatar_campo(v_int,15,'0','r')}" # 153-167 (Valor Pagamento)
-                f"{'0'*15}" # 168-182 (Qtd Moeda)
-                f"{' '*20}" # 183-202 (Nosso Número - Vazio)
-                f"{formatar_campo(r.get('Nr. Titulo',''),20)}" # 203-222 (Seu Número)
-                f"09" # 223-224 (Código Moeda = REAL - CORREÇÃO ERRO)
-                f"{' '*6}" # 225-230 (CNAB - Espaços - CORREÇÃO ERRO)
-                f"{' '*10}") # 231-240 (Ocorrências)
+        segJ = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}J000"
+                f"{formatar_campo(cod_barras,44,'0','r')}"
+                f"{formatar_campo(r['NOME_FAVORECIDO'],30)}"
+                f"{data_pagto}"
+                f"{formatar_campo(v_int,15,'0','r')}"
+                f"{formatar_campo(0,15,'0','r')}"
+                f"{formatar_campo(0,15,'0','r')}"
+                f"{data_pagto}"
+                f"{formatar_campo(v_int,15,'0','r')}"
+                f"{'0'*15}"
+                f"{' '*20}"
+                f"{formatar_campo(r.get('Nr. Titulo',''),20)}"
+                f"09" # Moeda Real (223-224)
+                f"{' '*6}{' '*10}") # Espaços finais (225-240)
         linhas.append(segJ[:240].ljust(240))
 
-    # Trailers
+    # Trailer Lote (Boleto)
+    # CORREÇÃO CRÍTICA: Ajuste exato dos campos CNAB (espaços) e Zeros
     reg_lote += 1
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
-    t5 = f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}{'0'*18}{' '*171}"
+    t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
+          f"{'0'*18}{'0'*6}{' '*165}{' '*10}") # 18(QtdMoeda)+6(Aviso)+165(CNAB)+10(Ocorrencias)
     linhas.append(t5[:240].ljust(240))
+    
     t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
     
@@ -251,10 +244,8 @@ if aba == "Cockpit Financeiro":
             fc = c5.text_input("CNPJ/CPF Beneficiário")
             st.caption("Dados Bancários (Opcional se tiver Pix/Boleto):")
             cb1, cb2, cb3, cb4 = st.columns(4)
-            fb = cb1.text_input("Banco")
-            fa = cb2.text_input("Agência")
-            fcc = cb3.text_input("Conta")
-            fdg = cb4.text_input("DV")
+            fb = cb1.text_input("Banco"); fa = cb2.text_input("Agência")
+            fcc = cb3.text_input("Conta"); fdg = cb4.text_input("DV")
             
             if st.form_submit_button("Adicionar"):
                 novo = pd.DataFrame([{
