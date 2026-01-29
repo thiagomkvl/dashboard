@@ -6,26 +6,26 @@ from datetime import datetime
 import unicodedata
 
 # ==========================================
-# 0. CONFIGURAÇÃO DE DADOS DO HOSPITAL (SOS CARDIO)
-# Preencha estes dados conforme o cadastro na Unicred
+# 0. DADOS CADASTRAIS (ATUALIZADOS CONFORME ERRO)
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '00000000000000',      
-    'convenio': '00000000000000000000', 
-    'ag': '1214',                  # Ajustado conforme erro
-    'ag_dv': '0',                  
-    'cc': '5886',                  # Ajustado conforme erro
-    'cc_dv': '0',                  # Obrigatório conforme manual 
+    'cnpj': '28067375000174',      # CNPJ sem pontos
+    'convenio': '000000000985597', # Convênio 20 dígitos
+    'ag': '1214',                  # Agência (sem DV)
+    'ag_dv': '0',                  # DV Agência
+    'cc': '5886',                  # Conta (sem DV)
+    'cc_dv': '6',                  # CORRIGIDO: Validador exigiu '6'
     'nome': 'SOS CARDIO SERVICOS HOSP',
-    'endereco': 'RUA DO HOSPITAL 123',
+    'endereco': 'RODOVIA SC 401',
     'num_end': '123',
+    'complemento': 'SALA 01',
     'cidade': 'FLORIANOPOLIS',
-    'cep': '88000000',             
+    'cep': '88000000',             # CEP 8 dígitos
     'uf': 'SC'
 }
 
 # ==========================================
-# 1. CONFIGURAÇÃO, CSS E SEGURANÇA
+# 1. CONFIGURAÇÃO E SEGURANÇA
 # ==========================================
 st.set_page_config(page_title="SOS CARDIO - Gestão de Passivo", layout="wide")
 
@@ -35,12 +35,13 @@ def check_password():
         if "password" in st.session_state and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
+        else: st.session_state["password_correct"] = False
     st.markdown("<h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2: st.text_input("Senha:", type="password", on_change=password_entered, key="password")
     return False
 
-# --- FUNÇÕES DE SUPORTE ---
+# --- FUNÇÕES AUXILIARES ---
 def formatar_real(valor):
     try: return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except: return "R$ 0,00"
@@ -53,66 +54,90 @@ def remover_acentos(texto):
     if not isinstance(texto, str): return ""
     return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn').upper()
 
-def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='esquerda'):
-    texto = remover_acentos(str(texto))
-    if alinhar == 'direita':
-        texto = "".join(filter(str.isdigit, texto))
-        res = texto[:tamanho].rjust(tamanho, preenchimento)
+def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='l'):
+    """
+    Função de formatação estrita.
+    alinhar='l': Texto à esquerda, preenche com espaços à direita (Padrão texto)
+    alinhar='r': Texto à direita, preenche com zeros à esquerda (Padrão número)
+    """
+    texto_str = remover_acentos(str(texto))
+    
+    if alinhar == 'r':
+        # Remove tudo que não for dígito para campos numéricos
+        texto_limpo = "".join(filter(str.isdigit, texto_str))
+        res = texto_limpo[:tamanho].rjust(tamanho, preenchimento)
     else:
-        res = texto[:tamanho].ljust(tamanho, preenchimento)
-    return res[:tamanho]
+        res = texto_str[:tamanho].ljust(tamanho, preenchimento)
+    
+    return res[:tamanho] # Garante corte exato
 
 # ==========================================
-# 2. MOTOR CNAB 240 (UNICRED V10.9) - FIX ERROS
+# 2. MOTOR CNAB 240 (CORREÇÃO DE ERROS)
 # ==========================================
 def gerar_cnab240(df_sel, h):
     linhas = []
     hoje = datetime.now()
-    COD_BANCO = "136" # Fix erro 001 
+    BCO = "136"
 
-    # Registro 0: Header de Arquivo
-    h0 = (f"{COD_BANCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20)}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1)} "
-          f"{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
+    # --- REGISTRO 0: HEADER DE ARQUIVO ---
+    # Fix Erro 1 (Agência 01214) e DV Conta (6)
+    h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f" {formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
     linhas.append(h0[:240].ljust(240))
     
-    # Registro 1: Header de Lote (Pix=45 [cite: 23], Layout=046 [cite: 13, 17])
-    # Inclui Endereço, CEP e UF obrigatórios 
-    h1 = (f"{COD_BANCO}00011C2045046 {' '*1}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20)}{formatar_campo(h['ag'],5,'0','r')} {formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1)} "
-          f"{formatar_campo(h['nome'],30)}{' '*40}{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}{' '*15}{formatar_campo(h['cidade'],20)}{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}{' '*10}{' '*10}")
+    # --- REGISTRO 1: HEADER DE LOTE ---
+    # Fix Erro 2 (Tipo Insc '2') e Erro 5 (Endereço e CEP)
+    h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f" {formatar_campo(h['nome'],30)}{' '*40}"
+          f"{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}"
+          f"{formatar_campo(h.get('complemento',' '),15)}{formatar_campo(h['cidade'],20)}"
+          f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}01{' '*10}")
     linhas.append(h1[:240].ljust(240))
     
     reg_lote = 0
-    for i, r in df_sel.reset_index(drop=True).iterrows():
+    for _, r in df_sel.reset_index(drop=True).iterrows():
         v = int(float(str(r['VALOR_PAGAMENTO']).replace(',','.')) * 100)
         chave_pix = limpar_ids(r.get('CHAVE_PIX', ''))
-        data_p = pd.to_datetime(r['DATA_PAGAMENTO']).strftime('%d%m%Y') # 8 dígitos 
         
-        # Identificação de Chave Pix [cite: 62, 83]
+        # Fix Erro 7: Data deve ter 8 dígitos (DDMMAAAA)
+        try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
+        except: data_pagto = hoje.strftime('%d%m%Y')
+        
         if chave_pix:
             if "@" in str(r.get('CHAVE_PIX','')): forma_ini = "02"
             elif len(chave_pix) in [11, 14]: forma_ini = "03"
             else: forma_ini = "04"
         else: forma_ini = "05"
 
-        # Segmento A (SPI/Pix=009 [cite: 51])
+        # --- SEGMENTO A ---
+        # Fix Erro 6 (Câmara 009) e Erro 8 (Moeda BRL alinhada)
         reg_lote += 1
-        segA = (f"{COD_BANCO}00013{formatar_campo(reg_lote,5,'0','r')}A00001009{formatar_campo(r['BANCO_FAVORECIDO'],3,'0','r')}{formatar_campo(r['AGENCIA_FAVORECIDA'],5,'0','r')} "
-                f"{formatar_campo(r['CONTA_FAVORECIDA'],12,'0','r')}{formatar_campo(r['DIGITO_CONTA_FAVORECIDA'],1)} {formatar_campo(r['NOME_FAVORECIDO'],30)}{formatar_campo(r.get('Nr. Titulo',''),20)}{data_p}BRL{'0'*15}{formatar_campo(v,15,'0','r')}{' '*40}00")
+        segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(r['BANCO_FAVORECIDO'],3,'0','r')}"
+                f"{formatar_campo(r['AGENCIA_FAVORECIDA'],5,'0','r')}{formatar_campo(r.get('DG_AG_FAV',' '),1,' ','l')}"
+                f"{formatar_campo(r['CONTA_FAVORECIDA'],12,'0','r')}{formatar_campo(r.get('DIGITO_CONTA_FAVORECIDA',' '),1,' ','l')}"
+                f" {formatar_campo(r['NOME_FAVORECIDO'],30)}"
+                f"{formatar_campo(r.get('Nr. Titulo',''),20)}{data_pagto}BRL{'0'*15}{formatar_campo(v,15,'0','r')}"
+                f"{' '*40}00")
         linhas.append(segA[:240].ljust(240))
         
-        # Segmento B [cite: 63, 67]
+        # --- SEGMENTO B ---
         reg_lote += 1
-        segB = f"{COD_BANCO}00013{formatar_campo(reg_lote,5,'0','r')}B   {forma_ini}{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}{' '*100}{formatar_campo(chave_pix,35)}{' '*68}00000000"
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(forma_ini,3,'0','r')}" 
+                f"2{formatar_campo(r['cnpj_beneficiario'],14,'0','r')}{' '*100}"
+                f"{formatar_campo(chave_pix,35)}{' '*68}00000000")
         linhas.append(segB[:240].ljust(240))
         
-    # Registro 5: Trailer de Lote
+    # --- TRAILER DE LOTE ---
     reg_lote += 1
-    v_total = int(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100)
-    t5 = f"{COD_BANCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}{'0'*100}"
+    t5 = f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(int(df_sel['VALOR_PAGAMENTO'].sum()*100),18,'0','r')}{' '*100}" # Fix Erro 9 (Espaços)
     linhas.append(t5[:240].ljust(240))
     
-    # Registro 9: Trailer de Arquivo (Fix espaços [cite: 164])
-    t9 = f"{COD_BANCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
+    # --- TRAILER DE ARQUIVO ---
+    t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
     
     return "\n".join(linhas)
@@ -124,7 +149,7 @@ if check_password():
     conn = conectar_sheets()
     aba = st.sidebar.radio("Navegação:", ["Dashboard Principal", "Pagamentos Unicred", "Upload"])
 
-    # --- ABA: DASHBOARD PRINCIPAL (VERSÃO COMPLETA APROVADA) ---
+    # --- ABA DASHBOARD (MANTIDA ORIGINAL) ---
     if aba == "Dashboard Principal":
         df_hist = conn.read(worksheet="Historico", ttl=300)
         if not df_hist.empty:
@@ -159,22 +184,21 @@ if check_password():
                 st.plotly_chart(px.bar(df_bar, x='Carteira', y='Saldo_Limpo', color_discrete_sequence=['#004a99'], text_auto='.2s'), use_container_width=True)
 
             st.divider()
-            st.subheader("🎯 Radar de Pagamentos - Detalhamento por Mês")
-            df_hoje['Vencimento_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
-            df_futuro = df_hoje[df_hoje['Vencimento_DT'] >= pd.Timestamp.now().normalize()].copy()
+            st.subheader("🎯 Radar de Pagamentos")
+            df_hoje['Venc_DT'] = pd.to_datetime(df_hoje['Vencimento'], dayfirst=True, errors='coerce')
+            df_futuro = df_hoje[df_hoje['Venc_DT'] >= pd.Timestamp.now().normalize()].copy()
             if not df_futuro.empty:
-                df_futuro['Mes_Ref'] = df_futuro['Vencimento_DT'].dt.strftime('%m/%Y')
+                df_futuro['Mes_Ref'] = df_futuro['Venc_DT'].dt.strftime('%m/%Y')
                 mes_sel = st.selectbox("Selecione o Mês:", sorted(df_futuro['Mes_Ref'].unique()))
-                df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_sel].sort_values('Vencimento_DT')
-                df_mes['Data_F'] = df_mes['Vencimento_DT'].dt.strftime('%d/%m/%Y')
+                df_mes = df_futuro[df_futuro['Mes_Ref'] == mes_sel].sort_values('Venc_DT')
+                df_mes['Data_F'] = df_mes['Venc_DT'].dt.strftime('%d/%m/%Y')
                 fig_radar = px.bar(df_mes, x='Data_F', y='Saldo_Limpo', color='Beneficiario', barmode='stack', height=600)
-                df_totais = df_mes.groupby('Data_F')['Saldo_Limpo'].sum().reset_index()
-                for i, row in df_totais.iterrows():
-                    fig_radar.add_annotation(x=row['Data_F'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12)
+                df_tot = df_mes.groupby('Data_F')['Saldo_Limpo'].sum().reset_index()
+                for i, row in df_tot.iterrows(): fig_radar.add_annotation(x=row['Data_F'], y=row['Saldo_Limpo'], text=f"<b>{formatar_real(row['Saldo_Limpo'])}</b>", showarrow=False, yshift=12)
                 fig_radar.update_layout(xaxis_type='category', showlegend=False)
                 st.plotly_chart(fig_radar, use_container_width=True)
 
-    # --- ABA: PAGAMENTOS UNICRED ---
+    # --- ABA CONVERSOR (AJUSTADA) ---
     elif aba == "Pagamentos Unicred":
         st.title("🔌 Conversor Unicred")
         df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
@@ -186,20 +210,16 @@ if check_password():
             st.session_state['df_pagamentos'] = df_p
 
         if 'df_pagamentos' in st.session_state:
-            col_b1, col_b2 = st.columns([1, 4])
             df_rem = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True]
-            with col_b1:
-                if not df_rem.empty:
-                    v_t = df_rem['VALOR_PAGAMENTO'].astype(float).sum()
-                    st.download_button(f"🚀 Gerar Remessa ({formatar_real(v_t)})", gerar_cnab240(df_rem, DADOS_HOSPITAL), f"REM_SOS_{datetime.now().strftime('%d%m')}.txt")
-            st.divider()
+            if not df_rem.empty:
+                v_total = df_rem['VALOR_PAGAMENTO'].astype(float).sum()
+                st.download_button(f"🚀 Gerar Remessa ({formatar_real(v_total)})", gerar_cnab240(df_rem, DADOS_HOSPITAL), f"REM_SOS_{datetime.now().strftime('%d%m')}.txt")
             st.data_editor(st.session_state['df_pagamentos'], hide_index=True, use_container_width=True)
 
     elif aba == "Upload":
         st.title("Upload da Base")
-        up = st.file_uploader("Arquivo Excel", type=["xlsx"])
+        up = st.file_uploader("Arquivo", type=["xlsx"])
         if up and st.button("Processar"):
             if salvar_no_historico(pd.read_excel(up)): st.success("Base Atualizada!"); st.rerun()
 
-    if st.sidebar.button("🔒 Sair"):
-        st.session_state["password_correct"] = False; st.rerun()
+    if st.sidebar.button("🔒 Sair"): st.session_state["password_correct"] = False; st.rerun()
