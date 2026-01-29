@@ -9,7 +9,7 @@ import re
 # 0. DADOS CADASTRAIS (SOS CARDIO)
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '00000000000000',      # SEU CNPJ REAL
+    'cnpj': '85307098000187',      # SEU CNPJ REAL
     'convenio': '000000000985597', # SEU CONVÊNIO
     'ag': '1214',                  # AGÊNCIA
     'ag_dv': '0',
