@@ -1,43 +1,64 @@
 import streamlit as st
+import os
 
-# Configuração da Página Inicial (Tela de Login)
+# 1. Configuração da Página
 st.set_page_config(page_title="SOS CARDIO - Login", layout="centered", page_icon="🏥")
+
+# 2. Diagnóstico de Arquivos (Vai mostrar na tela o que o Python está enxergando)
+# Se isso der erro, é porque a pasta não está onde pensamos.
+try:
+    arquivos_pages = os.listdir('pages')
+except FileNotFoundError:
+    arquivos_pages = "PASTA 'pages' NÃO ENCONTRADA!"
 
 # --- LÓGICA DE LOGIN ---
 def check_password():
-    """Retorna True se o usuário já estiver logado."""
     if st.session_state.get("password_correct", False):
         return True
 
-    # Layout do Login
-    st.markdown("<br><br><h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>Sistema Integrado de Gestão Financeira</h3>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("<br><h1 style='text-align: center;'>🏥 SOS CARDIO</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>Acesso ao Sistema</h3>", unsafe_allow_html=True)
+    
+    # Exibe diagnóstico apenas se não estiver logado (para você conferir)
+    with st.expander("🔍 Diagnóstico de Estrutura (Debug)", expanded=False):
+        st.write(f"Pasta atual: `{os.getcwd()}`")
+        st.write(f"Arquivos na pasta 'pages': {arquivos_pages}")
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        pwd = st.text_input("Digite sua senha de acesso:", type="password", key="pwd_input")
+        pwd = st.text_input("Senha:", type="password", key="pwd_input")
         if st.button("Entrar", use_container_width=True):
             if pwd == st.secrets["PASSWORD"]:
                 st.session_state["password_correct"] = True
-                st.rerun()  # Recarrega a página para validar o estado
+                st.rerun()
             else:
                 st.error("❌ Senha incorreta.")
     return False
 
 # --- FLUXO PRINCIPAL ---
-
 if not check_password():
-    st.stop()  # Se não estiver logado, para o código aqui e mostra só o login
+    st.stop()
 
 # =========================================================
-# 🚀 REDIRECIONAMENTO AUTOMÁTICO
-# Se o código chegou aqui, significa que a senha está correta.
-# Vamos enviar o usuário direto para o Dashboard.
+# SE CHEGOU AQUI, O LOGIN FUNCIONOU!
 # =========================================================
-try:
-    st.switch_page("pages/1_Dashboard.py")
-except Exception as e:
-    # Caso o arquivo não seja encontrado (ex: nome diferente), mostra o menu padrão
-    st.warning("Login realizado! Selecione uma página no menu lateral.")
-    st.error(f"Erro ao redirecionar: {e}")
+
+st.toast("Login realizado com sucesso!", icon="✅")
+
+# Em vez de forçar o redirecionamento (que estava dando erro),
+# vamos mostrar o menu e orientar o usuário.
+st.success("✅ **Acesso Liberado!**")
+
+st.info("""
+**O menu de navegação já está disponível na barra lateral esquerda (👈).**
+
+Selecione um módulo para começar:
+* **01 Dashboard:** Indicadores e Gráficos.
+* **02 Cockpit:** Emissão de Boletos e Pix.
+* **03 Upload:** Carga de dados.
+""")
+
+# Botão de Logout
+if st.button("Sair"):
+    st.session_state["password_correct"] = False
+    st.rerun()
