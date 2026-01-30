@@ -55,23 +55,22 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA OTIMIZADO (BARRAS LARGAS + TOTAIS) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA LIMPO (ARRÁSTAVEL) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Barra inferior para rolar. Valores totais exibidos no topo de cada dia.")
+            st.caption("Clique e arraste o gráfico para os lados para ver datas futuras.")
             
             # Ordenação
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             
-            # 3.1 CALCULAR TOTAIS POR DIA (Para exibir no topo)
+            # 3.1 CALCULAR TOTAIS (Para exibir no topo)
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
-            # Formata o valor curto (ex: 15k) para não poluir
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_valor_dia = df_totais['Saldo_Limpo'].max()
 
-            # 3.2 CRIAR GRÁFICO BASE (BARRAS EMPILHADAS)
+            # 3.2 CRIAR GRÁFICO BASE
             fig_stack = px.bar(
                 df_grafico, 
                 x='Vencimento_DT', 
@@ -82,7 +81,7 @@ try:
                 height=550
             )
             
-            # 3.3 ADICIONAR TEXTO DE TOTAL NO TOPO (TRUQUE DO SCATTER)
+            # 3.3 ADICIONAR RÓTULOS DE TOTAL
             fig_stack.add_trace(
                 go.Scatter(
                     x=df_totais['Vencimento_DT'],
@@ -92,35 +91,28 @@ try:
                     textposition='top center',
                     textfont=dict(size=12, color='black', family="Arial Black"),
                     showlegend=False,
-                    hoverinfo='skip' # Não atrapalhar o mouse
+                    hoverinfo='skip'
                 )
             )
 
-            # 3.4 CONFIGURAÇÃO DE EIXOS E SCROLLBAR
+            # 3.4 CONFIGURAÇÃO DE LAYOUT (SEM BARRA DE ROLAGEM)
             fig_stack.update_layout(
                 xaxis=dict(
-                    # FORÇA EXIBIÇÃO DE APENAS 7 DIAS INICIAIS (BARRAS GORDAS)
+                    # Janela de 7 dias fixa (Barras Largas)
                     range=[hoje - pd.Timedelta(days=0.5), hoje + pd.Timedelta(days=6.5)],
                     
-                    # FORÇA ETIQUETA EM TODOS OS DIAS
                     tickmode='linear',
-                    dtick="D1", # Intervalo de 1 dia (sem pular)
-                    tickformat="%d/%m", # Formato Dia/Mês
+                    dtick="D1",         # Todo dia aparece
+                    tickformat="%d/%m", # Dia/Mês
                     
-                    # BARRA DE ROLAGEM SIMPLES
-                    rangeslider=dict(
-                        visible=True, 
-                        thickness=0.06,
-                        bgcolor="#e2e8f0",
-                        # Truque para esconder gráfico interno da barra
-                        yaxis=dict(range=[max_valor_dia * 2, max_valor_dia * 3]) 
-                    ),
+                    # REMOVIDO: rangeslider=dict(visible=True)
+                    rangeslider=dict(visible=False), 
+                    
                     type="date"
                 ),
                 yaxis=dict(
-                    # Margem extra no topo para o texto do total não cortar
-                    range=[0, max_valor_dia * 1.2], 
-                    fixedrange=True
+                    range=[0, max_valor_dia * 1.2], # Margem superior para o texto
+                    fixedrange=True # Bloqueia zoom vertical
                 ),
                 showlegend=True,
                 legend=dict(
@@ -129,10 +121,12 @@ try:
                     x=1.01, xanchor="left",
                     title_text="Fornecedores"
                 ),
-                margin=dict(r=20, t=50) # Margem superior aumentada
+                margin=dict(r=20, t=50),
+                dragmode="pan" # Cursor padrão vira mãozinha para arrastar
             )
             
-            st.plotly_chart(fig_stack, use_container_width=True)
+            # Configuração extra para remover botões de zoom do Plotly que poluem
+            st.plotly_chart(fig_stack, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
         
         st.divider()
 
