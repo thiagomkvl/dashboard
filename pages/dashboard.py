@@ -15,15 +15,13 @@ st.caption("Visão analítica do Passivo e Contas a Pagar")
 # --- CARREGAMENTO DE DADOS ---
 conn = conectar_sheets()
 try:
-    # Lê a aba 'Historico' (onde fica a base completa de contas a pagar)
     df_hist = conn.read(worksheet="Historico", ttl=300)
     
     if not df_hist.empty:
         # 1. Tratamento e Limpeza
-        # Garante que 'Saldo Atual' seja numérico
         df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
         
-        # Filtra apenas o último processamento (Snapshot mais recente)
+        # Filtra apenas o último processamento
         ultima_data = df_hist['data_processamento'].max()
         df_full = df_hist[df_hist['data_processamento'] == ultima_data].copy()
         
@@ -31,7 +29,7 @@ try:
         df_full['Vencimento_DT'] = pd.to_datetime(df_full['Vencimento'], dayfirst=True, errors='coerce')
         hoje = pd.Timestamp.now().normalize()
         
-        # Categorização de Status (Vencido vs A Vencer)
+        # Categorização de Status
         def definir_status(row):
             if row['Vencimento_DT'] < hoje: return "🚨 Vencido"
             elif row['Vencimento_DT'] == hoje: return "⚠️ Vence Hoje"
@@ -44,47 +42,59 @@ try:
         total_vencido = df_full[df_full['Status_Tempo'] == "🚨 Vencido"]['Saldo_Limpo'].sum()
         total_hoje = df_full[df_full['Status_Tempo'] == "⚠️ Vence Hoje"]['Saldo_Limpo'].sum()
         
-        # Cálculo da dívida da semana (Próximos 7 dias)
         proxima_semana = hoje + pd.Timedelta(days=7)
         mask_semana = (df_full['Vencimento_DT'] > hoje) & (df_full['Vencimento_DT'] <= proxima_semana)
         total_semana = df_full[mask_semana]['Saldo_Limpo'].sum()
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Dívida Total", formatar_real(total_divida), help="Soma de todos os títulos em aberto")
-        col2.metric("Vencido (Backlog)", formatar_real(total_vencido), delta_color="inverse", help="Títulos com data passada")
+        col1.metric("Dívida Total", formatar_real(total_divida))
+        col2.metric("Vencido (Backlog)", formatar_real(total_vencido), delta_color="inverse")
         col3.metric("Vence Hoje", formatar_real(total_hoje), delta_color="inverse")
-        col4.metric("Próximos 7 Dias", formatar_real(total_semana), help="Projeção de caixa curto prazo")
+        col4.metric("Próximos 7 Dias", formatar_real(total_semana))
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (STACKED BAR OTIMIZADO) ---
-        # Filtra apenas o futuro (Hoje em diante) para previsão de caixa
+        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (COM SCROLL/ZOOM) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
-            st.subheader("📅 Cronograma de Desembolso (Previsão)")
+            st.subheader("📅 Cronograma de Desembolso (Interativo)")
+            st.caption("Utilize a barra inferior no gráfico para arrastar, dar zoom e navegar pelas datas.")
             
-            # Filtro de período dinâmico para o gráfico não ficar poluido
-            dias_visualizacao = st.slider("Horizonte de Visualização (Dias):", 7, 90, 30)
-            data_limite = hoje + pd.Timedelta(days=dias_visualizacao)
-            df_grafico = df_futuro[df_futuro['Vencimento_DT'] <= data_limite].copy()
+            # Ordena cronologicamente para o fluxo fazer sentido
+            df_grafico = df_futuro.sort_values('Vencimento_DT')
             
-            # Formata data para string (eixo X bonito)
-            df_grafico['Data_Str'] = df_grafico['Vencimento_DT'].dt.strftime('%d/%m/%Y')
-            df_grafico = df_grafico.sort_values('Vencimento_DT') # Ordena cronologicamente
-            
-            # O Gráfico Empilhado que você gosta
+            # Gráfico de Barras Empilhadas
             fig_stack = px.bar(
                 df_grafico, 
-                x='Data_Str', 
+                x='Vencimento_DT', 
                 y='Saldo_Limpo', 
                 color='Beneficiario', 
-                title=f"Fluxo de Pagamentos - Próximos {dias_visualizacao} dias",
-                labels={'Saldo_Limpo': 'Valor (R$)', 'Data_Str': 'Vencimento', 'Beneficiario': 'Fornecedor'},
-                text_auto='.2s',
-                height=500
+                title="Fluxo de Pagamentos Futuros",
+                labels={'Saldo_Limpo': 'Valor (R$)', 'Vencimento_DT': 'Vencimento', 'Beneficiario': 'Fornecedor'},
+                text_auto='.2s', # Formata o valor nas barras (ex: 10k)
+                height=550
             )
-            fig_stack.update_layout(xaxis_type='category', showlegend=True) # Eixo X categórico evita buracos de fds
+            
+            # --- OTIMIZAÇÃO E SCROLL ---
+            # Aqui ativamos o rangeslider (a barra de arrastar)
+            fig_stack.update_layout(
+                xaxis=dict(
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=7, label="7d", step="day", stepmode="backward"),
+                            dict(count=15, label="15d", step="day", stepmode="backward"),
+                            dict(count=1, label="1m", step="month", stepmode="backward"),
+                            dict(step="all", label="Tudo")
+                        ])
+                    ),
+                    rangeslider=dict(visible=True), # ATIVA O SCROLL INFERIOR
+                    type="date"
+                ),
+                showlegend=True,
+                legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0.5, xanchor="center") # Legenda no topo para ganhar espaço
+            )
+            
             st.plotly_chart(fig_stack, use_container_width=True)
         
         st.divider()
@@ -93,12 +103,8 @@ try:
         c_left, c_right = st.columns([1, 1])
         
         with c_left:
-            st.subheader("🏗️ Composição da Dívida (Quem?)")
-            st.caption("Tamanho do retângulo = Valor da Dívida")
-            
-            # Agrupamento para o Treemap
+            st.subheader("🏗️ Composição da Dívida")
             df_tree = df_full.groupby('Beneficiario')['Saldo_Limpo'].sum().reset_index()
-            # Pega apenas os Top 30 para não travar o gráfico se tiver milhares
             df_tree = df_tree.sort_values('Saldo_Limpo', ascending=False).head(30)
             
             fig_tree = px.treemap(
@@ -109,13 +115,11 @@ try:
                 color_continuous_scale='Blues',
                 hover_data={'Saldo_Limpo': ':,.2f'}
             )
-            fig_tree.update_layout(margin=dict(t=0, l=0, r=0, b=0))
             st.plotly_chart(fig_tree, use_container_width=True)
 
         with c_right:
             st.subheader("⏳ Ageing List (Idade da Dívida)")
             
-            # Lógica de Ageing
             def faixas_atraso(dias):
                 if dias < 0: return "A Vencer"
                 if dias <= 15: return "0-15 Dias"
@@ -126,7 +130,6 @@ try:
             df_full['Dias_Atraso'] = (hoje - df_full['Vencimento_DT']).dt.days
             df_full['Faixa_Ageing'] = df_full['Dias_Atraso'].apply(faixas_atraso)
             
-            # Agrupa e Ordena
             ordem_ageing = ['> 60 Dias', '31-60 Dias', '16-30 Dias', '0-15 Dias', 'A Vencer']
             df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reindex(ordem_ageing).reset_index().fillna(0)
             
@@ -137,13 +140,12 @@ try:
                 orientation='h',
                 text_auto='.2s',
                 color='Faixa_Ageing',
-                color_discrete_map={'A Vencer': '#2ecc71', '> 60 Dias': '#c0392b'}, # Verde e Vermelho escuro
-                title="Distribuição por Atraso"
+                color_discrete_map={'A Vencer': '#2ecc71', '> 60 Dias': '#c0392b'}
             )
             fig_ageing.update_layout(showlegend=False)
             st.plotly_chart(fig_ageing, use_container_width=True)
 
-        # --- 5. TABELA DE OFENSORES (CRÍTICO) ---
+        # --- 5. TABELA DE OFENSORES ---
         st.subheader("🔥 Top 10 Maiores Títulos Vencidos")
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].sort_values('Saldo_Limpo', ascending=False).head(10)
         
@@ -154,10 +156,10 @@ try:
                 hide_index=True
             )
         else:
-            st.success("✅ Nenhum título vencido encontrado! Parabéns pela gestão.")
+            st.success("✅ Nenhum título vencido encontrado!")
 
     else:
-        st.info("📭 A base de histórico está vazia. Vá em 'Upload' para carregar os dados.")
+        st.info("📭 A base de histórico está vazia.")
 
 except Exception as e:
     st.error(f"Erro ao carregar Dashboard: {e}")
