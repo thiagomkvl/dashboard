@@ -54,14 +54,14 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA (AGORA SIM: SCROLLBAR LIMPA!) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA (JANELA FIXA COM SCROLL) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Arraste a barra inferior cinza para navegar no tempo.")
+            st.caption("Arraste a barra inferior cinza para o lado para ver datas futuras.")
             
-            # Ordena e calcula máximo para o truque
+            # Ordena e calcula máximo para o truque visual
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             max_valor = df_grafico['Saldo_Limpo'].max()
             
@@ -76,35 +76,41 @@ try:
                 height=500
             )
             
-            # --- O TRUQUE DO MÁGICO ---
+            # --- CONFIGURAÇÃO DE SCROLL SEM ZOOM ---
             fig_stack.update_layout(
                 xaxis=dict(
+                    # Define a "Janela Inicial": Mostra de Hoje até +30 dias.
+                    # O resto fica escondido à direita, acessível pelo scroll.
+                    range=[hoje, hoje + pd.Timedelta(days=30)],
+                    
                     rangeslider=dict(
                         visible=True, 
-                        thickness=0.05,  # Barra fina
-                        bgcolor="#e2e8f0", # Cinza mais escuro (parece UI do Windows/Mac)
-                        # TRUQUE: Definimos o eixo Y da barra de rolagem para um valor
-                        # onde não existe dados (muito acima do máximo).
-                        # Resultado: O gráfico desenha "o nada" dentro da barra.
-                        yaxis=dict(range=[max_valor * 2, max_valor * 3]) 
+                        thickness=0.04,  # Barra bem fina
+                        bgcolor="#e2e8f0", 
+                        yaxis=dict(range=[max_valor * 2, max_valor * 3]) # Esconde gráfico interno
                     ),
-                    type="date"
+                    type="date",
+                    fixedrange=False # Permite o pan (arrastar)
+                ),
+                yaxis=dict(
+                    fixedrange=True # Bloqueia zoom vertical para não quebrar o layout
                 ),
                 showlegend=True,
                 legend=dict(
-                    orientation="v",       # Vertical
-                    y=1, yanchor="top",    # Começa no topo
-                    x=1.01, xanchor="left",# Fica na direita
+                    orientation="v",       
+                    y=1, yanchor="top",    
+                    x=1.01, xanchor="left",
                     title_text="Fornecedores"
                 ),
-                margin=dict(r=20) 
+                margin=dict(r=20),
+                dragmode="pan" # Define o mouse para "mãozinha" de arrastar por padrão
             )
             
-            st.plotly_chart(fig_stack, use_container_width=True)
+            st.plotly_chart(fig_stack, use_container_width=True, config={'scrollZoom': False}) # Desativa zoom do mouse
         
         st.divider()
 
-        # --- 4. ANÁLISE DE COMPOSIÇÃO (TREEMAP & AGEING) ---
+        # --- 4. ANÁLISE DE COMPOSIÇÃO ---
         c_left, c_right = st.columns([1, 1])
         
         with c_left:
