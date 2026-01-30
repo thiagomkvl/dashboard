@@ -5,6 +5,40 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
+# --- CONFIGURAÇÃO DA JANELA MODAL (DETALHES) ---
+@st.dialog("🔍 Detalhes do Dia")
+def mostrar_detalhes_dia(data_selecionada, df_completo):
+    # Filtra os dados apenas para o dia clicado
+    # Converter para datetime para garantir compatibilidade
+    data_sel = pd.to_datetime(data_selecionada).normalize()
+    df_dia = df_completo[df_completo['Vencimento_DT'] == data_sel].copy()
+    
+    if not df_dia.empty:
+        total_dia = df_dia['Saldo_Limpo'].sum()
+        
+        st.write(f"**Data:** {data_sel.strftime('%d/%m/%Y')}")
+        st.metric("Total a Pagar", formatar_real(total_dia))
+        
+        st.divider()
+        
+        # Prepara tabela bonita
+        df_tabela = df_dia[['Beneficiario', 'Saldo Atual', 'Carteira', 'Nr. Titulo']].copy()
+        df_tabela = df_tabela.sort_values('Saldo Atual', ascending=False)
+        
+        st.dataframe(
+            df_tabela,
+            column_config={
+                "Beneficiario": "Fornecedor",
+                "Saldo Atual": st.column_config.TextColumn("Valor"), # Mantem formatação original da planilha ou converte
+                "Carteira": "Status",
+                "Nr. Titulo": "Nota/Título"
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.warning("Não foram encontrados dados para esta data.")
+
 # --- BLOQUEIO DE SEGURANÇA ---
 if not st.session_state.get("password_correct"):
     st.warning("🔒 Acesso restrito. Faça login.")
@@ -55,22 +89,22 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA LIMPO (ARRÁSTAVEL) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO (CLIQUE PARA DETALHAR) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Clique e arraste o gráfico para os lados para ver datas futuras.")
+            st.caption("🖐️ Arraste para o lado para navegar. 🖱️ **Clique na barra** para ver a lista de pagamentos do dia.")
             
             # Ordenação
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             
-            # 3.1 CALCULAR TOTAIS (Para exibir no topo)
+            # 3.1 CALCULAR TOTAIS
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_valor_dia = df_totais['Saldo_Limpo'].max()
 
-            # 3.2 CRIAR GRÁFICO BASE
+            # 3.2 CRIAR GRÁFICO
             fig_stack = px.bar(
                 df_grafico, 
                 x='Vencimento_DT', 
@@ -81,7 +115,7 @@ try:
                 height=550
             )
             
-            # 3.3 ADICIONAR RÓTULOS DE TOTAL
+            # 3.3 ADICIONAR TOTAIS NO TOPO
             fig_stack.add_trace(
                 go.Scatter(
                     x=df_totais['Vencimento_DT'],
@@ -95,24 +129,19 @@ try:
                 )
             )
 
-            # 3.4 CONFIGURAÇÃO DE LAYOUT (SEM BARRA DE ROLAGEM)
+            # 3.4 CONFIGURAÇÃO DE INTERATIVIDADE
             fig_stack.update_layout(
                 xaxis=dict(
-                    # Janela de 7 dias fixa (Barras Largas)
                     range=[hoje - pd.Timedelta(days=0.5), hoje + pd.Timedelta(days=6.5)],
-                    
                     tickmode='linear',
-                    dtick="D1",         # Todo dia aparece
-                    tickformat="%d/%m", # Dia/Mês
-                    
-                    # REMOVIDO: rangeslider=dict(visible=True)
-                    rangeslider=dict(visible=False), 
-                    
+                    dtick="D1",
+                    tickformat="%d/%m",
+                    rangeslider=dict(visible=False), # Sem barra embaixo
                     type="date"
                 ),
                 yaxis=dict(
-                    range=[0, max_valor_dia * 1.2], # Margem superior para o texto
-                    fixedrange=True # Bloqueia zoom vertical
+                    range=[0, max_valor_dia * 1.2], 
+                    fixedrange=True
                 ),
                 showlegend=True,
                 legend=dict(
@@ -122,12 +151,29 @@ try:
                     title_text="Fornecedores"
                 ),
                 margin=dict(r=20, t=50),
-                dragmode="pan" # Cursor padrão vira mãozinha para arrastar
+                dragmode="pan", # Mãozinha para arrastar
+                clickmode="event+select" # Habilita evento de clique
             )
             
-            # Configuração extra para remover botões de zoom do Plotly que poluem
-            st.plotly_chart(fig_stack, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
-        
+            # 3.5 RENDERIZAÇÃO COM CAPTURA DE CLIQUE
+            # on_select="rerun" faz o streamlit recarregar e trazer os dados do clique
+            evento = st.plotly_chart(
+                fig_stack, 
+                use_container_width=True, 
+                config={'scrollZoom': False, 'displayModeBar': False},
+                on_select="rerun",
+                selection_mode="points" 
+            )
+
+            # 3.6 LÓGICA DE ABERTURA DA JANELA (DIALOG)
+            if evento and "selection" in evento and evento["selection"]["points"]:
+                # Pega a data do ponto clicado (Eixo X)
+                ponto_clicado = evento["selection"]["points"][0]
+                data_clicada = ponto_clicado["x"]
+                
+                # Abre a janela modal
+                mostrar_detalhes_dia(data_clicada, df_full)
+
         st.divider()
 
         # --- 4. ANÁLISE DE COMPOSIÇÃO ---
