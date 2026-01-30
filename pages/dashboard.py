@@ -152,40 +152,30 @@ try:
         # --- 4. SEÇÃO MACRO ---
         c_left, c_right = st.columns([1, 1])
         
-        # --- 4.1 ESQUERDA: TREEMAP MENSAL (VOLTOU!) ---
+        # --- 4.1 ESQUERDA: TREEMAP MENSAL ---
         with c_left:
             st.subheader("📆 Dívida por Mês (Visão Macro)")
             
-            # Prepara dados mensais
             df_full['Mes_Ref'] = df_full['Vencimento_DT'].dt.to_period('M').dt.to_timestamp()
             df_mes = df_full.groupby('Mes_Ref')['Saldo_Limpo'].sum().reset_index()
-            # Formata rótulo para aparecer bonito no quadrado (ex: "Fev/25")
             df_mes['Mes_Label'] = df_mes['Mes_Ref'].dt.strftime('%b/%y')
             
             fig_mes = px.treemap(
-                df_mes,
-                path=['Mes_Label'], # Agrupa por mês
-                values='Saldo_Limpo',
-                color='Saldo_Limpo',
-                color_continuous_scale='Reds', # Vermelho = Mais dívida
-                hover_data={'Saldo_Limpo': ':,.2f'}
+                df_mes, path=['Mes_Label'], values='Saldo_Limpo', color='Saldo_Limpo',
+                color_continuous_scale='Reds', hover_data={'Saldo_Limpo': ':,.2f'}
             )
-            
-            # Formata o texto dentro do quadrado para mostrar Mês + Valor
-            fig_mes.update_traces(
-                textinfo="label+value+percent entry",
-                texttemplate="%{label}<br>R$ %{value:,.0f}" # Ex: Fev/25 (quebra linha) R$ 50,000
-            )
-            
+            fig_mes.update_traces(textinfo="label+value+percent entry", texttemplate="%{label}<br>R$ %{value:,.0f}")
             fig_mes.update_layout(margin=dict(t=30, l=0, r=0, b=0))
             st.plotly_chart(fig_mes, use_container_width=True)
 
-        # --- 4.2 DIREITA: AGEING LIST INTERATIVO ---
+        # --- 4.2 DIREITA: AGEING LIST INTERATIVO (REORDENADO) ---
         with c_right:
             st.subheader("⏳ Ageing List (Interativo)")
             st.caption("🖱️ **Clique na barra** para ver detalhes.")
 
-            ordem_ageing = ['> 60 Dias', '31-60 Dias', '16-30 Dias', '0-15 Dias', 'A Vencer']
+            # MUDANÇA AQUI: Ordem Cronológica (Menor para Maior)
+            ordem_ageing = ['A Vencer', '0-15 Dias', '16-30 Dias', '31-60 Dias', '> 60 Dias']
+            
             df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reindex(ordem_ageing).reset_index().fillna(0)
             
             fig_ageing = px.bar(
