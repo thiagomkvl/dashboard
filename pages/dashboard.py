@@ -21,7 +21,7 @@ try:
         # 1. Tratamento e Limpeza
         df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
         
-        # Filtra apenas o último processamento (Snapshot mais recente)
+        # Filtra apenas o último processamento
         ultima_data = df_hist['data_processamento'].max()
         df_full = df_hist[df_hist['data_processamento'] == ultima_data].copy()
         
@@ -37,12 +37,11 @@ try:
             
         df_full['Status_Tempo'] = df_full.apply(definir_status, axis=1)
 
-        # --- 2. PAINEL DE KPIs (TOPO) ---
+        # --- 2. PAINEL DE KPIs ---
         total_divida = df_full['Saldo_Limpo'].sum()
         total_vencido = df_full[df_full['Status_Tempo'] == "🚨 Vencido"]['Saldo_Limpo'].sum()
         total_hoje = df_full[df_full['Status_Tempo'] == "⚠️ Vence Hoje"]['Saldo_Limpo'].sum()
         
-        # Próximos 7 dias
         proxima_semana = hoje + pd.Timedelta(days=7)
         mask_semana = (df_full['Vencimento_DT'] > hoje) & (df_full['Vencimento_DT'] <= proxima_semana)
         total_semana = df_full[mask_semana]['Saldo_Limpo'].sum()
@@ -55,15 +54,16 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (SCROLL SIMPLES) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA (AGORA SIM: SCROLLBAR LIMPA!) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Arraste a barra inferior cinza para navegar pelas datas.")
+            st.caption("Arraste a barra inferior cinza para navegar no tempo.")
             
-            # Ordena cronologicamente
+            # Ordena e calcula máximo para o truque
             df_grafico = df_futuro.sort_values('Vencimento_DT')
+            max_valor = df_grafico['Saldo_Limpo'].max()
             
             # Gráfico de Barras Empilhadas
             fig_stack = px.bar(
@@ -76,14 +76,17 @@ try:
                 height=500
             )
             
-            # CONFIGURAÇÃO: BARRA DE ROLAGEM SIMPLES (SEM BOTÕES)
+            # --- O TRUQUE DO MÁGICO ---
             fig_stack.update_layout(
                 xaxis=dict(
-                    # Removemos o 'rangeselector' (botões de zoom)
                     rangeslider=dict(
                         visible=True, 
-                        thickness=0.06,  # Barra fina
-                        bgcolor="#f0f2f6" # Fundo cinza suave
+                        thickness=0.05,  # Barra fina
+                        bgcolor="#e2e8f0", # Cinza mais escuro (parece UI do Windows/Mac)
+                        # TRUQUE: Definimos o eixo Y da barra de rolagem para um valor
+                        # onde não existe dados (muito acima do máximo).
+                        # Resultado: O gráfico desenha "o nada" dentro da barra.
+                        yaxis=dict(range=[max_valor * 2, max_valor * 3]) 
                     ),
                     type="date"
                 ),
@@ -94,7 +97,7 @@ try:
                     x=1.01, xanchor="left",# Fica na direita
                     title_text="Fornecedores"
                 ),
-                margin=dict(r=20) # Margem direita
+                margin=dict(r=20) 
             )
             
             st.plotly_chart(fig_stack, use_container_width=True)
@@ -106,9 +109,7 @@ try:
         
         with c_left:
             st.subheader("🏗️ Composição da Dívida")
-            # Agrupa por fornecedor
             df_tree = df_full.groupby('Beneficiario')['Saldo_Limpo'].sum().reset_index()
-            # Top 30 para visualização limpa
             df_tree = df_tree.sort_values('Saldo_Limpo', ascending=False).head(30)
             
             fig_tree = px.treemap(
