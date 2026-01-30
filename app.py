@@ -1,6 +1,6 @@
 import streamlit as st
 
-# Configuração da Página Inicial
+# Configuração da Página Inicial (Tela de Login)
 st.set_page_config(page_title="SOS CARDIO - Login", layout="centered", page_icon="🏥")
 
 # --- LÓGICA DE LOGIN ---
@@ -20,27 +20,24 @@ def check_password():
         if st.button("Entrar", use_container_width=True):
             if pwd == st.secrets["PASSWORD"]:
                 st.session_state["password_correct"] = True
-                st.rerun()  # Recarrega para atualizar o estado
+                st.rerun()  # Recarrega a página para validar o estado
             else:
                 st.error("❌ Senha incorreta.")
     return False
 
 # --- FLUXO PRINCIPAL ---
+
 if not check_password():
-    st.stop()  # Para a execução aqui se não estiver logado
+    st.stop()  # Se não estiver logado, para o código aqui e mostra só o login
 
-# Se passou pelo check_password, mostra a tela de boas-vindas
-st.toast("Login efetuado com sucesso!", icon="✅")
-st.title("Bem-vindo ao Sistema SOS Cardio")
-
-st.info("""
-**👈 Utilize o menu na barra lateral esquerda para navegar:**
-
-* **📊 Dashboard:** Visão gerencial, Fluxo de Caixa e Curva ABC.
-* **💸 Cockpit:** Gestão de pagamentos diários (Pix e Boletos).
-* **📂 Upload:** Atualização da base de dados histórica.
-""")
-
-if st.button("🔒 Sair do Sistema"):
-    st.session_state["password_correct"] = False
-    st.rerun()
+# =========================================================
+# 🚀 REDIRECIONAMENTO AUTOMÁTICO
+# Se o código chegou aqui, significa que a senha está correta.
+# Vamos enviar o usuário direto para o Dashboard.
+# =========================================================
+try:
+    st.switch_page("pages/1_📊_Dashboard.py")
+except Exception as e:
+    # Caso o arquivo não seja encontrado (ex: nome diferente), mostra o menu padrão
+    st.warning("Login realizado! Selecione uma página no menu lateral.")
+    st.error(f"Erro ao redirecionar: {e}")
