@@ -5,14 +5,13 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
-# --- CONFIGURAÇÃO DA JANELA MODAL (O PULO DO GATO) ---
+# --- CONFIGURAÇÃO DA JANELA MODAL (COM BLINDAGEM DE ERROS) ---
 @st.dialog("🔍 Detalhes do Dia")
 def mostrar_detalhes_dia(data_selecionada, df_completo):
-    # 1. Padroniza a data clicada para zerar horas (00:00:00)
+    # 1. Padroniza a data clicada
     data_sel = pd.to_datetime(data_selecionada).normalize()
     
-    # 2. Garante que a coluna de data do DataFrame também esteja normalizada para comparar
-    # Isso garante que pegamos TODOS os fornecedores do dia, independente da hora
+    # 2. Filtra o dia
     mask_dia = pd.to_datetime(df_completo['Vencimento_DT']).dt.normalize() == data_sel
     df_dia = df_completo[mask_dia].copy()
     
@@ -20,7 +19,6 @@ def mostrar_detalhes_dia(data_selecionada, df_completo):
         total_dia = df_dia['Saldo_Limpo'].sum()
         qtd_titulos = len(df_dia)
         
-        # Cabeçalho do Modal
         c1, c2 = st.columns(2)
         c1.write(f"📅 **Data:** {data_sel.strftime('%d/%m/%Y')}")
         c2.write(f"🔢 **Qtd Títulos:** {qtd_titulos}")
@@ -28,13 +26,25 @@ def mostrar_detalhes_dia(data_selecionada, df_completo):
         
         st.divider()
         
-        # Tabela Detalhada (Ordenada por Valor)
-        df_tabela = df_dia[['Beneficiario', 'Saldo Atual', 'Carteira', 'Nr. Titulo']].copy()
+        # --- CORREÇÃO DO ERRO (BLINDAGEM DE COLUNAS) ---
+        # Lista de colunas que queremos mostrar
+        colunas_desejadas = ['Beneficiario', 'Saldo Atual', 'Carteira', 'Nr. Titulo']
+        
+        # Verifica quais colunas realmente existem no DataFrame
+        # Se 'Nr. Titulo' não existir, cria ela com valor "-"
+        for col in colunas_desejadas:
+            if col not in df_dia.columns:
+                df_dia[col] = "-"
+        
+        # Agora podemos selecionar sem medo de crashar (KeyError)
+        df_tabela = df_dia[colunas_desejadas].copy()
+        
+        # Ordenação segura (converte para numero para ordenar, depois descarta)
         df_tabela['Valor_Num'] = pd.to_numeric(df_tabela['Saldo Atual'], errors='coerce').fillna(0)
-        df_tabela = df_tabela.sort_values('Valor_Num', ascending=False)
+        df_tabela = df_tabela.sort_values('Valor_Num', ascending=False).drop(columns=['Valor_Num'])
         
         st.dataframe(
-            df_tabela.drop(columns=['Valor_Num']),
+            df_tabela,
             column_config={
                 "Beneficiario": st.column_config.TextColumn("Fornecedor", width="medium"),
                 "Saldo Atual": st.column_config.TextColumn("Valor"),
@@ -97,7 +107,7 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO (EXPANDE O DIA) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
@@ -160,27 +170,22 @@ try:
                 ),
                 margin=dict(r=20, t=50),
                 dragmode="pan", 
-                # Importante: Mantém seleção habilitada para capturar o clique
                 clickmode="event+select" 
             )
             
-            # 3.5 RENDERIZAÇÃO E LÓGICA DE EVENTO
+            # 3.5 RENDERIZAÇÃO
             evento = st.plotly_chart(
                 fig_stack, 
                 use_container_width=True, 
                 config={'scrollZoom': False, 'displayModeBar': False},
                 on_select="rerun",
-                selection_mode="points" # Captura o ponto clicado
+                selection_mode="points"
             )
 
-            # 3.6 LÓGICA DE ABERTURA - AGORA EXPANDIDA
+            # 3.6 LÓGICA DE ABERTURA
             if evento and "selection" in evento and evento["selection"]["points"]:
-                # Captura apenas a DATA do clique (ignorando qual fornecedor foi clicado)
                 ponto_clicado = evento["selection"]["points"][0]
                 data_clicada = ponto_clicado["x"]
-                
-                # Abre o modal passando a data e a BASE COMPLETA (df_full)
-                # A função 'mostrar_detalhes_dia' cuidará de filtrar TODOS os registros dessa data
                 mostrar_detalhes_dia(data_clicada, df_full)
 
         st.divider()
@@ -231,13 +236,19 @@ try:
             fig_ageing.update_layout(showlegend=False)
             st.plotly_chart(fig_ageing, use_container_width=True)
 
-        # --- 5. TABELA DE OFENSORES ---
+        # --- 5. TABELA DE OFENSORES (COM BLINDAGEM TAMBÉM) ---
         st.subheader("🔥 Top 10 Maiores Títulos Vencidos")
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].sort_values('Saldo_Limpo', ascending=False).head(10)
         
+        # Define colunas e blinda
+        cols_vencidos = ['Beneficiario', 'Vencimento', 'Saldo Atual', 'Carteira']
+        for col in cols_vencidos:
+            if col not in df_vencidos.columns:
+                df_vencidos[col] = "-"
+
         if not df_vencidos.empty:
             st.dataframe(
-                df_vencidos[['Beneficiario', 'Vencimento', 'Saldo Atual', 'Carteira']],
+                df_vencidos[cols_vencidos],
                 use_container_width=True,
                 hide_index=True
             )
