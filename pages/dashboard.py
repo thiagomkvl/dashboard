@@ -55,12 +55,12 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (ARRÁSTAVEL + LEGENDA LATERAL) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (SCROLL SIMPLES) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Use a barra fina abaixo do gráfico para arrastar e navegar no tempo.")
+            st.caption("Arraste a barra inferior cinza para navegar pelas datas.")
             
             # Ordena cronologicamente
             df_grafico = df_futuro.sort_values('Vencimento_DT')
@@ -76,21 +76,14 @@ try:
                 height=500
             )
             
-            # CONFIGURAÇÃO: Barra Fina Embaixo + Legenda na Direita
+            # CONFIGURAÇÃO: BARRA DE ROLAGEM SIMPLES (SEM BOTÕES)
             fig_stack.update_layout(
                 xaxis=dict(
-                    rangeselector=dict(
-                        buttons=list([
-                            dict(count=7, label="7d", step="day", stepmode="backward"),
-                            dict(count=15, label="15d", step="day", stepmode="backward"),
-                            dict(count=1, label="1m", step="month", stepmode="backward"),
-                            dict(step="all", label="Tudo")
-                        ])
-                    ),
+                    # Removemos o 'rangeselector' (botões de zoom)
                     rangeslider=dict(
                         visible=True, 
-                        thickness=0.05,  # 5% da altura (Fininho, apenas para arrastar)
-                        bgcolor="#f0f2f6"
+                        thickness=0.06,  # Barra fina
+                        bgcolor="#f0f2f6" # Fundo cinza suave
                     ),
                     type="date"
                 ),
@@ -98,10 +91,10 @@ try:
                 legend=dict(
                     orientation="v",       # Vertical
                     y=1, yanchor="top",    # Começa no topo
-                    x=1.01, xanchor="left",# Fica na direita, fora do gráfico
+                    x=1.01, xanchor="left",# Fica na direita
                     title_text="Fornecedores"
                 ),
-                margin=dict(r=20) # Margem direita para não cortar
+                margin=dict(r=20) # Margem direita
             )
             
             st.plotly_chart(fig_stack, use_container_width=True)
