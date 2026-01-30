@@ -5,18 +5,18 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
-# --- PALETA DE CORES HARMONIOSA ---
+# --- PALETA DE CORES (CORPORATE FINTECH) ---
 COR_AZUL_BASE = "#2c3e50" 
 COR_AZUL_CLARO = "#3498db"
+COR_LINHA_TENDENCIA = "#e74c3c" # Vermelho Suave para a linha
 PALETA_AZUIS = px.colors.sequential.Blues_r 
 
-# --- NOVO MAPA DE CORES (AGEING "RED SCALE") ---
 MAPA_CORES_AGEING = {
-    'A Vencer': COR_AZUL_CLARO,   # Azul: Normalidade
-    '0-15 Dias': '#f5b7b1',       # Vermelho Bem Claro (Início do atraso)
-    '16-30 Dias': '#ec7063',      # Vermelho Médio
-    '31-60 Dias': '#c0392b',      # Vermelho Escuro
-    '> 60 Dias': '#78281f'        # Vermelho Quase Preto (Crítico)
+    'A Vencer': COR_AZUL_CLARO,
+    '0-15 Dias': '#f5b7b1',
+    '16-30 Dias': '#ec7063',
+    '31-60 Dias': '#c0392b',
+    '> 60 Dias': '#78281f'
 }
 
 # --- 1. MODAL DETALHES POR DIA ---
@@ -32,6 +32,43 @@ def mostrar_detalhes_dia(data_selecionada, df_completo):
 def mostrar_detalhes_ageing(faixa_selecionada, df_completo):
     df_faixa = df_completo[df_completo['Faixa_Ageing'] == faixa_selecionada].copy()
     exibir_tabela_detalhada(df_faixa, f"📂 Faixa: {faixa_selecionada}")
+
+# --- 3. MODAL GRÁFICO MÊS COMPLETO (NOVO!) ---
+@st.dialog("📅 Visão Mensal Completa")
+def mostrar_grafico_completo(df_futuro):
+    st.caption("Visão macro de todos os lançamentos futuros disponíveis.")
+    
+    # Prepara dados
+    df_grafico = df_futuro.sort_values('Vencimento_DT')
+    df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
+    df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
+    max_val = df_totais['Saldo_Limpo'].max()
+
+    # Base: Barras Empilhadas
+    fig = px.bar(
+        df_grafico, x='Vencimento_DT', y='Saldo_Limpo', color='Beneficiario',
+        title=None, height=500,
+        labels={'Saldo_Limpo': 'Valor', 'Vencimento_DT': 'Data'},
+        color_discrete_sequence=PALETA_AZUIS
+    )
+    
+    # Adiciona Linha de Tendência
+    fig.add_trace(go.Scatter(
+        x=df_totais['Vencimento_DT'], y=df_totais['Saldo_Limpo'],
+        mode='lines+markers', name='Tendência Diária',
+        line=dict(color=COR_LINHA_TENDENCIA, width=3),
+        marker=dict(size=6, color=COR_LINHA_TENDENCIA)
+    ))
+
+    fig.update_layout(
+        xaxis=dict(tickformat="%d/%m", dtick="D1"), # Mostra todos os dias
+        yaxis=dict(range=[0, max_val * 1.2]),
+        showlegend=False, # Esconde legenda no modal para limpar
+        margin=dict(r=20, t=20)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # --- FUNÇÃO AUXILIAR DE TABELA ---
 def exibir_tabela_detalhada(df_filtrado, titulo_contexto):
@@ -118,18 +155,27 @@ try:
 
         st.divider()
 
-        # --- 3. CRONOGRAMA ---
+        # --- 3. CRONOGRAMA COM LINHA DE TENDÊNCIA E BOTÃO MÊS ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
-            st.subheader("📅 Cronograma de Desembolso")
-            st.caption("🖐️ Arraste para navegar. 🖱️ **Clique na barra** para ver pagamentos do dia.")
+            # Layout do Cabeçalho do Gráfico (Título + Botão na mesma linha)
+            c_head1, c_head2 = st.columns([0.8, 0.2])
+            with c_head1:
+                st.subheader("📅 Cronograma de Desembolso")
+                st.caption("🖐️ Arraste para navegar. 🖱️ Clique na barra para detalhes.")
+            with c_head2:
+                # O BOTÃO MÁGICO
+                if st.button("🔍 Ver Mês"):
+                    mostrar_grafico_completo(df_futuro)
             
+            # Preparação dos Dados
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_val = df_totais['Saldo_Limpo'].max()
 
+            # 1. Base: Barras Empilhadas (Azul)
             fig_stack = px.bar(
                 df_grafico, x='Vencimento_DT', y='Saldo_Limpo', 
                 color='Beneficiario',
@@ -138,17 +184,26 @@ try:
                 color_discrete_sequence=PALETA_AZUIS 
             )
             
-            fig_stack.update_traces(
-                marker_line_width=0,
-                selected=dict(marker=dict(opacity=1)), 
-                unselected=dict(marker=dict(opacity=1))
-            )
-            
+            # 2. Adiciona LINHA DE TENDÊNCIA (Vermelha)
+            fig_stack.add_trace(go.Scatter(
+                x=df_totais['Vencimento_DT'],
+                y=df_totais['Saldo_Limpo'],
+                mode='lines+markers', # Linha + Bolinha no ponto
+                name='Tendência',
+                line=dict(color=COR_LINHA_TENDENCIA, width=3), # Linha Vermelha grossa
+                marker=dict(size=8, color='white', line=dict(width=2, color=COR_LINHA_TENDENCIA)), # Bolinha branca com borda vermelha
+                hoverinfo='skip' # Não atrapalha o hover das barras
+            ))
+
+            # 3. Adiciona Rótulos de Texto (Em cima da linha)
             fig_stack.add_trace(go.Scatter(
                 x=df_totais['Vencimento_DT'], y=df_totais['Saldo_Limpo'],
                 text=df_totais['Label'], mode='text', textposition='top center',
                 textfont=dict(size=12, color=COR_AZUL_BASE, family="Arial Black"), showlegend=False, hoverinfo='skip'
             ))
+
+            # 4. Ajustes Visuais
+            fig_stack.update_traces(selector=dict(type='bar'), marker_line_width=0, selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
 
             fig_stack.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)",
@@ -157,10 +212,7 @@ try:
                     tickmode='linear', dtick="D1", tickformat="%d/%m", 
                     rangeslider=dict(visible=False), showgrid=False
                 ),
-                yaxis=dict(
-                    range=[0, max_val * 1.2], fixedrange=True,
-                    showgrid=True, gridcolor='#ecf0f1'
-                ),
+                yaxis=dict(range=[0, max_val * 1.25], fixedrange=True, showgrid=True, gridcolor='#ecf0f1'), # Margem maior no topo para a linha
                 showlegend=True, legend=dict(orientation="v", y=1, x=1.01, title=None),
                 margin=dict(r=20, t=50), dragmode="pan", clickmode="event+select"
             )
@@ -171,15 +223,18 @@ try:
                 on_select="rerun", selection_mode="points"
             )
 
+            # Lógica do Clique (Apenas para barras, ignorando a linha)
             if evento_crono and "selection" in evento_crono and evento_crono["selection"]["points"]:
-                mostrar_detalhes_dia(evento_crono["selection"]["points"][0]["x"], df_full)
+                # Verifica se o clique foi numa barra (curveNumber 0 ou maior) e não na linha/texto
+                point = evento_crono["selection"]["points"][0]
+                mostrar_detalhes_dia(point["x"], df_full)
 
         st.divider()
 
         # --- 4. SEÇÃO MACRO ---
         c_left, c_right = st.columns([1, 1])
         
-        # --- 4.1 ESQUERDA: TREEMAP ---
+        # --- 4.1 ESQUERDA: TREEMAP (AZUL) ---
         with c_left:
             st.subheader("📆 Dívida por Mês (Visão Macro)")
             
@@ -189,8 +244,7 @@ try:
             
             fig_mes = px.treemap(
                 df_mes, path=['Mes_Label'], values='Saldo_Limpo', color='Saldo_Limpo',
-                color_continuous_scale='Blues', 
-                hover_data={'Saldo_Limpo': ':,.2f'}
+                color_continuous_scale='Blues', hover_data={'Saldo_Limpo': ':,.2f'}
             )
             
             fig_mes.update_traces(
@@ -211,20 +265,13 @@ try:
             
             fig_ageing = px.bar(
                 df_ageing, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s',
-                color='Faixa_Ageing', 
-                # APLICA A NOVA ESCALA DE VERMELHOS
-                color_discrete_map=MAPA_CORES_AGEING
+                color='Faixa_Ageing', color_discrete_map=MAPA_CORES_AGEING
             )
             
-            fig_ageing.update_traces(
-                selected=dict(marker=dict(opacity=1)), 
-                unselected=dict(marker=dict(opacity=1)),
-                marker_line_width=0
-            )
+            fig_ageing.update_traces(selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)), marker_line_width=0)
             fig_ageing.update_layout(
                 showlegend=False, xaxis_title=None, yaxis_title=None,
-                plot_bgcolor="rgba(0,0,0,0)",
-                clickmode="event+select", dragmode=False,
+                plot_bgcolor="rgba(0,0,0,0)", clickmode="event+select", dragmode=False,
                 xaxis=dict(showgrid=True, gridcolor='#ecf0f1')
             )
             
