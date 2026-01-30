@@ -2,7 +2,7 @@ from datetime import datetime
 import pandas as pd
 from modules.utils import formatar_campo, limpar_ids
 
-# DADOS CADASTRAIS BLINDADOS
+# DADOS CADASTRAIS (Confirme se o CNPJ está correto)
 DADOS_HOSPITAL = {
     'cnpj': '85307098000187',
     'convenio': '000000000985597',
@@ -44,6 +44,7 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
 
         chave_pix = limpar_ids(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
+        
         tipo_chave = "05"
         if chave_pix or raw_pix:
             if "@" in raw_pix: tipo_chave = "02"
@@ -52,12 +53,13 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
             elif len(chave_pix) > 20: tipo_chave = "04"
             else: tipo_chave = "01"
 
-        banco_fav = r.get('BANCO_FAVORECIDO', '') or "000"
-        ag_fav = r.get('AGENCIA_FAVORECIDA', '') or "0"
-        cc_fav = r.get('CONTA_FAVORECIDA', '')
-        dv_cc_fav = r.get('DIGITO_CONTA_FAVORECIDA', '') or "0"
-        if not cc_fav or cc_fav == "" or int(limpar_ids(cc_fav) or 0) == 0: cc_fav = "1"
+        banco_fav = limpar_ids(r.get('BANCO_FAVORECIDO', '')) or "000"
+        ag_fav = limpar_ids(r.get('AGENCIA_FAVORECIDA', '')) or "0"
+        cc_fav = limpar_ids(r.get('CONTA_FAVORECIDA', ''))
+        dv_cc_fav = limpar_ids(r.get('DIGITO_CONTA_FAVORECIDA', '')) or "0"
+        if not cc_fav or cc_fav == "0": cc_fav = "1"
 
+        # SEGMENTO A
         reg_lote += 1
         segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
                 f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
@@ -67,11 +69,18 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
                 f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
         linhas.append(segA[:240].ljust(240))
         
+        # SEGMENTO B (CORREÇÃO DO ERRO DE VALIDAÇÃO)
         reg_lote += 1
+        
+        # Limpa o documento. Se vier vazio, coloca Zeros (não coloque 1)
         doc_fav = limpar_ids(r.get('cnpj_beneficiario', ''))
-        tipo_insc = "1" if len(doc_fav) == 11 else "2"
+        if not doc_fav: doc_fav = "00000000000"
+        
+        tipo_insc = "2" # CNPJ
+        if len(doc_fav) <= 11: tipo_insc = "1" # CPF
+        
         segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(tipo_chave,3,'0','r')}" 
-                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}"
+                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}" # <-- CORREÇÃO AQUI
                 f"{formatar_campo('ENDERECO NAO INFORMADO',35)}{' '*60}"
                 f"{formatar_campo(chave_pix,99)}{' '*6}{'0'*8}")
         linhas.append(segB[:240].ljust(240))
@@ -90,14 +99,12 @@ def gerar_cnab_boleto(df_sel, h=DADOS_HOSPITAL):
     hoje = datetime.now()
     BCO = "136"
 
-    # Header Arquivo
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
           f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
     linhas.append(h0[:240].ljust(240))
     
-    # Header Lote (Boleto)
     h1 = (f"{BCO}00011C2031030 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -113,6 +120,7 @@ def gerar_cnab_boleto(df_sel, h=DADOS_HOSPITAL):
         try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
         except: data_pagto = hoje.strftime('%d%m%Y')
 
+        # Limpeza agressiva para garantir que só fiquem números
         cod_barras = "".join(filter(str.isdigit, str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))))
         if len(cod_barras) > 44: cod_barras = cod_barras[:44]
 
