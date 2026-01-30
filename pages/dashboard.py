@@ -124,6 +124,13 @@ try:
                 height=550
             )
             
+            # O TRUQUE VISUAL: REMOVE A SELEÇÃO VISUAL
+            # Força opacidade 1.0 (totalmente visível) tanto para selecionados quanto para não selecionados
+            fig_stack.update_traces(
+                selected=dict(marker=dict(opacity=1)),
+                unselected=dict(marker=dict(opacity=1))
+            )
+
             # RÓTULOS DE TOTAL
             fig_stack.add_trace(
                 go.Scatter(
@@ -161,17 +168,15 @@ try:
                 ),
                 margin=dict(r=20, t=50),
                 dragmode="pan", 
-                # MUDANÇA IMPORTANTE: 'event' apenas dispara o dado, não seleciona visualmente
-                clickmode="event" 
+                clickmode="event+select" # Mantemos 'select' para o Streamlit pegar o dado, mas o visual está anulado acima
             )
             
-            # RENDERIZAÇÃO E LÓGICA DE EVENTO
-            # doubleClick='reset+autosize' -> 'False' (desativa o reset no duplo clique)
+            # RENDERIZAÇÃO
             evento = st.plotly_chart(
                 fig_stack, 
                 use_container_width=True, 
                 config={'scrollZoom': False, 'displayModeBar': False, 'doubleClick': False},
-                on_select="rerun", # Mantém rerun para processar o clique
+                on_select="rerun",
                 selection_mode="points"
             )
 
@@ -233,7 +238,6 @@ try:
         st.subheader("🔥 Top 10 Maiores Títulos Vencidos")
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].sort_values('Saldo_Limpo', ascending=False).head(10)
         
-        # Blinda colunas
         cols_vencidos = ['Beneficiario', 'Vencimento', 'Saldo Atual', 'Carteira']
         for col in cols_vencidos:
             if col not in df_vencidos.columns:
