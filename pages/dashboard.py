@@ -54,58 +54,7 @@ try:
 
         st.divider()
 
-# --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (LAYOUT FINAL) ---
-        df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
-        
-        if not df_futuro.empty:
-            st.subheader("📅 Cronograma de Desembolso")
             st.caption("Barra inferior para navegação | Legenda lateral para filtro.")
-            
-            # Ordena cronologicamente
-            df_grafico = df_futuro.sort_values('Vencimento_DT')
-            
-            # Gráfico de Barras Empilhadas
-            fig_stack = px.bar(
-                df_grafico, 
-                x='Vencimento_DT', 
-                y='Saldo_Limpo', 
-                color='Beneficiario', 
-                title="Fluxo de Pagamentos Futuros",
-                labels={'Saldo_Limpo': 'Valor (R$)', 'Vencimento_DT': 'Vencimento', 'Beneficiario': 'Fornecedor'},
-                height=500
-            )
-            
-            # --- CONFIGURAÇÃO: LEGENDA LATERAL + BARRA DE ROLAGEM FINA ---
-            fig_stack.update_layout(
-                xaxis=dict(
-                    rangeselector=dict(
-                        buttons=list([
-                            dict(count=7, label="7d", step="day", stepmode="backward"),
-                            dict(count=15, label="15d", step="day", stepmode="backward"),
-                            dict(count=1, label="1m", step="month", stepmode="backward"),
-                            dict(step="all", label="Tudo")
-                        ])
-                    ),
-                    # AQUI ESTÁ O AJUSTE DA BARRA DE ROLAGEM:
-                    rangeslider=dict(
-                        visible=True, 
-                        thickness=0.05,  # 5% da altura (bem fininha, só pra arrastar)
-                        bgcolor="#f0f2f6" # Cor cinza suave
-                    ),
-                    type="date"
-                ),
-                showlegend=True,
-                # AQUI A LEGENDA VOLTA PARA A LATERAL DIREITA:
-                legend=dict(
-                    orientation="v",       # Vertical
-                    y=1, yanchor="top",    # Alinhada ao topo
-                    x=1.02, xanchor="left",# Ao lado direito do gráfico
-                    title_text="Fornecedores"
-                ),
-                margin=dict(r=20) # Margem para não cortar a legenda
-            )
-            
-            st.plotly_chart(fig_stack, use_container_width=True)
 
         # --- 4. ANÁLISE DE COMPOSIÇÃO (TREEMAP & AGEING) ---
         c_left, c_right = st.columns([1, 1])
