@@ -26,5 +26,7 @@ def formatar_campo(texto, tamanho, preenchimento=' ', alinhar='l'):
 def identificar_tipo_pagamento(linha):
     dado = str(linha.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     dado_limpo = "".join(filter(str.isdigit, dado))
-    if len(dado_limpo) >= 44: return 'BOLETO'
-    else: return 'PIX'
+    if len(dado_limpo) >= 44:
+        return 'BOLETO'
+    else:
+        return 'PIX'
