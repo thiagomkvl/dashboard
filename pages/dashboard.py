@@ -54,12 +54,12 @@ try:
 
         st.divider()
 
-# --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (COM LEGENDA LATERAL) ---
+# --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (LAYOUT FINAL) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
-            st.subheader("📅 Cronograma de Desembolso (Interativo)")
-            st.caption("Use a barra inferior para zoom no tempo. A legenda lateral permite filtrar fornecedores.")
+            st.subheader("📅 Cronograma de Desembolso")
+            st.caption("Barra inferior para navegação | Legenda lateral para filtro.")
             
             # Ordena cronologicamente
             df_grafico = df_futuro.sort_values('Vencimento_DT')
@@ -72,10 +72,10 @@ try:
                 color='Beneficiario', 
                 title="Fluxo de Pagamentos Futuros",
                 labels={'Saldo_Limpo': 'Valor (R$)', 'Vencimento_DT': 'Vencimento', 'Beneficiario': 'Fornecedor'},
-                height=550 # Altura fixa ajuda a criar o scroll na legenda se tiver muitos itens
+                height=500
             )
             
-            # --- CONFIGURAÇÃO DA LEGENDA LATERAL ---
+            # --- CONFIGURAÇÃO: LEGENDA LATERAL + BARRA DE ROLAGEM FINA ---
             fig_stack.update_layout(
                 xaxis=dict(
                     rangeselector=dict(
@@ -86,19 +86,23 @@ try:
                             dict(step="all", label="Tudo")
                         ])
                     ),
-                    rangeslider=dict(visible=True), # Barra de rolagem de tempo (inferior)
+                    # AQUI ESTÁ O AJUSTE DA BARRA DE ROLAGEM:
+                    rangeslider=dict(
+                        visible=True, 
+                        thickness=0.05,  # 5% da altura (bem fininha, só pra arrastar)
+                        bgcolor="#f0f2f6" # Cor cinza suave
+                    ),
                     type="date"
                 ),
-                showlegend=True, # Mostra a legenda
+                showlegend=True,
+                # AQUI A LEGENDA VOLTA PARA A LATERAL DIREITA:
                 legend=dict(
-                    orientation="v",      # Lista Vertical
-                    y=1, yanchor="top",   # Começa no topo
-                    x=1.02, xanchor="left", # Fica logo à direita do gráfico
-                    traceorder="normal",
-                    # Essas propriedades ajudam na rolagem se a lista for grande
-                    valign="top"
+                    orientation="v",       # Vertical
+                    y=1, yanchor="top",    # Alinhada ao topo
+                    x=1.02, xanchor="left",# Ao lado direito do gráfico
+                    title_text="Fornecedores"
                 ),
-                margin=dict(r=20) # Margem direita leve
+                margin=dict(r=20) # Margem para não cortar a legenda
             )
             
             st.plotly_chart(fig_stack, use_container_width=True)
