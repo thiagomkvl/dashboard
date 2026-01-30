@@ -5,39 +5,47 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
-# --- CONFIGURAÇÃO DA JANELA MODAL (DETALHES) ---
+# --- CONFIGURAÇÃO DA JANELA MODAL (O PULO DO GATO) ---
 @st.dialog("🔍 Detalhes do Dia")
 def mostrar_detalhes_dia(data_selecionada, df_completo):
-    # Filtra os dados apenas para o dia clicado
-    # Converter para datetime para garantir compatibilidade
+    # 1. Padroniza a data clicada para zerar horas (00:00:00)
     data_sel = pd.to_datetime(data_selecionada).normalize()
-    df_dia = df_completo[df_completo['Vencimento_DT'] == data_sel].copy()
+    
+    # 2. Garante que a coluna de data do DataFrame também esteja normalizada para comparar
+    # Isso garante que pegamos TODOS os fornecedores do dia, independente da hora
+    mask_dia = pd.to_datetime(df_completo['Vencimento_DT']).dt.normalize() == data_sel
+    df_dia = df_completo[mask_dia].copy()
     
     if not df_dia.empty:
         total_dia = df_dia['Saldo_Limpo'].sum()
+        qtd_titulos = len(df_dia)
         
-        st.write(f"**Data:** {data_sel.strftime('%d/%m/%Y')}")
-        st.metric("Total a Pagar", formatar_real(total_dia))
+        # Cabeçalho do Modal
+        c1, c2 = st.columns(2)
+        c1.write(f"📅 **Data:** {data_sel.strftime('%d/%m/%Y')}")
+        c2.write(f"🔢 **Qtd Títulos:** {qtd_titulos}")
+        st.metric("Total a Pagar no Dia", formatar_real(total_dia))
         
         st.divider()
         
-        # Prepara tabela bonita
+        # Tabela Detalhada (Ordenada por Valor)
         df_tabela = df_dia[['Beneficiario', 'Saldo Atual', 'Carteira', 'Nr. Titulo']].copy()
-        df_tabela = df_tabela.sort_values('Saldo Atual', ascending=False)
+        df_tabela['Valor_Num'] = pd.to_numeric(df_tabela['Saldo Atual'], errors='coerce').fillna(0)
+        df_tabela = df_tabela.sort_values('Valor_Num', ascending=False)
         
         st.dataframe(
-            df_tabela,
+            df_tabela.drop(columns=['Valor_Num']),
             column_config={
-                "Beneficiario": "Fornecedor",
-                "Saldo Atual": st.column_config.TextColumn("Valor"), # Mantem formatação original da planilha ou converte
-                "Carteira": "Status",
-                "Nr. Titulo": "Nota/Título"
+                "Beneficiario": st.column_config.TextColumn("Fornecedor", width="medium"),
+                "Saldo Atual": st.column_config.TextColumn("Valor"),
+                "Carteira": st.column_config.TextColumn("Status", width="small"),
+                "Nr. Titulo": st.column_config.TextColumn("Nota/Título", width="small")
             },
             hide_index=True,
             use_container_width=True
         )
     else:
-        st.warning("Não foram encontrados dados para esta data.")
+        st.warning(f"Não foram encontrados dados para a data {data_sel.strftime('%d/%m/%Y')}.")
 
 # --- BLOQUEIO DE SEGURANÇA ---
 if not st.session_state.get("password_correct"):
@@ -89,22 +97,22 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO (CLIQUE PARA DETALHAR) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO (EXPANDE O DIA) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("🖐️ Arraste para o lado para navegar. 🖱️ **Clique na barra** para ver a lista de pagamentos do dia.")
+            st.caption("🖐️ Arraste para navegar. 🖱️ **Clique na barra** para ver TODOS os pagamentos do dia.")
             
             # Ordenação
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             
-            # 3.1 CALCULAR TOTAIS
+            # 3.1 TOTAIS NO TOPO
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_valor_dia = df_totais['Saldo_Limpo'].max()
 
-            # 3.2 CRIAR GRÁFICO
+            # 3.2 GRÁFICO BASE
             fig_stack = px.bar(
                 df_grafico, 
                 x='Vencimento_DT', 
@@ -115,7 +123,7 @@ try:
                 height=550
             )
             
-            # 3.3 ADICIONAR TOTAIS NO TOPO
+            # 3.3 RÓTULOS DE TOTAL
             fig_stack.add_trace(
                 go.Scatter(
                     x=df_totais['Vencimento_DT'],
@@ -129,14 +137,14 @@ try:
                 )
             )
 
-            # 3.4 CONFIGURAÇÃO DE INTERATIVIDADE
+            # 3.4 CONFIGURAÇÃO DE LAYOUT
             fig_stack.update_layout(
                 xaxis=dict(
                     range=[hoje - pd.Timedelta(days=0.5), hoje + pd.Timedelta(days=6.5)],
                     tickmode='linear',
                     dtick="D1",
                     tickformat="%d/%m",
-                    rangeslider=dict(visible=False), # Sem barra embaixo
+                    rangeslider=dict(visible=False), 
                     type="date"
                 ),
                 yaxis=dict(
@@ -151,27 +159,28 @@ try:
                     title_text="Fornecedores"
                 ),
                 margin=dict(r=20, t=50),
-                dragmode="pan", # Mãozinha para arrastar
-                clickmode="event+select" # Habilita evento de clique
+                dragmode="pan", 
+                # Importante: Mantém seleção habilitada para capturar o clique
+                clickmode="event+select" 
             )
             
-            # 3.5 RENDERIZAÇÃO COM CAPTURA DE CLIQUE
-            # on_select="rerun" faz o streamlit recarregar e trazer os dados do clique
+            # 3.5 RENDERIZAÇÃO E LÓGICA DE EVENTO
             evento = st.plotly_chart(
                 fig_stack, 
                 use_container_width=True, 
                 config={'scrollZoom': False, 'displayModeBar': False},
                 on_select="rerun",
-                selection_mode="points" 
+                selection_mode="points" # Captura o ponto clicado
             )
 
-            # 3.6 LÓGICA DE ABERTURA DA JANELA (DIALOG)
+            # 3.6 LÓGICA DE ABERTURA - AGORA EXPANDIDA
             if evento and "selection" in evento and evento["selection"]["points"]:
-                # Pega a data do ponto clicado (Eixo X)
+                # Captura apenas a DATA do clique (ignorando qual fornecedor foi clicado)
                 ponto_clicado = evento["selection"]["points"][0]
                 data_clicada = ponto_clicado["x"]
                 
-                # Abre a janela modal
+                # Abre o modal passando a data e a BASE COMPLETA (df_full)
+                # A função 'mostrar_detalhes_dia' cuidará de filtrar TODOS os registros dessa data
                 mostrar_detalhes_dia(data_clicada, df_full)
 
         st.divider()
