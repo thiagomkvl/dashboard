@@ -168,19 +168,22 @@ try:
             fig_mes.update_layout(margin=dict(t=30, l=0, r=0, b=0))
             st.plotly_chart(fig_mes, use_container_width=True)
 
-        # --- 4.2 DIREITA: AGEING LIST INTERATIVO (REORDENADO) ---
+        # --- 4.2 DIREITA: AGEING LIST (ORDENADO POR VALOR) ---
         with c_right:
-            st.subheader("⏳ Ageing List (Interativo)")
+            st.subheader("⏳ Ageing List (Por Valor)")
             st.caption("🖱️ **Clique na barra** para ver detalhes.")
 
-            # MUDANÇA AQUI: Ordem Cronológica (Menor para Maior)
-            ordem_ageing = ['A Vencer', '0-15 Dias', '16-30 Dias', '31-60 Dias', '> 60 Dias']
+            # 1. Agrupa
+            df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reset_index()
             
-            df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reindex(ordem_ageing).reset_index().fillna(0)
+            # 2. Ordena pelo VALOR FINANCEIRO (Menor para Maior)
+            df_ageing = df_ageing.sort_values('Saldo_Limpo', ascending=True)
             
             fig_ageing = px.bar(
                 df_ageing, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s',
-                color='Faixa_Ageing', color_discrete_map={'A Vencer': '#2ecc71', '> 60 Dias': '#c0392b', '31-60 Dias': '#e74c3c'}
+                color='Faixa_Ageing', 
+                # Mantém o mapa de cores para consistência, mesmo mudando a ordem
+                color_discrete_map={'A Vencer': '#2ecc71', '> 60 Dias': '#c0392b', '31-60 Dias': '#e74c3c'}
             )
             
             fig_ageing.update_traces(selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
