@@ -5,23 +5,18 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
-# --- PALETA DE CORES HARMONIOSA (CORPORATE FINTECH) ---
-# Azul Profundo (Base)
+# --- PALETA DE CORES HARMONIOSA ---
 COR_AZUL_BASE = "#2c3e50" 
-# Azul Claro (Fluxo Normal / A Vencer)
 COR_AZUL_CLARO = "#3498db"
-# Escala de Azuis para gráficos de volume
 PALETA_AZUIS = px.colors.sequential.Blues_r 
 
-# MAPA SEMÂNTICO UNIFICADO (AGEING)
-# O "A Vencer" agora é AZUL para combinar com o resto do dashboard.
-# Só usamos cores quentes (Amarelo/Vermelho) para problemas reais.
+# --- NOVO MAPA DE CORES (AGEING "RED SCALE") ---
 MAPA_CORES_AGEING = {
-    'A Vencer': COR_AZUL_CLARO,   # Azul: Integra com o visual do Cronograma
-    '0-15 Dias': '#f1c40f',       # Amarelo: Alerta inicial
-    '16-30 Dias': '#f39c12',      # Laranja: Atenção
-    '31-60 Dias': '#e74c3c',      # Vermelho Suave: Atraso grave
-    '> 60 Dias': '#c0392b'        # Vermelho Escuro: Crítico
+    'A Vencer': COR_AZUL_CLARO,   # Azul: Normalidade
+    '0-15 Dias': '#f5b7b1',       # Vermelho Bem Claro (Início do atraso)
+    '16-30 Dias': '#ec7063',      # Vermelho Médio
+    '31-60 Dias': '#c0392b',      # Vermelho Escuro
+    '> 60 Dias': '#78281f'        # Vermelho Quase Preto (Crítico)
 }
 
 # --- 1. MODAL DETALHES POR DIA ---
@@ -123,7 +118,7 @@ try:
 
         st.divider()
 
-        # --- 3. CRONOGRAMA (DEGRADE DE AZUIS) ---
+        # --- 3. CRONOGRAMA ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
@@ -140,7 +135,6 @@ try:
                 color='Beneficiario',
                 title="Fluxo de Pagamentos Diário", height=550,
                 labels={'Saldo_Limpo': 'Valor', 'Vencimento_DT': 'Data', 'Beneficiario': 'Fornecedor'},
-                # Sequência de azuis: Cria um visual "Onda" elegante
                 color_discrete_sequence=PALETA_AZUIS 
             )
             
@@ -185,7 +179,7 @@ try:
         # --- 4. SEÇÃO MACRO ---
         c_left, c_right = st.columns([1, 1])
         
-        # --- 4.1 ESQUERDA: TREEMAP (HARMONIA AZUL) ---
+        # --- 4.1 ESQUERDA: TREEMAP ---
         with c_left:
             st.subheader("📆 Dívida por Mês (Visão Macro)")
             
@@ -195,7 +189,6 @@ try:
             
             fig_mes = px.treemap(
                 df_mes, path=['Mes_Label'], values='Saldo_Limpo', color='Saldo_Limpo',
-                # Continua no tema Azul: Meses com mais dívida ficam azul escuro
                 color_continuous_scale='Blues', 
                 hover_data={'Saldo_Limpo': ':,.2f'}
             )
@@ -208,7 +201,7 @@ try:
             fig_mes.update_layout(margin=dict(t=30, l=0, r=0, b=0))
             st.plotly_chart(fig_mes, use_container_width=True)
 
-        # --- 4.2 DIREITA: AGEING LIST (INTEGRADO AO TEMA) ---
+        # --- 4.2 DIREITA: AGEING LIST (RED SCALE) ---
         with c_right:
             st.subheader("⏳ Ageing List (Por Valor)")
             st.caption("🖱️ **Clique na barra** para ver detalhes.")
@@ -216,12 +209,10 @@ try:
             df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reset_index()
             df_ageing = df_ageing.sort_values('Saldo_Limpo', ascending=True)
             
-            # Aqui aplicamos a lógica unificada:
-            # - O que está "OK" (A Vencer) = Azul (combina com o resto)
-            # - O que é Problema = Amarelo -> Vermelho
             fig_ageing = px.bar(
                 df_ageing, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s',
                 color='Faixa_Ageing', 
+                # APLICA A NOVA ESCALA DE VERMELHOS
                 color_discrete_map=MAPA_CORES_AGEING
             )
             
