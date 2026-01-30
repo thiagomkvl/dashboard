@@ -1,8 +1,8 @@
 from datetime import datetime
 import pandas as pd
-from modules.utils import formatar_campo, limpar_ids
+from modules.utils import formatar_campo, limpar_ids, identificar_tipo_pagamento
 
-# DADOS CADASTRAIS (Confirme se o CNPJ está correto)
+# DADOS CADASTRAIS
 DADOS_HOSPITAL = {
     'cnpj': '85307098000187',
     'convenio': '000000000985597',
@@ -14,7 +14,15 @@ DADOS_HOSPITAL = {
     'cep': '88000000', 'uf': 'SC'
 }
 
-def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
+def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
+    # 1. FILTRAGEM AUTOMÁTICA (A Lógica Homologada)
+    # Só processa o que NÃO for Boleto (Chave < 44 dígitos)
+    df_sel = df_input.copy()
+    df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
+    df_sel = df_sel[df_sel['TIPO_TEMP'] == 'PIX'] # Mantém apenas Pix
+    
+    if df_sel.empty: return None # Proteção se não sobrar nada
+
     linhas = []
     hoje = datetime.now()
     BCO = "136"
@@ -26,7 +34,7 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
           f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
     linhas.append(h0[:240].ljust(240))
     
-    # Header Lote (Pix)
+    # Header Lote (Pix = 45)
     h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -59,7 +67,6 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
         dv_cc_fav = limpar_ids(r.get('DIGITO_CONTA_FAVORECIDA', '')) or "0"
         if not cc_fav or cc_fav == "0": cc_fav = "1"
 
-        # SEGMENTO A
         reg_lote += 1
         segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
                 f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
@@ -69,42 +76,50 @@ def gerar_cnab_pix(df_sel, h=DADOS_HOSPITAL):
                 f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
         linhas.append(segA[:240].ljust(240))
         
-        # SEGMENTO B (CORREÇÃO DO ERRO DE VALIDAÇÃO)
         reg_lote += 1
-        
-        # Limpa o documento. Se vier vazio, coloca Zeros (não coloque 1)
         doc_fav = limpar_ids(r.get('cnpj_beneficiario', ''))
         if not doc_fav: doc_fav = "00000000000"
+        tipo_insc = "1" if len(doc_fav) <= 11 else "2"
         
-        tipo_insc = "2" # CNPJ
-        if len(doc_fav) <= 11: tipo_insc = "1" # CPF
-        
-        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(tipo_chave,3,'0','r')}" 
-                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}" # <-- CORREÇÃO AQUI
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}" 
+                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}"
                 f"{formatar_campo('ENDERECO NAO INFORMADO',35)}{' '*60}"
                 f"{formatar_campo(chave_pix,99)}{' '*6}{'0'*8}")
         linhas.append(segB[:240].ljust(240))
         
     reg_lote += 1
+    # SOMA APENAS O QUE FOI FILTRADO
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
     t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
           f"{'0'*18}{'0'*6}{' '*165}{' '*10}")
     linhas.append(t5[:240].ljust(240))
+    
     t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
+    
     return "\r\n".join(linhas)
 
-def gerar_cnab_boleto(df_sel, h=DADOS_HOSPITAL):
+def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
+    # 1. FILTRAGEM AUTOMÁTICA (A Lógica Homologada)
+    # Só processa o que FOR Boleto (Chave >= 44 dígitos)
+    df_sel = df_input.copy()
+    df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
+    df_sel = df_sel[df_sel['TIPO_TEMP'] == 'BOLETO'] # Mantém apenas Boletos
+    
+    if df_sel.empty: return None
+
     linhas = []
     hoje = datetime.now()
     BCO = "136"
 
+    # Header Arquivo
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
           f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
     linhas.append(h0[:240].ljust(240))
     
+    # Header Lote (Boleto = 31)
     h1 = (f"{BCO}00011C2031030 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -120,7 +135,7 @@ def gerar_cnab_boleto(df_sel, h=DADOS_HOSPITAL):
         try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
         except: data_pagto = hoje.strftime('%d%m%Y')
 
-        # Limpeza agressiva para garantir que só fiquem números
+        # Limpeza agressiva
         cod_barras = "".join(filter(str.isdigit, str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))))
         if len(cod_barras) > 44: cod_barras = cod_barras[:44]
 
@@ -140,10 +155,12 @@ def gerar_cnab_boleto(df_sel, h=DADOS_HOSPITAL):
         linhas.append(segJ[:240].ljust(240))
 
     reg_lote += 1
+    # SOMA APENAS O QUE FOI FILTRADO
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
     t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
           f"{'0'*18}{'0'*6}{' '*165}{' '*10}")
     linhas.append(t5[:240].ljust(240))
+    
     t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
     return "\r\n".join(linhas)
