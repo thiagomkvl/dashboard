@@ -8,7 +8,7 @@ from modules.utils import formatar_real
 # --- PALETA DE CORES (CORPORATE FINTECH) ---
 COR_AZUL_BASE = "#2c3e50" 
 COR_AZUL_CLARO = "#3498db"
-COR_LINHA_TENDENCIA = "#e74c3c" # Vermelho Suave para a linha
+COR_LINHA_TENDENCIA = "#e74c3c" 
 PALETA_AZUIS = px.colors.sequential.Blues_r 
 
 MAPA_CORES_AGEING = {
@@ -33,18 +33,17 @@ def mostrar_detalhes_ageing(faixa_selecionada, df_completo):
     df_faixa = df_completo[df_completo['Faixa_Ageing'] == faixa_selecionada].copy()
     exibir_tabela_detalhada(df_faixa, f"📂 Faixa: {faixa_selecionada}")
 
-# --- 3. MODAL GRÁFICO MÊS COMPLETO (NOVO!) ---
-@st.dialog("📅 Visão Mensal Completa")
+# --- 3. MODAL GRÁFICO MÊS COMPLETO (EXPANDIDO) ---
+# Adicionado width="large" para ocupar mais espaço na tela
+@st.dialog("📅 Visão Mensal Completa", width="large")
 def mostrar_grafico_completo(df_futuro):
     st.caption("Visão macro de todos os lançamentos futuros disponíveis.")
     
-    # Prepara dados
     df_grafico = df_futuro.sort_values('Vencimento_DT')
     df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
-    df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
     max_val = df_totais['Saldo_Limpo'].max()
 
-    # Base: Barras Empilhadas
+    # Gráfico Base
     fig = px.bar(
         df_grafico, x='Vencimento_DT', y='Saldo_Limpo', color='Beneficiario',
         title=None, height=500,
@@ -52,18 +51,19 @@ def mostrar_grafico_completo(df_futuro):
         color_discrete_sequence=PALETA_AZUIS
     )
     
-    # Adiciona Linha de Tendência
+    # Linha de Tendência (Sutil)
     fig.add_trace(go.Scatter(
-        x=df_totais['Vencimento_DT'], y=df_totais['Saldo_Limpo'],
-        mode='lines+markers', name='Tendência Diária',
-        line=dict(color=COR_LINHA_TENDENCIA, width=3),
-        marker=dict(size=6, color=COR_LINHA_TENDENCIA)
+        x=df_totais['Vencimento_DT'], 
+        y=df_totais['Saldo_Limpo'] * 1.05, # Levanta a linha 5%
+        mode='lines+markers', name='Tendência',
+        line=dict(color=COR_LINHA_TENDENCIA, width=1.5), # Linha mais fina
+        marker=dict(size=5, color=COR_LINHA_TENDENCIA)
     ))
 
     fig.update_layout(
-        xaxis=dict(tickformat="%d/%m", dtick="D1"), # Mostra todos os dias
+        xaxis=dict(tickformat="%d/%m", dtick="D1"),
         yaxis=dict(range=[0, max_val * 1.2]),
-        showlegend=False, # Esconde legenda no modal para limpar
+        showlegend=False,
         margin=dict(r=20, t=20)
     )
     
@@ -123,7 +123,6 @@ try:
         df_full['Vencimento_DT'] = pd.to_datetime(df_full['Vencimento'], dayfirst=True, errors='coerce')
         hoje = pd.Timestamp.now().normalize()
         
-        # Ageing Logic
         def faixas_atraso(dias):
             if dias < 0: return "A Vencer"
             if dias <= 15: return "0-15 Dias"
@@ -133,14 +132,12 @@ try:
         df_full['Dias_Atraso'] = (hoje - df_full['Vencimento_DT']).dt.days
         df_full['Faixa_Ageing'] = df_full['Dias_Atraso'].apply(faixas_atraso)
 
-        # Status Tempo
         def definir_status(row):
             if row['Vencimento_DT'] < hoje: return "🚨 Vencido"
             elif row['Vencimento_DT'] == hoje: return "⚠️ Vence Hoje"
             else: return "📅 A Vencer"
         df_full['Status_Tempo'] = df_full.apply(definir_status, axis=1)
 
-        # KPIs
         total_divida = df_full['Saldo_Limpo'].sum()
         total_vencido = df_full[df_full['Status_Tempo'] == "🚨 Vencido"]['Saldo_Limpo'].sum()
         total_hoje = df_full[df_full['Status_Tempo'] == "⚠️ Vence Hoje"]['Saldo_Limpo'].sum()
@@ -155,27 +152,23 @@ try:
 
         st.divider()
 
-        # --- 3. CRONOGRAMA COM LINHA DE TENDÊNCIA E BOTÃO MÊS ---
+        # --- 3. CRONOGRAMA ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
-            # Layout do Cabeçalho do Gráfico (Título + Botão na mesma linha)
             c_head1, c_head2 = st.columns([0.8, 0.2])
             with c_head1:
                 st.subheader("📅 Cronograma de Desembolso")
                 st.caption("🖐️ Arraste para navegar. 🖱️ Clique na barra para detalhes.")
             with c_head2:
-                # O BOTÃO MÁGICO
                 if st.button("🔍 Ver Mês"):
                     mostrar_grafico_completo(df_futuro)
             
-            # Preparação dos Dados
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_val = df_totais['Saldo_Limpo'].max()
 
-            # 1. Base: Barras Empilhadas (Azul)
             fig_stack = px.bar(
                 df_grafico, x='Vencimento_DT', y='Saldo_Limpo', 
                 color='Beneficiario',
@@ -184,25 +177,26 @@ try:
                 color_discrete_sequence=PALETA_AZUIS 
             )
             
-            # 2. Adiciona LINHA DE TENDÊNCIA (Vermelha)
+            # LINHA DE TENDÊNCIA (Flutuante e Sutil)
             fig_stack.add_trace(go.Scatter(
                 x=df_totais['Vencimento_DT'],
-                y=df_totais['Saldo_Limpo'],
-                mode='lines+markers', # Linha + Bolinha no ponto
+                y=df_totais['Saldo_Limpo'] * 1.05, # Mágica: Levanta a linha 5%
+                mode='lines+markers', 
                 name='Tendência',
-                line=dict(color=COR_LINHA_TENDENCIA, width=3), # Linha Vermelha grossa
-                marker=dict(size=8, color='white', line=dict(width=2, color=COR_LINHA_TENDENCIA)), # Bolinha branca com borda vermelha
-                hoverinfo='skip' # Não atrapalha o hover das barras
+                line=dict(color=COR_LINHA_TENDENCIA, width=1.5), # Linha Fina (Sutil)
+                marker=dict(size=6, color='white', line=dict(width=1.5, color=COR_LINHA_TENDENCIA)),
+                hoverinfo='skip'
             ))
 
-            # 3. Adiciona Rótulos de Texto (Em cima da linha)
+            # Rótulos de Texto (Fonte Normal)
             fig_stack.add_trace(go.Scatter(
                 x=df_totais['Vencimento_DT'], y=df_totais['Saldo_Limpo'],
                 text=df_totais['Label'], mode='text', textposition='top center',
-                textfont=dict(size=12, color=COR_AZUL_BASE, family="Arial Black"), showlegend=False, hoverinfo='skip'
+                # Removido "Arial Black" -> Agora é fonte padrão (Normal)
+                textfont=dict(size=12, color=COR_AZUL_BASE), 
+                showlegend=False, hoverinfo='skip'
             ))
 
-            # 4. Ajustes Visuais
             fig_stack.update_traces(selector=dict(type='bar'), marker_line_width=0, selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
 
             fig_stack.update_layout(
@@ -212,7 +206,7 @@ try:
                     tickmode='linear', dtick="D1", tickformat="%d/%m", 
                     rangeslider=dict(visible=False), showgrid=False
                 ),
-                yaxis=dict(range=[0, max_val * 1.25], fixedrange=True, showgrid=True, gridcolor='#ecf0f1'), # Margem maior no topo para a linha
+                yaxis=dict(range=[0, max_val * 1.25], fixedrange=True, showgrid=True, gridcolor='#ecf0f1'),
                 showlegend=True, legend=dict(orientation="v", y=1, x=1.01, title=None),
                 margin=dict(r=20, t=50), dragmode="pan", clickmode="event+select"
             )
@@ -223,18 +217,19 @@ try:
                 on_select="rerun", selection_mode="points"
             )
 
-            # Lógica do Clique (Apenas para barras, ignorando a linha)
             if evento_crono and "selection" in evento_crono and evento_crono["selection"]["points"]:
-                # Verifica se o clique foi numa barra (curveNumber 0 ou maior) e não na linha/texto
-                point = evento_crono["selection"]["points"][0]
-                mostrar_detalhes_dia(point["x"], df_full)
+                # Ignora cliques na linha de tendência
+                try:
+                    point = evento_crono["selection"]["points"][0]
+                    mostrar_detalhes_dia(point["x"], df_full)
+                except:
+                    pass
 
         st.divider()
 
         # --- 4. SEÇÃO MACRO ---
         c_left, c_right = st.columns([1, 1])
         
-        # --- 4.1 ESQUERDA: TREEMAP (AZUL) ---
         with c_left:
             st.subheader("📆 Dívida por Mês (Visão Macro)")
             
@@ -246,16 +241,10 @@ try:
                 df_mes, path=['Mes_Label'], values='Saldo_Limpo', color='Saldo_Limpo',
                 color_continuous_scale='Blues', hover_data={'Saldo_Limpo': ':,.2f'}
             )
-            
-            fig_mes.update_traces(
-                textinfo="label+value+percent entry", 
-                texttemplate="<b>%{label}</b><br>R$ %{value:,.0f}",
-                marker=dict(line=dict(width=2, color='white'))
-            )
+            fig_mes.update_traces(textinfo="label+value+percent entry", texttemplate="<b>%{label}</b><br>R$ %{value:,.0f}", marker=dict(line=dict(width=2, color='white')))
             fig_mes.update_layout(margin=dict(t=30, l=0, r=0, b=0))
             st.plotly_chart(fig_mes, use_container_width=True)
 
-        # --- 4.2 DIREITA: AGEING LIST (RED SCALE) ---
         with c_right:
             st.subheader("⏳ Ageing List (Por Valor)")
             st.caption("🖱️ **Clique na barra** para ver detalhes.")
@@ -267,13 +256,8 @@ try:
                 df_ageing, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s',
                 color='Faixa_Ageing', color_discrete_map=MAPA_CORES_AGEING
             )
-            
             fig_ageing.update_traces(selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)), marker_line_width=0)
-            fig_ageing.update_layout(
-                showlegend=False, xaxis_title=None, yaxis_title=None,
-                plot_bgcolor="rgba(0,0,0,0)", clickmode="event+select", dragmode=False,
-                xaxis=dict(showgrid=True, gridcolor='#ecf0f1')
-            )
+            fig_ageing.update_layout(showlegend=False, xaxis_title=None, yaxis_title=None, plot_bgcolor="rgba(0,0,0,0)", clickmode="event+select", dragmode=False, xaxis=dict(showgrid=True, gridcolor='#ecf0f1'))
             
             evento_ageing = st.plotly_chart(
                 fig_ageing, use_container_width=True,
@@ -284,7 +268,6 @@ try:
             if evento_ageing and "selection" in evento_ageing and evento_ageing["selection"]["points"]:
                 mostrar_detalhes_ageing(evento_ageing["selection"]["points"][0]["y"], df_full)
 
-        # --- 5. TABELA DE OFENSORES ---
         st.subheader("🔥 Top 10 Maiores Títulos Vencidos")
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].sort_values('Saldo_Limpo', ascending=False).head(10)
         cols_vencidos = ['Beneficiario', 'Vencimento', 'Saldo Atual', 'Carteira']
