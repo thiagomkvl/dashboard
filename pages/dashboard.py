@@ -54,14 +54,14 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (COM SCROLL/ZOOM) ---
+# --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO (COM LEGENDA LATERAL) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso (Interativo)")
-            st.caption("Utilize a barra inferior no gráfico para arrastar, dar zoom e navegar pelas datas.")
+            st.caption("Use a barra inferior para zoom no tempo. A legenda lateral permite filtrar fornecedores.")
             
-            # Ordena cronologicamente para o fluxo fazer sentido
+            # Ordena cronologicamente
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             
             # Gráfico de Barras Empilhadas
@@ -72,12 +72,10 @@ try:
                 color='Beneficiario', 
                 title="Fluxo de Pagamentos Futuros",
                 labels={'Saldo_Limpo': 'Valor (R$)', 'Vencimento_DT': 'Vencimento', 'Beneficiario': 'Fornecedor'},
-                text_auto='.2s', # Formata o valor nas barras (ex: 10k)
-                height=550
+                height=550 # Altura fixa ajuda a criar o scroll na legenda se tiver muitos itens
             )
             
-            # --- OTIMIZAÇÃO E SCROLL ---
-            # Aqui ativamos o rangeslider (a barra de arrastar)
+            # --- CONFIGURAÇÃO DA LEGENDA LATERAL ---
             fig_stack.update_layout(
                 xaxis=dict(
                     rangeselector=dict(
@@ -88,16 +86,22 @@ try:
                             dict(step="all", label="Tudo")
                         ])
                     ),
-                    rangeslider=dict(visible=True), # ATIVA O SCROLL INFERIOR
+                    rangeslider=dict(visible=True), # Barra de rolagem de tempo (inferior)
                     type="date"
                 ),
-                showlegend=True,
-                legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0.5, xanchor="center") # Legenda no topo para ganhar espaço
+                showlegend=True, # Mostra a legenda
+                legend=dict(
+                    orientation="v",      # Lista Vertical
+                    y=1, yanchor="top",   # Começa no topo
+                    x=1.02, xanchor="left", # Fica logo à direita do gráfico
+                    traceorder="normal",
+                    # Essas propriedades ajudam na rolagem se a lista for grande
+                    valign="top"
+                ),
+                margin=dict(r=20) # Margem direita leve
             )
             
             st.plotly_chart(fig_stack, use_container_width=True)
-        
-        st.divider()
 
         # --- 4. ANÁLISE DE COMPOSIÇÃO (TREEMAP & AGEING) ---
         c_left, c_right = st.columns([1, 1])
