@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
-# --- CONFIGURAÇÃO DA JANELA MODAL (COM BLINDAGEM DE ERROS) ---
+# --- CONFIGURAÇÃO DA JANELA MODAL ---
 @st.dialog("🔍 Detalhes do Dia")
 def mostrar_detalhes_dia(data_selecionada, df_completo):
     # 1. Padroniza a data clicada
@@ -26,20 +26,15 @@ def mostrar_detalhes_dia(data_selecionada, df_completo):
         
         st.divider()
         
-        # --- CORREÇÃO DO ERRO (BLINDAGEM DE COLUNAS) ---
-        # Lista de colunas que queremos mostrar
+        # --- BLINDAGEM DE COLUNAS ---
         colunas_desejadas = ['Beneficiario', 'Saldo Atual', 'Carteira', 'Nr. Titulo']
-        
-        # Verifica quais colunas realmente existem no DataFrame
-        # Se 'Nr. Titulo' não existir, cria ela com valor "-"
         for col in colunas_desejadas:
             if col not in df_dia.columns:
                 df_dia[col] = "-"
         
-        # Agora podemos selecionar sem medo de crashar (KeyError)
         df_tabela = df_dia[colunas_desejadas].copy()
         
-        # Ordenação segura (converte para numero para ordenar, depois descarta)
+        # Ordenação segura
         df_tabela['Valor_Num'] = pd.to_numeric(df_tabela['Saldo Atual'], errors='coerce').fillna(0)
         df_tabela = df_tabela.sort_values('Valor_Num', ascending=False).drop(columns=['Valor_Num'])
         
@@ -73,12 +68,8 @@ try:
     if not df_hist.empty:
         # 1. Tratamento e Limpeza
         df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
-        
-        # Filtra apenas o último processamento
         ultima_data = df_hist['data_processamento'].max()
         df_full = df_hist[df_hist['data_processamento'] == ultima_data].copy()
-        
-        # Tratamento de Datas
         df_full['Vencimento_DT'] = pd.to_datetime(df_full['Vencimento'], dayfirst=True, errors='coerce')
         hoje = pd.Timestamp.now().normalize()
         
@@ -107,7 +98,7 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA INTERATIVO ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA DE DESEMBOLSO ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
@@ -117,12 +108,12 @@ try:
             # Ordenação
             df_grafico = df_futuro.sort_values('Vencimento_DT')
             
-            # 3.1 TOTAIS NO TOPO
+            # TOTAIS NO TOPO
             df_totais = df_grafico.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_totais['Label'] = df_totais['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             max_valor_dia = df_totais['Saldo_Limpo'].max()
 
-            # 3.2 GRÁFICO BASE
+            # GRÁFICO BASE
             fig_stack = px.bar(
                 df_grafico, 
                 x='Vencimento_DT', 
@@ -133,7 +124,7 @@ try:
                 height=550
             )
             
-            # 3.3 RÓTULOS DE TOTAL
+            # RÓTULOS DE TOTAL
             fig_stack.add_trace(
                 go.Scatter(
                     x=df_totais['Vencimento_DT'],
@@ -147,7 +138,7 @@ try:
                 )
             )
 
-            # 3.4 CONFIGURAÇÃO DE LAYOUT
+            # CONFIGURAÇÃO DE LAYOUT
             fig_stack.update_layout(
                 xaxis=dict(
                     range=[hoje - pd.Timedelta(days=0.5), hoje + pd.Timedelta(days=6.5)],
@@ -170,19 +161,21 @@ try:
                 ),
                 margin=dict(r=20, t=50),
                 dragmode="pan", 
-                clickmode="event+select" 
+                # MUDANÇA IMPORTANTE: 'event' apenas dispara o dado, não seleciona visualmente
+                clickmode="event" 
             )
             
-            # 3.5 RENDERIZAÇÃO
+            # RENDERIZAÇÃO E LÓGICA DE EVENTO
+            # doubleClick='reset+autosize' -> 'False' (desativa o reset no duplo clique)
             evento = st.plotly_chart(
                 fig_stack, 
                 use_container_width=True, 
-                config={'scrollZoom': False, 'displayModeBar': False},
-                on_select="rerun",
+                config={'scrollZoom': False, 'displayModeBar': False, 'doubleClick': False},
+                on_select="rerun", # Mantém rerun para processar o clique
                 selection_mode="points"
             )
 
-            # 3.6 LÓGICA DE ABERTURA
+            # LÓGICA DE ABERTURA
             if evento and "selection" in evento and evento["selection"]["points"]:
                 ponto_clicado = evento["selection"]["points"][0]
                 data_clicada = ponto_clicado["x"]
@@ -236,11 +229,11 @@ try:
             fig_ageing.update_layout(showlegend=False)
             st.plotly_chart(fig_ageing, use_container_width=True)
 
-        # --- 5. TABELA DE OFENSORES (COM BLINDAGEM TAMBÉM) ---
+        # --- 5. TABELA DE OFENSORES ---
         st.subheader("🔥 Top 10 Maiores Títulos Vencidos")
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].sort_values('Saldo_Limpo', ascending=False).head(10)
         
-        # Define colunas e blinda
+        # Blinda colunas
         cols_vencidos = ['Beneficiario', 'Vencimento', 'Saldo Atual', 'Carteira']
         for col in cols_vencidos:
             if col not in df_vencidos.columns:
