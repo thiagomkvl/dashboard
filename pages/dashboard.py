@@ -5,6 +5,16 @@ import plotly.graph_objects as go
 from database import conectar_sheets
 from modules.utils import formatar_real
 
+# --- CONFIGURAÇÃO DE CORES (PALETA HARMONIOSA) ---
+COR_PRINCIPAL = "#2c3e50"    # Azul Petróleo (Base)
+COR_DESTAQUE = "#3498db"     # Azul Claro (Ações/Futuro)
+COR_ALERTA = "#e74c3c"       # Vermelho (Vencido/Crítico)
+COR_AVISO = "#f39c12"        # Laranja (Atenção)
+COR_SUCESSO = "#27ae60"      # Verde (OK)
+
+# Sequência de azuis para o gráfico de barras empilhadas (fica muito mais elegante)
+PALETA_AZUIS = px.colors.sequential.Blues_r 
+
 # --- 1. MODAL DETALHES POR DIA (CRONOGRAMA) ---
 @st.dialog("🔍 Detalhes do Dia")
 def mostrar_detalhes_dia(data_selecionada, df_completo):
@@ -106,7 +116,7 @@ try:
 
         st.divider()
 
-        # --- 3. CRONOGRAMA (INTERATIVO) ---
+        # --- 3. CRONOGRAMA (INTERATIVO - VISUAL AZUL) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
@@ -119,22 +129,42 @@ try:
             max_val = df_totais['Saldo_Limpo'].max()
 
             fig_stack = px.bar(
-                df_grafico, x='Vencimento_DT', y='Saldo_Limpo', color='Beneficiario', 
+                df_grafico, x='Vencimento_DT', y='Saldo_Limpo', 
+                color='Beneficiario',  # Mantém a separação das pilhas
                 title="Fluxo de Pagamentos Diário", height=550,
-                labels={'Saldo_Limpo': 'Valor', 'Vencimento_DT': 'Data', 'Beneficiario': 'Fornecedor'}
+                labels={'Saldo_Limpo': 'Valor', 'Vencimento_DT': 'Data', 'Beneficiario': 'Fornecedor'},
+                # AQUI ESTÁ A MÁGICA: Usamos uma sequência de azuis em vez do arco-íris
+                color_discrete_sequence=PALETA_AZUIS 
             )
             
-            fig_stack.update_traces(selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
+            # Ajuste Fino Visual
+            fig_stack.update_traces(
+                marker_line_width=0, # Remove borda branca para ficar mais clean
+                selected=dict(marker=dict(opacity=1)), 
+                unselected=dict(marker=dict(opacity=1))
+            )
+            
             fig_stack.add_trace(go.Scatter(
                 x=df_totais['Vencimento_DT'], y=df_totais['Saldo_Limpo'],
                 text=df_totais['Label'], mode='text', textposition='top center',
-                textfont=dict(size=12, color='black', family="Arial Black"), showlegend=False, hoverinfo='skip'
+                textfont=dict(size=12, color=COR_PRINCIPAL, family="Arial Black"), showlegend=False, hoverinfo='skip'
             ))
 
             fig_stack.update_layout(
-                xaxis=dict(range=[hoje-pd.Timedelta(days=0.5), hoje+pd.Timedelta(days=6.5)], tickmode='linear', dtick="D1", tickformat="%d/%m", rangeslider=dict(visible=False)),
-                yaxis=dict(range=[0, max_val * 1.2], fixedrange=True),
-                showlegend=True, legend=dict(orientation="v", y=1, x=1.01),
+                plot_bgcolor="rgba(0,0,0,0)", # Fundo transparente
+                xaxis=dict(
+                    range=[hoje-pd.Timedelta(days=0.5), hoje+pd.Timedelta(days=6.5)], 
+                    tickmode='linear', dtick="D1", tickformat="%d/%m", 
+                    rangeslider=dict(visible=False),
+                    showgrid=False # Remove grade vertical para limpar
+                ),
+                yaxis=dict(
+                    range=[0, max_val * 1.2], 
+                    fixedrange=True,
+                    showgrid=True, gridcolor='#ecf0f1' # Grade horizontal suave
+                ),
+                showlegend=True, 
+                legend=dict(orientation="v", y=1, x=1.01, title=None), # Remove titulo da legenda
                 margin=dict(r=20, t=50), dragmode="pan", clickmode="event+select"
             )
             
@@ -152,7 +182,7 @@ try:
         # --- 4. SEÇÃO MACRO ---
         c_left, c_right = st.columns([1, 1])
         
-        # --- 4.1 ESQUERDA: TREEMAP MENSAL ---
+        # --- 4.1 ESQUERDA: TREEMAP MENSAL (VERMELHOS HARMONIOSOS) ---
         with c_left:
             st.subheader("📆 Dívida por Mês (Visão Macro)")
             
@@ -162,34 +192,49 @@ try:
             
             fig_mes = px.treemap(
                 df_mes, path=['Mes_Label'], values='Saldo_Limpo', color='Saldo_Limpo',
-                color_continuous_scale='Reds', hover_data={'Saldo_Limpo': ':,.2f'}
+                color_continuous_scale='Reds', # Mantém escala vermelha para indicar "Dívida"
+                hover_data={'Saldo_Limpo': ':,.2f'}
             )
-            fig_mes.update_traces(textinfo="label+value+percent entry", texttemplate="%{label}<br>R$ %{value:,.0f}")
+            fig_mes.update_traces(
+                textinfo="label+value+percent entry", 
+                texttemplate="%{label}<br>R$ %{value:,.0f}",
+                root_color="white" # Fundo limpo
+            )
             fig_mes.update_layout(margin=dict(t=30, l=0, r=0, b=0))
             st.plotly_chart(fig_mes, use_container_width=True)
 
-        # --- 4.2 DIREITA: AGEING LIST (ORDENADO POR VALOR) ---
+        # --- 4.2 DIREITA: AGEING LIST (CORES DEFINIDAS) ---
         with c_right:
             st.subheader("⏳ Ageing List (Por Valor)")
             st.caption("🖱️ **Clique na barra** para ver detalhes.")
 
-            # 1. Agrupa
             df_ageing = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reset_index()
-            
-            # 2. Ordena pelo VALOR FINANCEIRO (Menor para Maior)
             df_ageing = df_ageing.sort_values('Saldo_Limpo', ascending=True)
             
+            # Mapa de Cores Personalizado e Harmonioso
+            mapa_cores_ageing = {
+                'A Vencer': COR_SUCESSO,      # Verde
+                '0-15 Dias': COR_AVISO,       # Laranja
+                '16-30 Dias': '#e67e22',      # Laranja Escuro
+                '31-60 Dias': '#c0392b',      # Vermelho Escuro
+                '> 60 Dias': COR_ALERTA       # Vermelho Vivo
+            }
+
             fig_ageing = px.bar(
                 df_ageing, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s',
                 color='Faixa_Ageing', 
-                # Mantém o mapa de cores para consistência, mesmo mudando a ordem
-                color_discrete_map={'A Vencer': '#2ecc71', '> 60 Dias': '#c0392b', '31-60 Dias': '#e74c3c'}
+                color_discrete_map=mapa_cores_ageing # Aplica o mapa fixo
             )
             
-            fig_ageing.update_traces(selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
+            fig_ageing.update_traces(
+                selected=dict(marker=dict(opacity=1)), 
+                unselected=dict(marker=dict(opacity=1))
+            )
             fig_ageing.update_layout(
                 showlegend=False, xaxis_title=None, yaxis_title=None,
-                clickmode="event+select", dragmode=False
+                plot_bgcolor="rgba(0,0,0,0)",
+                clickmode="event+select", dragmode=False,
+                xaxis=dict(showgrid=True, gridcolor='#ecf0f1') # Grade suave apenas no X
             )
             
             evento_ageing = st.plotly_chart(
