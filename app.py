@@ -36,7 +36,7 @@ if not check_password():
 # Vamos enviar o usuário direto para o Dashboard.
 # =========================================================
 try:
-    st.switch_page("pages/1_📊_Dashboard.py")
+    st.switch_page("pages/1_Dashboard.py")
 except Exception as e:
     # Caso o arquivo não seja encontrado (ex: nome diferente), mostra o menu padrão
     st.warning("Login realizado! Selecione uma página no menu lateral.")
