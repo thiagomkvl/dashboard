@@ -2,7 +2,9 @@ from datetime import datetime
 import pandas as pd
 from modules.utils import formatar_campo, limpar_ids, identificar_tipo_pagamento
 
-# DADOS CADASTRAIS (SOS CARDIO)
+# ==========================================
+# DADOS CADASTRAIS (MANTIDO)
+# ==========================================
 DADOS_HOSPITAL = {
     'cnpj': '85307098000187',
     'convenio': '000000000985597',
@@ -14,10 +16,12 @@ DADOS_HOSPITAL = {
     'cep': '88000000', 'uf': 'SC'
 }
 
+# ==========================================
+# MOTOR PIX (CORRIGIDO PARA ERROS DE VALIDAÇÃO)
+# ==========================================
 def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
-    # 1. FILTRO: Processa apenas o que NÃO for Boleto
+    # 1. FILTRO: Processa apenas PIX
     df_sel = df_input.copy()
-    # Recalcula tipo para garantir
     df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
     df_sel = df_sel[df_sel['TIPO_TEMP'] == 'PIX'] 
     
@@ -53,21 +57,20 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
         chave_pix = limpar_ids(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         
-        tipo_chave = "05"
-        if chave_pix or raw_pix:
-            if "@" in raw_pix: tipo_chave = "02"
-            elif len(chave_pix) == 11: tipo_chave = "03"
-            elif len(chave_pix) == 14: tipo_chave = "03"
-            elif len(chave_pix) > 20: tipo_chave = "04"
-            else: tipo_chave = "01"
-
-        banco_fav = r.get('BANCO_FAVORECIDO', '') or "000"
-        ag_fav = r.get('AGENCIA_FAVORECIDA', '') or "0"
-        cc_fav = r.get('CONTA_FAVORECIDA', '')
-        dv_cc_fav = r.get('DIGITO_CONTA_FAVORECIDA', '') or "0"
-        # VACINA CONTA 1
+        # Identificação Chave Pix (Apenas para uso interno ou Log, não vai no Header do Seg B)
+        # O banco lê a chave no campo específico do Segmento B (pos 227+ ou info complementar)
+        # Mas aqui focamos em limpar os dados.
+        
+        # Dados Bancários
+        banco_fav = limpar_ids(r.get('BANCO_FAVORECIDO', '')) or "000"
+        ag_fav = limpar_ids(r.get('AGENCIA_FAVORECIDA', '')) or "0"
+        cc_fav = limpar_ids(r.get('CONTA_FAVORECIDA', ''))
+        dv_cc_fav = limpar_ids(r.get('DIGITO_CONTA_FAVORECIDA', '')) or "0"
+        
+        # Vacina da Conta: Pix exige conta > 0 para passar no validador Seg A, mesmo que use Chave
         if not cc_fav or cc_fav == "" or int(limpar_ids(cc_fav) or 0) == 0: cc_fav = "1"
 
+        # SEGMENTO A (Pix = Câmara 009)
         reg_lote += 1
         segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
                 f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
@@ -77,12 +80,28 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
                 f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
         linhas.append(segA[:240].ljust(240))
         
+        # SEGMENTO B
         reg_lote += 1
-        doc_fav = limpar_ids(r.get('cnpj_beneficiario', ''))
-        tipo_insc = "1" if len(doc_fav) == 11 else "2"
         
-        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{formatar_campo(tipo_chave,3,'0','r')}" 
-                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}"
+        # --- CORREÇÃO CRÍTICA DO ERRO DE VALIDAÇÃO ---
+        doc_fav = limpar_ids(r.get('cnpj_beneficiario', ''))
+        
+        # Lógica: Se vazio -> Manda ZEROS e Tipo 0 (Evita erro de digito verificador do "1")
+        # Se preenchido -> Manda Tipo 1 (CPF) ou 2 (CNPJ)
+        if not doc_fav or doc_fav == "0":
+            doc_fav = "00000000000000" # 14 Zeros
+            tipo_insc = "0" # 0 = Isento / Não Informado
+        else:
+            if len(doc_fav) <= 11:
+                tipo_insc = "1" # CPF
+                doc_fav = doc_fav.rjust(14, '0') # Ajusta para 14 posições
+            else:
+                tipo_insc = "2" # CNPJ
+                # doc_fav já tem 14 ou será cortado pelo formatar_campo
+        
+        # Ajuste Pos 15-17: Deve ser BRANCOS no padrão (estava indo tipo_chave)
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"  # 15-17: Reservado (Brancos)
+                f"{tipo_insc}{formatar_campo(doc_fav,14,'0','r')}" # 18: Tipo, 19-32: Documento (CORRIGIDO)
                 f"{formatar_campo('ENDERECO NAO INFORMADO',35)}{' '*60}"
                 f"{formatar_campo(chave_pix,99)}{' '*6}{'0'*8}")
         linhas.append(segB[:240].ljust(240))
@@ -98,6 +117,10 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
     
     return "\r\n".join(linhas)
 
+
+# ==========================================
+# MOTOR BOLETO (HOMOLOGADO - NÃO ALTERAR)
+# ==========================================
 def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
     # 1. FILTRO: Processa apenas BOLETO
     df_sel = df_input.copy()
@@ -125,7 +148,7 @@ def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
           f"{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}"
           f"{formatar_campo(h.get('complemento',' '),15)}{formatar_campo(h['cidade'],20)}"
           f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}"
-          f"{' '*18}") # FIXO
+          f"{' '*18}") 
     linhas.append(h1[:240].ljust(240))
     
     reg_lote = 0
