@@ -54,16 +54,14 @@ try:
 
         st.divider()
 
-        # --- 3. GRÁFICO 1: CRONOGRAMA (JANELA FIXA COM SCROLL) ---
+        # --- 3. GRÁFICO 1: CRONOGRAMA (NAVEGAÇÃO POR ARRASTE) ---
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         
         if not df_futuro.empty:
             st.subheader("📅 Cronograma de Desembolso")
-            st.caption("Arraste a barra inferior cinza para o lado para ver datas futuras.")
+            st.caption("💡 Dica: Clique e segure no gráfico para arrastar para a esquerda/direita.")
             
-            # Ordena e calcula máximo para o truque visual
             df_grafico = df_futuro.sort_values('Vencimento_DT')
-            max_valor = df_grafico['Saldo_Limpo'].max()
             
             # Gráfico de Barras Empilhadas
             fig_stack = px.bar(
@@ -76,24 +74,20 @@ try:
                 height=500
             )
             
-            # --- CONFIGURAÇÃO DE SCROLL SEM ZOOM ---
+            # --- CONFIGURAÇÃO DE "PANORÂMICA" (PAN) ---
             fig_stack.update_layout(
                 xaxis=dict(
-                    # Define a "Janela Inicial": Mostra de Hoje até +30 dias.
-                    # O resto fica escondido à direita, acessível pelo scroll.
+                    # Define a janela inicial fixa (30 dias)
                     range=[hoje, hoje + pd.Timedelta(days=30)],
                     
-                    rangeslider=dict(
-                        visible=True, 
-                        thickness=0.04,  # Barra bem fina
-                        bgcolor="#e2e8f0", 
-                        yaxis=dict(range=[max_valor * 2, max_valor * 3]) # Esconde gráfico interno
-                    ),
+                    # Removemos o rangeslider (barra cinza) pois ele sempre causa zoom
+                    rangeslider=dict(visible=False), 
+                    
                     type="date",
-                    fixedrange=False # Permite o pan (arrastar)
+                    fixedrange=False # Permite arrastar o eixo X
                 ),
                 yaxis=dict(
-                    fixedrange=True # Bloqueia zoom vertical para não quebrar o layout
+                    fixedrange=True # Bloqueia o zoom vertical (mantém a altura das barras fixa)
                 ),
                 showlegend=True,
                 legend=dict(
@@ -103,10 +97,11 @@ try:
                     title_text="Fornecedores"
                 ),
                 margin=dict(r=20),
-                dragmode="pan" # Define o mouse para "mãozinha" de arrastar por padrão
+                dragmode="pan" # O cursor vira uma mãozinha para arrastar o gráfico
             )
             
-            st.plotly_chart(fig_stack, use_container_width=True, config={'scrollZoom': False}) # Desativa zoom do mouse
+            # Bloqueia o zoom pelo scroll do mouse (rodinha)
+            st.plotly_chart(fig_stack, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
         
         st.divider()
 
