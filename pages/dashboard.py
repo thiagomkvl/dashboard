@@ -174,29 +174,36 @@ try:
                 Qtd_Titulos=('Saldo_Limpo', 'count')
             ).reset_index()
             
-            # Ordena do Maior para Menor e pega TODOS (removido .head)
+            # Ordena do Maior para Menor
             df_ranking_final = df_ofensores.sort_values('Total_Divida', ascending=False)
+            
+            # CRIA COLUNA DE TEXTO JÁ FORMATADA (Truque para exibir R$ 320.000,00)
+            df_ranking_final['Valor_Visual'] = df_ranking_final['Total_Divida'].apply(formatar_real)
             
             st.caption(f"Lista completa de {len(df_ranking_final)} fornecedores com pendências, ordenados por valor.")
             
-            # Tabela Rica com Scroll Interno (height=600)
             st.dataframe(
-                df_ranking_final[['Beneficiario', 'Total_Divida', 'Dias_Medio_Atraso', 'Qtd_Titulos']],
+                df_ranking_final[['Beneficiario', 'Valor_Visual', 'Total_Divida', 'Dias_Medio_Atraso', 'Qtd_Titulos']],
                 column_config={
                     "Beneficiario": st.column_config.TextColumn("Fornecedor", width="large"),
-                    # Progress Column mantém a barra azul visual
+                    
+                    # Coluna 1: Valor em Texto (Formatado Bunitinho)
+                    "Valor_Visual": st.column_config.TextColumn("Dívida Total"),
+                    
+                    # Coluna 2: A Barra Visual (Usando o dado numérico, mas escondendo o número)
                     "Total_Divida": st.column_config.ProgressColumn(
-                        "Dívida Total", 
-                        format="R$ %.2f", # Formato Monetário
+                        "Intensidade", 
+                        format=" ", # Esconde o número dentro da barra para não poluir
                         min_value=0, 
                         max_value=df_ranking_final['Total_Divida'].max()
                     ),
+                    
                     "Dias_Medio_Atraso": st.column_config.NumberColumn("Atraso Méd (dias)", format="%.0f"),
                     "Qtd_Titulos": st.column_config.NumberColumn("Qtd Docs")
                 },
                 hide_index=True, 
                 use_container_width=True, 
-                height=600 # Define a altura do bloco para habilitar scroll interno
+                height=600 # Scroll interno ativado
             )
         else:
             st.success("✅ Parabéns! Não há títulos vencidos na base.")
