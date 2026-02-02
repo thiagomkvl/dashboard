@@ -2,9 +2,6 @@ from datetime import datetime
 import pandas as pd
 from modules.utils import formatar_campo, limpar_ids, identificar_tipo_pagamento
 
-# ==========================================
-# DADOS CADASTRAIS (SOS CARDIO)
-# ==========================================
 DADOS_HOSPITAL = {
     'cnpj': '85307098000187',       
     'convenio': '000000000985597', 
@@ -21,9 +18,6 @@ DADOS_HOSPITAL = {
     'uf': 'SC'
 }
 
-# ==========================================
-# MOTOR PIX (CORRIGIDO TAMANHO 240 POSIÇÕES)
-# ==========================================
 def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
     df_sel = df_input.copy()
     df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
@@ -33,9 +27,9 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
 
     linhas = []
     hoje = datetime.now()
-    BCO = "136" # Unicred
+    BCO = "136"
 
-    # HEADER DE ARQUIVO (240 pos)
+    # Header Arquivo
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -45,7 +39,7 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
           f"10300000")
     linhas.append(h0[:240].ljust(240))
     
-    # HEADER DE LOTE (Pix = 45) (240 pos)
+    # Header Lote
     h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
@@ -63,24 +57,20 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
 
         raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
         
-        # ------------------------------------------------------------------
-        # DETECÇÃO DO TIPO DE CHAVE E FORMATAÇÃO (PADRÃO FEBRABAN/UNICRED)
-        # ------------------------------------------------------------------
-        # 01=CPF, 02=CNPJ, 03=Celular, 04=Email, 05=Aleatória
-        tipo_chave_cod = "005" # Default Aleatória
+        # Tipo de Chave
+        tipo_chave_cod = "005"
         if "@" in raw_pix: 
-            tipo_chave_cod = "004" # Email
+            tipo_chave_cod = "004"
         elif raw_pix.isdigit():
-            if len(raw_pix) == 11: tipo_chave_cod = "001" # CPF
-            elif len(raw_pix) == 14: tipo_chave_cod = "002" # CNPJ
-            elif len(raw_pix) in [12, 13]: tipo_chave_cod = "003" # Celular
+            if len(raw_pix) == 11: tipo_chave_cod = "001"
+            elif len(raw_pix) == 14: tipo_chave_cod = "002"
+            elif len(raw_pix) in [12, 13]: tipo_chave_cod = "003"
         elif "+" in raw_pix: 
-            tipo_chave_cod = "003" # Celular
+            tipo_chave_cod = "003"
 
-        # Dados Bancários Zerados (Anti-TED)
         banco_fav = "000"; ag_fav = "0"; cc_fav = "0"; dv_cc_fav = "0"
 
-        # SEGMENTO A (240 pos)
+        # Segmento A
         reg_lote += 1
         segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
                 f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
@@ -90,37 +80,26 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
                 f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
         linhas.append(segA[:240].ljust(240))
         
-        # SEGMENTO B (240 pos - CHAVE PIX EMBUTIDA NO ENDEREÇO)
+        # Segmento B
         reg_lote += 1
-        
-        # Lógica: Se a chave é CPF/CNPJ, preenchemos também o campo de inscrição (18-32)
-        # Caso contrário, deixamos zerado e confiamos no campo da Chave (128-232)
         tipo_insc = "0"
         doc_fav_final = "0" * 14
         
-        if tipo_chave_cod == "001": # CPF
+        if tipo_chave_cod == "001":
             tipo_insc = "1"
             doc_fav_final = raw_pix.rjust(14, '0')
-        elif tipo_chave_cod == "002": # CNPJ
+        elif tipo_chave_cod == "002":
             tipo_insc = "2"
             doc_fav_final = raw_pix.rjust(14, '0')
 
-        # MONTAGEM SEGMENTO B (ATENÇÃO AOS CAMPOS)
-        # 001-014: Fixo
-        # 015-017: TIPO DA CHAVE (3 pos) -> Aqui vai o código 001, 002, etc.
-        # 018-032: Inscrição (15 pos)
-        # 033-127: Endereço (95 pos) -> PREENCHIDO COM ESPAÇOS para não sobrepor a chave
-        # 128-232: CHAVE PIX (105 pos) -> A chave entra aqui!
-        # 233-240: Filler (8 pos)
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"
+                f"{formatar_campo(tipo_chave_cod, 3, '0', 'l')}"
+                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}"
+                f"{' '*95}"
+                f"{formatar_campo(raw_pix, 105, ' ', 'l')}"
+                f"{' '*8}")
         
-        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}" # 01-14 (Obs: 15-17 '   ' original era aqui)
-                f"{formatar_campo(tipo_chave_cod, 3, '0', 'l')}"        # 15-17 (TIPO CHAVE)
-                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}" # 18-32 (DOC)
-                f"{' '*95}"                                              # 33-127 (Espaços - Pula endereço)
-                f"{formatar_campo(raw_pix, 105, ' ', 'l')}"              # 128-232 (CHAVE PIX - POSIÇÃO CRÍTICA)
-                f"{' '*8}")                                              # 233-240 (Filler)
-        
-        linhas.append(segB[:240].ljust(240)) # Garante exatos 240
+        linhas.append(segB[:240].ljust(240))
         
     reg_lote += 1
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
@@ -132,9 +111,6 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
     linhas.append(t9[:240].ljust(240))
     return "\r\n".join(linhas)
 
-# ==========================================
-# MOTOR BOLETO (MANTIDO)
-# ==========================================
 def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL, nsa=1):
     df_sel = df_input.copy()
     df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
