@@ -22,9 +22,10 @@ DADOS_HOSPITAL = {
 }
 
 # ==========================================
-# MOTOR PIX (CORRIGIDO PARA UNICRED/CNAB 240)
+# MOTOR PIX (DINÂMICO COM SEQUENCIAL)
 # ==========================================
-def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
+# ADICIONADO O PARÂMETRO nsa=1
+def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
     # 1. FILTRO: Processa apenas PIX
     df_sel = df_input.copy()
     df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
@@ -36,11 +37,16 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
     hoje = datetime.now()
     BCO = "136" # Unicred
 
-    # Header Arquivo
+    # ------------------------------------------------------------------
+    # HEADER DE ARQUIVO (AGORA USA O nsa DINÂMICO)
+    # ------------------------------------------------------------------
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
-          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1"
+          f"{hoje.strftime('%d%m%Y%H%M%S')}"
+          f"{formatar_campo(nsa, 6, '0', 'r')}" # <--- AQUI MUDOU: Usa o número sequencial informado
+          f"10300000")
     linhas.append(h0[:240].ljust(240))
     
     # Header Lote (Pix = 45)
@@ -61,33 +67,17 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
 
         raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
         
-        # ------------------------------------------------------------------
-        # LÓGICA DE DETECÇÃO DO TIPO DE CHAVE
-        # ------------------------------------------------------------------
-        tipo_chave_pix = "05" # Padrão: 05 - Chave Aleatória (EVP)
-        
-        # Se tem @ é Email
-        if "@" in raw_pix:
-            tipo_chave_pix = "04"
-        # Se tem apenas números e tamanho 11 = CPF
-        elif raw_pix.isdigit() and len(raw_pix) == 11:
-            tipo_chave_pix = "01"
-        # Se tem apenas números e tamanho 14 = CNPJ
-        elif raw_pix.isdigit() and len(raw_pix) == 14:
-            tipo_chave_pix = "02"
-        # Se tem +55 ou tamanho 12/13 números = Celular
-        elif "+" in raw_pix or (raw_pix.isdigit() and len(raw_pix) in [12, 13]):
-            tipo_chave_pix = "03"
+        # Detecção Tipo Chave
+        tipo_chave_pix = "05" 
+        if "@" in raw_pix: tipo_chave_pix = "04"
+        elif raw_pix.isdigit() and len(raw_pix) == 11: tipo_chave_pix = "01"
+        elif raw_pix.isdigit() and len(raw_pix) == 14: tipo_chave_pix = "02"
+        elif "+" in raw_pix or (raw_pix.isdigit() and len(raw_pix) in [12, 13]): tipo_chave_pix = "03"
 
-        # FORÇA DADOS BANCÁRIOS ZERADOS (Segurança para não cair em TED)
-        banco_fav = "000"
-        ag_fav = "0"
-        cc_fav = "0"
-        dv_cc_fav = "0"
+        # FORÇA DADOS BANCÁRIOS ZERADOS (Segurança Anti-TED)
+        banco_fav = "000"; ag_fav = "0"; cc_fav = "0"; dv_cc_fav = "0"
 
-        # ------------------------------------------------------------------
         # SEGMENTO A
-        # ------------------------------------------------------------------
         reg_lote += 1
         segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
                 f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
@@ -97,31 +87,19 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
                 f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
         linhas.append(segA[:240].ljust(240))
         
-        # ------------------------------------------------------------------
         # SEGMENTO B
-        # ------------------------------------------------------------------
         reg_lote += 1
+        tipo_insc = "0"; doc_fav_final = "0" * 14
         
-        # Inscrição zerada para forçar leitura da Chave Pix no final
-        tipo_insc = "0"
-        doc_fav_final = "0" * 14
-        
-        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"  # 001-017
-                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}"   # 018-032
-                f"{formatar_campo('ENDERECO NAO INFORMADO',30)}"           # 033-062
-                f"{' '*5}"                                                 # 063-067
-                f"{' '*15}"                                                # 068-082
-                f"{' '*20}"                                                # 083-102
-                f"{' '*20}"                                                # 103-122
-                f"{'0'*8}"                                                 # 123-130
-                f"{' '*2}"                                                 # 131-132
-                f"{' '*93}"                                                # 133-225 (Espaços)
-                f"{tipo_chave_pix}"                                        # 226-227 (TIPO CHAVE)
-                f"{formatar_campo(raw_pix, 77, ' ', 'l')}"                 # 228-304 (CHAVE PIX)
-                f"{' '*10}")                                               # 305-314
-        
-        # IMPORTANTE: Adiciona SEM cortar caracteres, pois o Pix estende a linha
-        linhas.append(segB) 
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"  
+                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}"   
+                f"{formatar_campo('ENDERECO NAO INFORMADO',30)}"           
+                f"{' '*5}{' '*15}{' '*20}{' '*20}{'0'*8}{' '*2}"           
+                f"{' '*93}"                                                
+                f"{tipo_chave_pix}"                                        # 226-227
+                f"{formatar_campo(raw_pix, 77, ' ', 'l')}"                 # 228-304
+                f"{' '*10}")                                               
+        linhas.append(segB) # Sem corte para permitir chave estendida
         
     reg_lote += 1
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
@@ -131,13 +109,12 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
     
     t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
     linhas.append(t9[:240].ljust(240))
-    
     return "\r\n".join(linhas)
 
 # ==========================================
-# MOTOR BOLETO (MANTIDO IDÊNTICO AO ORIGINAL)
+# MOTOR BOLETO (TAMBÉM ATUALIZADO COM NSA)
 # ==========================================
-def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
+def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL, nsa=1):
     df_sel = df_input.copy()
     df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
     df_sel = df_sel[df_sel['TIPO_TEMP'] == 'BOLETO'] 
@@ -148,12 +125,17 @@ def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
     hoje = datetime.now()
     BCO = "136"
 
+    # Header Arquivo com NSA Dinâmico
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
-          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1{hoje.strftime('%d%m%Y%H%M%S')}00000110300000")
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1"
+          f"{hoje.strftime('%d%m%Y%H%M%S')}"
+          f"{formatar_campo(nsa, 6, '0', 'r')}" # <--- NSA AQUI TAMBÉM
+          f"10300000")
     linhas.append(h0[:240].ljust(240))
     
+    # ... (Restante do código de boleto continua igual, sem alterações lógicas)
     h1 = (f"{BCO}00011C2031030 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
           f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
           f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
