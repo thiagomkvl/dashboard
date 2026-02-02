@@ -6,11 +6,11 @@ from modules.utils import formatar_campo, limpar_ids, identificar_tipo_pagamento
 # DADOS CADASTRAIS (SOS CARDIO)
 # ==========================================
 DADOS_HOSPITAL = {
-    'cnpj': '85307098000187',      
+    'cnpj': '85307098000187',       
     'convenio': '000000000985597', 
-    'ag': '1214',                  
+    'ag': '1214',                   
     'ag_dv': '0',
-    'cc': '5886',                  
+    'cc': '5886',                   
     'cc_dv': '6',
     'nome': 'SOS CARDIO SERVICOS HOSP',
     'endereco': 'RODOVIA SC 401',
@@ -22,7 +22,7 @@ DADOS_HOSPITAL = {
 }
 
 # ==========================================
-# MOTOR PIX (COM "BYPASS" DE VALIDAÇÃO DE DOCUMENTO)
+# MOTOR PIX (CORRIGIDO PARA UNICRED/CNAB 240)
 # ==========================================
 def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
     # 1. FILTRO: Processa apenas PIX
@@ -34,7 +34,7 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
 
     linhas = []
     hoje = datetime.now()
-    BCO = "136"
+    BCO = "136" # Unicred
 
     # Header Arquivo
     h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
@@ -59,23 +59,31 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
         try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
         except: data_pagto = hoje.strftime('%d%m%Y')
 
-        chave_pix = limpar_ids(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-        raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))
+        raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
         
-        # Identificação Tipo Chave
-        # Se tiver chave, vamos usar ela como autoridade principal
-        tem_chave = False
-        if chave_pix or raw_pix:
-            tem_chave = True
+        # ------------------------------------------------------------------
+        # LÓGICA DE DETECÇÃO DO TIPO DE CHAVE
+        # ------------------------------------------------------------------
+        tipo_chave_pix = "05" # Padrão: 05 - Chave Aleatória (EVP)
         
-        # Dados Bancários
-        banco_fav = limpar_ids(r.get('BANCO_FAVORECIDO', '')) or "000"
-        ag_fav = limpar_ids(r.get('AGENCIA_FAVORECIDA', '')) or "0"
-        cc_fav = limpar_ids(r.get('CONTA_FAVORECIDA', ''))
-        dv_cc_fav = limpar_ids(r.get('DIGITO_CONTA_FAVORECIDA', '')) or "0"
-        
-        # Vacina da Conta "1" para Segmento A
-        if not cc_fav or cc_fav == "" or int(limpar_ids(cc_fav) or 0) == 0: cc_fav = "1"
+        # Se tem @ é Email
+        if "@" in raw_pix:
+            tipo_chave_pix = "04"
+        # Se tem apenas números e tamanho 11 = CPF
+        elif raw_pix.isdigit() and len(raw_pix) == 11:
+            tipo_chave_pix = "01"
+        # Se tem apenas números e tamanho 14 = CNPJ
+        elif raw_pix.isdigit() and len(raw_pix) == 14:
+            tipo_chave_pix = "02"
+        # Se tem +55 ou tamanho 12/13 números = Celular
+        elif "+" in raw_pix or (raw_pix.isdigit() and len(raw_pix) in [12, 13]):
+            tipo_chave_pix = "03"
+
+        # FORÇA DADOS BANCÁRIOS ZERADOS (Segurança para não cair em TED)
+        banco_fav = "000"
+        ag_fav = "0"
+        cc_fav = "0"
+        dv_cc_fav = "0"
 
         # ------------------------------------------------------------------
         # SEGMENTO A
@@ -90,43 +98,30 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
         linhas.append(segA[:240].ljust(240))
         
         # ------------------------------------------------------------------
-        # SEGMENTO B (CORREÇÃO DA VALIDAÇÃO DE NEGÓCIO)
+        # SEGMENTO B
         # ------------------------------------------------------------------
         reg_lote += 1
         
-        raw_doc = limpar_ids(r.get('cnpj_beneficiario', ''))
+        # Inscrição zerada para forçar leitura da Chave Pix no final
+        tipo_insc = "0"
+        doc_fav_final = "0" * 14
         
-        # LÓGICA DE OURO:
-        # Se temos Chave Pix, enviamos Documento ZERADO (Tipo 0).
-        # Isso evita que o banco tente validar se o CNPJ é dono da Conta "1".
-        if tem_chave:
-            tipo_insc = "0"          # 0 = Isento
-            doc_fav_final = "0" * 14 # Zeros
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"  # 001-017
+                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}"   # 018-032
+                f"{formatar_campo('ENDERECO NAO INFORMADO',30)}"           # 033-062
+                f"{' '*5}"                                                 # 063-067
+                f"{' '*15}"                                                # 068-082
+                f"{' '*20}"                                                # 083-102
+                f"{' '*20}"                                                # 103-122
+                f"{'0'*8}"                                                 # 123-130
+                f"{' '*2}"                                                 # 131-132
+                f"{' '*93}"                                                # 133-225 (Espaços)
+                f"{tipo_chave_pix}"                                        # 226-227 (TIPO CHAVE)
+                f"{formatar_campo(raw_pix, 77, ' ', 'l')}"                 # 228-304 (CHAVE PIX)
+                f"{' '*10}")                                               # 305-314
         
-        # Se NÃO tem chave (é um TED manual), aí sim tentamos mandar o Doc.
-        else:
-            if not raw_doc or len(raw_doc) < 5:
-                tipo_insc = "0"
-                doc_fav_final = "0" * 14
-            elif len(raw_doc) <= 11:
-                tipo_insc = "1" # CPF
-                doc_fav_final = raw_doc.rjust(14, '0')
-            else:
-                tipo_insc = "2" # CNPJ
-                doc_fav_final = raw_doc.rjust(14, '0')
-
-        # Ajuste de Layout: Logradouro é 30 posições (33-62), não 35.
-        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}"  # 15-17: Brancos
-                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}"   # 18-32: Doc (Zerado se tiver Pix)
-                f"{formatar_campo('ENDERECO NAO INFORMADO',30)}"           # 33-62: Logradouro (30 chars)
-                f"{' '*5}"                                                 # 63-67: Numero (5 chars)
-                f"{' '*15}"                                                # 68-82: Complemento
-                f"{' '*20}"                                                # 83-102: Bairro
-                f"{' '*20}"                                                # 103-122: Cidade
-                f"{'0'*8}"                                                 # 123-130: CEP
-                f"{' '*2}"                                                 # 131-132: UF
-                f"{formatar_campo(chave_pix,99)}{' '*6}{'0'*8}")
-        linhas.append(segB[:240].ljust(240))
+        # IMPORTANTE: Adiciona SEM cortar caracteres, pois o Pix estende a linha
+        linhas.append(segB) 
         
     reg_lote += 1
     v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
@@ -140,7 +135,7 @@ def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL):
     return "\r\n".join(linhas)
 
 # ==========================================
-# MOTOR BOLETO (MANTIDO)
+# MOTOR BOLETO (MANTIDO IDÊNTICO AO ORIGINAL)
 # ==========================================
 def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL):
     df_sel = df_input.copy()
