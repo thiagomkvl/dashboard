@@ -1,138 +1,199 @@
-import streamlit as st
-import pandas as pd
 from datetime import datetime
-from database import conectar_sheets
-# IMPORTANDO AS FUNÇÕES DO MOTOR
-from modules.utils import formatar_real, identificar_tipo_pagamento
-from modules.cnab_engine import gerar_cnab_pix, gerar_cnab_boleto, DADOS_HOSPITAL
+import pandas as pd
+from modules.utils import formatar_campo, limpar_ids, identificar_tipo_pagamento
 
-# SEGURANÇA
-if not st.session_state.get("password_correct"):
-    st.warning("🔒 Acesso restrito. Faça login.")
-    st.stop()
+# ==========================================
+# DADOS CADASTRAIS (SOS CARDIO)
+# ==========================================
+DADOS_HOSPITAL = {
+    'cnpj': '85307098000187',       
+    'convenio': '000000000985597', 
+    'ag': '1214',                   
+    'ag_dv': '0',
+    'cc': '5886',                   
+    'cc_dv': '6',
+    'nome': 'SOS CARDIO SERVICOS HOSP',
+    'endereco': 'RODOVIA SC 401',
+    'num_end': '123',
+    'complemento': 'SALA 01',
+    'cidade': 'FLORIANOPOLIS',
+    'cep': '88000000',
+    'uf': 'SC'
+}
 
-st.title("🎛️ Cockpit de Pagamentos - SOS CARDIO")
-
-# CONEXÃO GOOGLE SHEETS
-if 'df_pagamentos' not in st.session_state:
-    try:
-        df_p = conectar_sheets().read(worksheet="Pagamentos_Dia", ttl=0)
-        # Garante colunas
-        if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
-        if 'CHAVE_PIX_OU_COD_BARRAS' not in df_p.columns: 
-            if 'CHAVE_PIX' in df_p.columns: df_p['CHAVE_PIX_OU_COD_BARRAS'] = df_p['CHAVE_PIX']
-            else: df_p['CHAVE_PIX_OU_COD_BARRAS'] = ""
-        
-        cols_bancarias = ['BANCO_FAVORECIDO', 'AGENCIA_FAVORECIDA', 'CONTA_FAVORECIDA', 'DIGITO_CONTA_FAVORECIDA']
-        for col in cols_bancarias:
-            if col not in df_p.columns: df_p[col] = ""
-            
-        df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
-        st.session_state['df_pagamentos'] = df_p
-    except: st.session_state['df_pagamentos'] = pd.DataFrame()
-
-# FORMULÁRIO DE INSERÇÃO
-with st.expander("➕ Inserir Novo Título", expanded=False):
-    with st.form("form_novo", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        fn = c1.text_input("Fornecedor/Beneficiário")
-        fv = c2.number_input("Valor (R$)", min_value=0.01, format="%.2f")
-        fd = c3.date_input("Vencimento", datetime.now())
-        c4, c5 = st.columns([2, 1])
-        cod = c4.text_input("Chave PIX ou Código de Barras (Boleto)")
-        fc = c5.text_input("CNPJ/CPF Beneficiário")
-        st.caption("Dados Bancários (Opcional se tiver Pix/Boleto):")
-        cb1, cb2, cb3, cb4 = st.columns(4)
-        fb = cb1.text_input("Banco"); fa = cb2.text_input("Agência")
-        fcc = cb3.text_input("Conta"); fdg = cb4.text_input("DV")
-        
-        if st.form_submit_button("Adicionar"):
-            # --- LIMPEZA AUTOMÁTICA ---
-            cod = str(cod).strip()
-            if "@" not in cod: # Se não for email, limpa pontuação
-                cod_limpo = cod.replace(".", "").replace("-", "").replace("/", "").replace(" ", "")
-            else:
-                cod_limpo = cod 
-            # --------------------------
-
-            novo = pd.DataFrame([{
-                'Pagar?': True, 'NOME_FAVORECIDO': fn, 'VALOR_PAGAMENTO': fv, 
-                'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'), 'cnpj_beneficiario': fc,
-                'CHAVE_PIX_OU_COD_BARRAS': cod_limpo, 'BANCO_FAVORECIDO': fb, 
-                'AGENCIA_FAVORECIDA': fa, 'CONTA_FAVORECIDA': fcc, 'DIGITO_CONTA_FAVORECIDA': fdg
-            }])
-            st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo], ignore_index=True)
-            st.rerun()
-
-# TABELA PRINCIPAL
-st.subheader("Lista de Pagamentos do Dia")
-if not st.session_state['df_pagamentos'].empty:
-    df_display = st.session_state['df_pagamentos'].copy()
-    df_display['Tipo'] = df_display.apply(identificar_tipo_pagamento, axis=1)
+# ==========================================
+# MOTOR PIX (CORRIGIDO TAMANHO 240 POSIÇÕES)
+# ==========================================
+def gerar_cnab_pix(df_input, h=DADOS_HOSPITAL, nsa=1):
+    df_sel = df_input.copy()
+    df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
+    df_sel = df_sel[df_sel['TIPO_TEMP'] == 'PIX'] 
     
-    edited_df = st.data_editor(
-        df_display, 
-        hide_index=True, 
-        use_container_width=True,
-        column_config={
-            "Pagar?": st.column_config.CheckboxColumn("Pagar?", default=True),
-            "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
-            "VALOR_PAGAMENTO": st.column_config.NumberColumn("Valor", format="R$ %.2f")
-        }
-    )
-    if not edited_df.equals(df_display):
-        st.session_state['df_pagamentos'] = edited_df.drop(columns=['Tipo'])
+    if df_sel.empty: return None
 
-    st.divider()
+    linhas = []
+    hoje = datetime.now()
+    BCO = "136" # Unicred
+
+    # HEADER DE ARQUIVO (240 pos)
+    h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1"
+          f"{hoje.strftime('%d%m%Y%H%M%S')}"
+          f"{formatar_campo(nsa, 6, '0', 'r')}"
+          f"10300000")
+    linhas.append(h0[:240].ljust(240))
     
-    # RESUMO E BOTÕES
-    col_resumo, col_botoes = st.columns([1, 2])
-    df_pagar = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True].copy()
+    # HEADER DE LOTE (Pix = 45) (240 pos)
+    h1 = (f"{BCO}00011C2045046 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{' '*40}"
+          f"{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}"
+          f"{formatar_campo(h.get('complemento',' '),15)}{formatar_campo(h['cidade'],20)}"
+          f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}01{' '*10}")
+    linhas.append(h1[:240].ljust(240))
     
-    if not df_pagar.empty:
-        df_pagar['TIPO_DETECTADO'] = df_pagar.apply(identificar_tipo_pagamento, axis=1)
-        lote_pix = df_pagar[df_pagar['TIPO_DETECTADO'] == 'PIX']
-        lote_boleto = df_pagar[df_pagar['TIPO_DETECTADO'] == 'BOLETO']
+    reg_lote = 0
+    for _, r in df_sel.reset_index(drop=True).iterrows():
+        v_int = int(round(float(str(r['VALOR_PAGAMENTO']).replace(',','.')) * 100))
+        try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
+        except: data_pagto = hoje.strftime('%d%m%Y')
+
+        raw_pix = str(r.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
         
-        with col_resumo:
-            st.metric("Total a Pagar", formatar_real(lote_pix['VALOR_PAGAMENTO'].sum() + lote_boleto['VALOR_PAGAMENTO'].sum()))
-            st.caption(f"Pix: {len(lote_pix)} | Boletos: {len(lote_boleto)}")
+        # ------------------------------------------------------------------
+        # DETECÇÃO DO TIPO DE CHAVE E FORMATAÇÃO (PADRÃO FEBRABAN/UNICRED)
+        # ------------------------------------------------------------------
+        # 01=CPF, 02=CNPJ, 03=Celular, 04=Email, 05=Aleatória
+        tipo_chave_cod = "005" # Default Aleatória
+        if "@" in raw_pix: 
+            tipo_chave_cod = "004" # Email
+        elif raw_pix.isdigit():
+            if len(raw_pix) == 11: tipo_chave_cod = "001" # CPF
+            elif len(raw_pix) == 14: tipo_chave_cod = "002" # CNPJ
+            elif len(raw_pix) in [12, 13]: tipo_chave_cod = "003" # Celular
+        elif "+" in raw_pix: 
+            tipo_chave_cod = "003" # Celular
+
+        # Dados Bancários Zerados (Anti-TED)
+        banco_fav = "000"; ag_fav = "0"; cc_fav = "0"; dv_cc_fav = "0"
+
+        # SEGMENTO A (240 pos)
+        reg_lote += 1
+        segA = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}A000009{formatar_campo(banco_fav,3,'0','r')}"
+                f"{formatar_campo(ag_fav,5,'0','r')}{formatar_campo(' ',1)}"
+                f"{formatar_campo(cc_fav,12,'0','r')}{formatar_campo(dv_cc_fav,1,'0','r')}"
+                f"{formatar_campo(' ',1)}{formatar_campo(r['NOME_FAVORECIDO'],30)}"
+                f"{formatar_campo(r.get('Nr. Titulo',''),20)}{data_pagto}BRL{'0'*15}{formatar_campo(v_int,15,'0','r')}"
+                f"{' '*20}{'0'*8}{'0'*15}{' '*40}{' '*2}{' '*10}0{' '*10}")
+        linhas.append(segA[:240].ljust(240))
         
-        with col_botoes:
-            st.write("### 🚀 Gerar Remessa")
-            
-            # --- CONTROLE DE SEQUENCIAL (NOVO) ---
-            nsa_hoje = st.number_input("Nº Sequencial do Arquivo (NSA)", min_value=1, value=1, help="Aumente este número se o banco rejeitar por duplicidade.")
-            # -------------------------------------
+        # SEGMENTO B (240 pos - CHAVE PIX EMBUTIDA NO ENDEREÇO)
+        reg_lote += 1
+        
+        # Lógica: Se a chave é CPF/CNPJ, preenchemos também o campo de inscrição (18-32)
+        # Caso contrário, deixamos zerado e confiamos no campo da Chave (128-232)
+        tipo_insc = "0"
+        doc_fav_final = "0" * 14
+        
+        if tipo_chave_cod == "001": # CPF
+            tipo_insc = "1"
+            doc_fav_final = raw_pix.rjust(14, '0')
+        elif tipo_chave_cod == "002": # CNPJ
+            tipo_insc = "2"
+            doc_fav_final = raw_pix.rjust(14, '0')
 
-            c_btn1, c_btn2 = st.columns(2)
-            if not lote_pix.empty:
-                try:
-                    arquivo_pix = gerar_cnab_pix(lote_pix, DADOS_HOSPITAL, nsa=nsa_hoje)
-                    if arquivo_pix:
-                        c_btn1.download_button(
-                            label=f"Baixar Lote PIX ({len(lote_pix)})", 
-                            data=arquivo_pix, 
-                            file_name=f"REM_PIX_{datetime.now().strftime('%d%m')}_NSA{nsa_hoje}.txt"
-                        )
-                except Exception as e:
-                    st.error(f"Erro ao gerar PIX: {e}")
+        # MONTAGEM SEGMENTO B (ATENÇÃO AOS CAMPOS)
+        # 001-014: Fixo
+        # 015-017: TIPO DA CHAVE (3 pos) -> Aqui vai o código 001, 002, etc.
+        # 018-032: Inscrição (15 pos)
+        # 033-127: Endereço (95 pos) -> PREENCHIDO COM ESPAÇOS para não sobrepor a chave
+        # 128-232: CHAVE PIX (105 pos) -> A chave entra aqui!
+        # 233-240: Filler (8 pos)
+        
+        segB = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}B{' '*3}" # 01-14 (Obs: 15-17 '   ' original era aqui)
+                f"{formatar_campo(tipo_chave_cod, 3, '0', 'l')}"        # 15-17 (TIPO CHAVE)
+                f"{tipo_insc}{formatar_campo(doc_fav_final,14,'0','r')}" # 18-32 (DOC)
+                f"{' '*95}"                                              # 33-127 (Espaços - Pula endereço)
+                f"{formatar_campo(raw_pix, 105, ' ', 'l')}"              # 128-232 (CHAVE PIX - POSIÇÃO CRÍTICA)
+                f"{' '*8}")                                              # 233-240 (Filler)
+        
+        linhas.append(segB[:240].ljust(240)) # Garante exatos 240
+        
+    reg_lote += 1
+    v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
+    t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
+          f"{'0'*18}{'0'*6}{' '*165}{' '*10}")
+    linhas.append(t5[:240].ljust(240))
+    
+    t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
+    linhas.append(t9[:240].ljust(240))
+    return "\r\n".join(linhas)
 
-            if not lote_boleto.empty:
-                try:
-                    arquivo_boleto = gerar_cnab_boleto(lote_boleto, DADOS_HOSPITAL, nsa=nsa_hoje)
-                    if arquivo_boleto:
-                        c_btn2.download_button(
-                            label=f"Baixar Lote BOLETOS ({len(lote_boleto)})", 
-                            data=arquivo_boleto, 
-                            file_name=f"REM_BOLETO_{datetime.now().strftime('%d%m')}_NSA{nsa_hoje}.txt"
-                        )
-                except Exception as e:
-                    st.error(f"Erro ao gerar Boleto: {e}")
+# ==========================================
+# MOTOR BOLETO (MANTIDO)
+# ==========================================
+def gerar_cnab_boleto(df_input, h=DADOS_HOSPITAL, nsa=1):
+    df_sel = df_input.copy()
+    df_sel['TIPO_TEMP'] = df_sel.apply(identificar_tipo_pagamento, axis=1)
+    df_sel = df_sel[df_sel['TIPO_TEMP'] == 'BOLETO'] 
+    
+    if df_sel.empty: return None
 
-    else: st.info("Selecione itens na tabela.")
+    linhas = []
+    hoje = datetime.now()
+    BCO = "136"
 
-st.divider()
-if st.button("💾 Salvar Alterações"):
-    conectar_sheets().update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
-    st.toast("Salvo!", icon="✅")
+    h0 = (f"{BCO}00000{' '*9}2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{formatar_campo('UNICRED',30)}{' '*10}1"
+          f"{hoje.strftime('%d%m%Y%H%M%S')}"
+          f"{formatar_campo(nsa, 6, '0', 'r')}"
+          f"10300000")
+    linhas.append(h0[:240].ljust(240))
+    
+    h1 = (f"{BCO}00011C2031030 2{formatar_campo(h['cnpj'],14,'0','r')}{formatar_campo(h['convenio'],20,' ','l')}"
+          f"{formatar_campo(h['ag'],5,'0','r')}{formatar_campo(h['ag_dv'],1,' ','l')}"
+          f"{formatar_campo(h['cc'],12,'0','r')}{formatar_campo(h['cc_dv'],1,' ','l')}"
+          f"{formatar_campo(' ',1)}{formatar_campo(h['nome'],30)}{' '*40}"
+          f"{formatar_campo(h['endereco'],30)}{formatar_campo(h['num_end'],5,'0','r')}"
+          f"{formatar_campo(h.get('complemento',' '),15)}{formatar_campo(h['cidade'],20)}"
+          f"{formatar_campo(h['cep'],8,'0','r')}{formatar_campo(h['uf'],2)}{' '*18}") 
+    linhas.append(h1[:240].ljust(240))
+    
+    reg_lote = 0
+    for _, r in df_sel.reset_index(drop=True).iterrows():
+        v_int = int(round(float(str(r['VALOR_PAGAMENTO']).replace(',','.')) * 100))
+        try: data_pagto = pd.to_datetime(r['DATA_PAGAMENTO'], dayfirst=True).strftime('%d%m%Y')
+        except: data_pagto = hoje.strftime('%d%m%Y')
+
+        cod_barras = "".join(filter(str.isdigit, str(r.get('CHAVE_PIX_OU_COD_BARRAS', ''))))
+        if len(cod_barras) > 44: cod_barras = cod_barras[:44]
+
+        reg_lote += 1
+        segJ = (f"{BCO}00013{formatar_campo(reg_lote,5,'0','r')}J000"
+                f"{formatar_campo(cod_barras,44,'0','r')}"
+                f"{formatar_campo(r['NOME_FAVORECIDO'],30)}"
+                f"{data_pagto}"
+                f"{formatar_campo(v_int,15,'0','r')}"
+                f"{formatar_campo(0,15,'0','r')}"
+                f"{formatar_campo(0,15,'0','r')}"
+                f"{data_pagto}"
+                f"{formatar_campo(v_int,15,'0','r')}"
+                f"{'0'*15}{' '*20}"
+                f"{formatar_campo(r.get('Nr. Titulo',''),20)}"
+                f"09{' '*6}{' '*10}")
+        linhas.append(segJ[:240].ljust(240))
+
+    reg_lote += 1
+    v_total = int(round(df_sel['VALOR_PAGAMENTO'].astype(float).sum() * 100))
+    t5 = (f"{BCO}00015{' '*9}{formatar_campo(reg_lote,6,'0','r')}{formatar_campo(v_total,18,'0','r')}"
+          f"{'0'*18}{'0'*6}{' '*165}{' '*10}")
+    linhas.append(t5[:240].ljust(240))
+    
+    t9 = f"{BCO}99999{' '*9}000001{formatar_campo(len(linhas)+1,6,'0','r')}{' '*205}"
+    linhas.append(t9[:240].ljust(240))
+    return "\r\n".join(linhas)
