@@ -10,7 +10,7 @@ COR_AZUL_BASE = "#2c3e50"
 COR_AZUL_CLARO = "#3498db"
 COR_LINHA_TENDENCIA = "#e74c3c" 
 PALETA_AZUIS = px.colors.sequential.Blues_r 
-PALETA_VERMELHOS = px.colors.sequential.Reds_r
+PALETA_VERMELHOS = px.colors.sequential.Reds
 
 MAPA_CORES_AGEING = {
     'A Vencer': COR_AZUL_CLARO,
@@ -20,7 +20,7 @@ MAPA_CORES_AGEING = {
     '> 60 Dias': '#78281f'
 }
 
-# --- MODAIS DE DETALHES ---
+# --- MODAIS ---
 @st.dialog("🔍 Detalhes do Dia")
 def mostrar_detalhes_dia(data_selecionada, df_completo):
     data_sel = pd.to_datetime(data_selecionada).normalize()
@@ -60,25 +60,15 @@ def exibir_tabela_detalhada(df_filtrado, titulo_contexto):
         c1.write(f"**{titulo_contexto}**")
         c2.metric("Total Selecionado", formatar_real(total))
         st.divider()
-        
         cols_view = ['Beneficiario', 'Saldo Atual', 'Vencimento', 'Carteira', 'Nr. Titulo']
         for col in cols_view:
             if col not in df_filtrado.columns: df_filtrado[col] = "-"
-        
         df_filtrado['Valor_Num'] = pd.to_numeric(df_filtrado['Saldo Atual'], errors='coerce').fillna(0)
-        st.dataframe(
-            df_filtrado.sort_values('Valor_Num', ascending=False)[cols_view],
-            column_config={
-                "Beneficiario": st.column_config.TextColumn("Fornecedor", width="medium"),
-                "Saldo Atual": st.column_config.TextColumn("Valor"),
-                "Vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
-                "Carteira": "Status", "Nr. Titulo": "Nota/Título"
-            }, hide_index=True, use_container_width=True
-        )
+        st.dataframe(df_filtrado.sort_values('Valor_Num', ascending=False)[cols_view], hide_index=True, use_container_width=True)
     else:
         st.warning("Nenhum registro encontrado.")
 
-# --- INÍCIO DA PÁGINA ---
+# --- APP ---
 if not st.session_state.get("password_correct"):
     st.warning("🔒 Acesso restrito. Faça login.")
     st.stop()
@@ -91,14 +81,13 @@ try:
     df_hist = conn.read(worksheet="Historico", ttl=300)
     
     if not df_hist.empty:
-        # Tratamento de Dados
         df_hist['Saldo_Limpo'] = pd.to_numeric(df_hist['Saldo Atual'], errors='coerce').fillna(0)
         ultima_data = df_hist['data_processamento'].max()
         df_full = df_hist[df_hist['data_processamento'] == ultima_data].copy()
         df_full['Vencimento_DT'] = pd.to_datetime(df_full['Vencimento'], dayfirst=True, errors='coerce')
         hoje = pd.Timestamp.now().normalize()
         
-        # Lógicas Auxiliares
+        # Lógicas
         def faixas_atraso(dias):
             if dias < 0: return "A Vencer"
             if dias <= 15: return "0-15 Dias"
@@ -124,7 +113,7 @@ try:
         col4.metric("Próximos 7 Dias", formatar_real(df_full[(df_full['Vencimento_DT'] > hoje) & (df_full['Vencimento_DT'] <= hoje + pd.Timedelta(days=7))]['Saldo_Limpo'].sum()))
         st.divider()
 
-        # --- GRÁFICO 1: CRONOGRAMA ---
+        # GRÁFICO 1
         df_futuro = df_full[df_full['Vencimento_DT'] >= hoje].copy()
         if not df_futuro.empty:
             c_h1, c_h2 = st.columns([0.8, 0.2])
@@ -138,34 +127,18 @@ try:
             df_tot = df_crono.groupby('Vencimento_DT', as_index=False)['Saldo_Limpo'].sum()
             df_tot['Label'] = df_tot['Saldo_Limpo'].apply(lambda x: f"R$ {x/1000:.1f}k" if x > 1000 else f"{int(x)}")
             
-            fig_stk = px.bar(
-                df_crono, x='Vencimento_DT', y='Saldo_Limpo', color='Beneficiario',
-                title=None, height=550, labels={'Saldo_Limpo': 'Valor', 'Vencimento_DT': 'Data'},
-                color_discrete_sequence=PALETA_AZUIS
-            )
-            fig_stk.add_trace(go.Scatter(
-                x=df_tot['Vencimento_DT'], y=df_tot['Saldo_Limpo'] * 1.05,
-                mode='lines+markers', line=dict(color=COR_LINHA_TENDENCIA, width=1.5),
-                marker=dict(size=6, color='white', line=dict(width=1.5, color=COR_LINHA_TENDENCIA)), hoverinfo='skip'
-            ))
-            fig_stk.add_trace(go.Scatter(
-                x=df_tot['Vencimento_DT'], y=df_tot['Saldo_Limpo'], text=df_tot['Label'],
-                mode='text', textposition='top center', textfont=dict(size=12, color=COR_AZUL_BASE), showlegend=False, hoverinfo='skip'
-            ))
+            fig_stk = px.bar(df_crono, x='Vencimento_DT', y='Saldo_Limpo', color='Beneficiario', title=None, height=550, color_discrete_sequence=PALETA_AZUIS)
+            fig_stk.add_trace(go.Scatter(x=df_tot['Vencimento_DT'], y=df_tot['Saldo_Limpo'] * 1.05, mode='lines+markers', line=dict(color=COR_LINHA_TENDENCIA, width=1.5), marker=dict(size=6, color='white', line=dict(width=1.5, color=COR_LINHA_TENDENCIA)), hoverinfo='skip'))
+            fig_stk.add_trace(go.Scatter(x=df_tot['Vencimento_DT'], y=df_tot['Saldo_Limpo'], text=df_tot['Label'], mode='text', textposition='top center', textfont=dict(size=12, color=COR_AZUL_BASE), showlegend=False, hoverinfo='skip'))
             fig_stk.update_traces(selector=dict(type='bar'), marker_line_width=0, selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)))
-            fig_stk.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=dict(range=[hoje-pd.Timedelta(days=0.5), hoje+pd.Timedelta(days=6.5)], tickmode='linear', dtick="D1", tickformat="%d/%m", rangeslider=dict(visible=False), showgrid=False),
-                yaxis=dict(range=[0, df_tot['Saldo_Limpo'].max()*1.25], fixedrange=True, showgrid=True, gridcolor='#ecf0f1'),
-                showlegend=True, legend=dict(orientation="v", y=1, x=1.01, title=None), margin=dict(r=20, t=50), dragmode="pan", clickmode="event+select"
-            )
+            fig_stk.update_layout(plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(range=[hoje-pd.Timedelta(days=0.5), hoje+pd.Timedelta(days=6.5)], tickmode='linear', dtick="D1", tickformat="%d/%m", rangeslider=dict(visible=False), showgrid=False), yaxis=dict(range=[0, df_tot['Saldo_Limpo'].max()*1.25], fixedrange=True, showgrid=True, gridcolor='#ecf0f1'), showlegend=True, legend=dict(orientation="v", y=1, x=1.01, title=None), margin=dict(r=20, t=50), dragmode="pan", clickmode="event+select")
             ev_cr = st.plotly_chart(fig_stk, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False, 'doubleClick': False}, on_select="rerun", selection_mode="points")
             if ev_cr and "selection" in ev_cr and ev_cr["selection"]["points"]: 
                 try: mostrar_detalhes_dia(ev_cr["selection"]["points"][0]["x"], df_full)
                 except: pass
         st.divider()
 
-        # --- GRÁFICOS MACRO ---
+        # GRÁFICOS MACRO
         c_l, c_r = st.columns([1, 1])
         with c_l:
             st.subheader("📆 Dívida por Mês")
@@ -178,7 +151,7 @@ try:
             st.plotly_chart(fig_m, use_container_width=True)
 
         with c_r:
-            st.subheader("⏳ Ageing List")
+            st.subheader("⏳ Ageing List (Por Valor)")
             st.caption("🖱️ Clique na barra para detalhes.")
             df_ag = df_full.groupby('Faixa_Ageing')['Saldo_Limpo'].sum().reset_index().sort_values('Saldo_Limpo')
             fig_ag = px.bar(df_ag, x='Saldo_Limpo', y='Faixa_Ageing', orientation='h', text_auto='.2s', color='Faixa_Ageing', color_discrete_map=MAPA_CORES_AGEING)
@@ -189,79 +162,60 @@ try:
 
         st.divider()
 
-        # --- SEÇÃO ANALÍTICA: TOP OFENSORES (NOVO!) ---
+        # --- SEÇÃO ANALÍTICA: TOP OFENSORES (DONUT + TABELA) ---
         st.subheader("🔥 Análise de Ofensores (Vencidos)")
         
-        # 1. Filtra apenas os vencidos
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].copy()
         
         if not df_vencidos.empty:
-            # --- PREPARAÇÃO DOS DADOS ---
-            # Agrupa por Fornecedor (Soma dívida e pega média de atraso)
+            # Agrupa dados
             df_ofensores = df_vencidos.groupby('Beneficiario').agg(
                 Total_Divida=('Saldo_Limpo', 'sum'),
                 Dias_Medio_Atraso=('Dias_Atraso', 'mean'),
                 Qtd_Titulos=('Saldo_Limpo', 'count')
             ).reset_index()
             
-            # Pega TOP 10 pelo valor da dívida
             df_top10 = df_ofensores.sort_values('Total_Divida', ascending=False).head(10)
             
-            # KPI de Pareto (Concentração)
+            # KPI Pareto
             total_top10 = df_top10['Total_Divida'].sum()
-            perc_concentracao = (total_top10 / total_vencido) * 100
+            perc = (total_top10 / total_vencido) * 100
+            st.info(f"💡 **Pareto:** Os 10 maiores devedores representam **{perc:.1f}%** de todo o seu passivo vencido.")
             
-            st.info(f"💡 **Insight de Pareto:** Os 10 maiores fornecedores abaixo somam **{formatar_real(total_top10)}**. "
-                    f"Isso representa **{perc_concentracao:.1f}%** de todo o seu passivo vencido.")
+            c_donut, c_table = st.columns([0.8, 1.2]) # Coluna da Tabela um pouco maior
             
-            # --- VISUALIZAÇÃO HÍBRIDA ---
-            c_matrix, c_table = st.columns([1.2, 1])
-            
-            with c_matrix:
-                st.markdown("#### 🎯 Matriz de Risco")
-                st.caption("Eixo Y: Valor da Dívida | Eixo X: Dias de Atraso")
+            with c_donut:
+                st.markdown("#### 🥧 Concentração")
+                st.caption("Participação dos Top 10 no total vencido")
                 
-                fig_matrix = px.scatter(
-                    df_top10,
-                    x="Dias_Medio_Atraso",
-                    y="Total_Divida",
-                    size="Total_Divida",
-                    color="Total_Divida",
-                    color_continuous_scale="Reds",
-                    hover_name="Beneficiario",
-                    text="Beneficiario", # Mostra nome no gráfico
-                    labels={"Dias_Medio_Atraso": "Dias Atraso (Méd)", "Total_Divida": "Valor Total"}
+                # Visual Diferente: Donut Chart
+                fig_donut = px.pie(
+                    df_top10, 
+                    values='Total_Divida', 
+                    names='Beneficiario',
+                    hole=0.6, # Faz virar uma rosca (mais moderno)
+                    color_discrete_sequence=px.colors.sequential.RdBu # Paleta corporativa
                 )
-                fig_matrix.update_traces(textposition='top center', marker=dict(opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
-                fig_matrix.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    xaxis=dict(showgrid=True, gridcolor='#ecf0f1'),
-                    yaxis=dict(showgrid=True, gridcolor='#ecf0f1'),
-                    height=450,
-                    showlegend=False
-                )
-                st.plotly_chart(fig_matrix, use_container_width=True)
+                fig_donut.update_traces(textposition='inside', textinfo='percent+label')
+                fig_donut.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=350)
+                st.plotly_chart(fig_donut, use_container_width=True)
 
             with c_table:
-                st.markdown("#### 📋 Top 10 Fornecedores")
-                
-                # Configura Tabela Rica (Data Bars)
+                st.markdown("#### 📋 Ranking Detalhado")
                 st.dataframe(
                     df_top10[['Beneficiario', 'Total_Divida', 'Dias_Medio_Atraso', 'Qtd_Titulos']],
                     column_config={
                         "Beneficiario": st.column_config.TextColumn("Fornecedor"),
                         "Total_Divida": st.column_config.ProgressColumn(
-                            "Dívida Total",
-                            format="R$ %.2f",
-                            min_value=0,
-                            max_value=df_top10['Total_Divida'].max(),
+                            "Dívida Total", 
+                            format="R$ %.2f", 
+                            min_value=0, 
+                            max_value=df_top10['Total_Divida'].max()
                         ),
-                        "Dias_Medio_Atraso": st.column_config.NumberColumn("Atraso (dias)", format="%d"),
+                        "Dias_Medio_Atraso": st.column_config.NumberColumn("Atraso (dias)", format="%.0f"),
                         "Qtd_Titulos": st.column_config.NumberColumn("Qtd Docs")
                     },
-                    hide_index=True,
-                    use_container_width=True,
-                    height=450
+                    hide_index=True, use_container_width=True, height=400
                 )
         else:
             st.success("✅ Parabéns! Não há títulos vencidos na base.")
