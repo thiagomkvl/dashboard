@@ -162,61 +162,42 @@ try:
 
         st.divider()
 
-        # --- SEÇÃO ANALÍTICA: TOP OFENSORES (DONUT + TABELA) ---
-        st.subheader("🔥 Análise de Ofensores (Vencidos)")
+        # --- SEÇÃO ANALÍTICA: RANKING COMPLETO (TABELA LIMITADA) ---
+        st.subheader("🔥 Ranking Completo de Fornecedores (Vencidos)")
         
         df_vencidos = df_full[df_full['Status_Tempo'] == "🚨 Vencido"].copy()
         
         if not df_vencidos.empty:
-            # Agrupa dados
             df_ofensores = df_vencidos.groupby('Beneficiario').agg(
                 Total_Divida=('Saldo_Limpo', 'sum'),
                 Dias_Medio_Atraso=('Dias_Atraso', 'mean'),
                 Qtd_Titulos=('Saldo_Limpo', 'count')
             ).reset_index()
             
-            df_top10 = df_ofensores.sort_values('Total_Divida', ascending=False).head(10)
+            # Ordena do Maior para Menor e pega TODOS (removido .head)
+            df_ranking_final = df_ofensores.sort_values('Total_Divida', ascending=False)
             
-            # KPI Pareto
-            total_top10 = df_top10['Total_Divida'].sum()
-            perc = (total_top10 / total_vencido) * 100
-            st.info(f"💡 **Pareto:** Os 10 maiores devedores representam **{perc:.1f}%** de todo o seu passivo vencido.")
+            st.caption(f"Lista completa de {len(df_ranking_final)} fornecedores com pendências, ordenados por valor.")
             
-            c_donut, c_table = st.columns([0.8, 1.2]) # Coluna da Tabela um pouco maior
-            
-            with c_donut:
-                st.markdown("#### 🥧 Concentração")
-                st.caption("Participação dos Top 10 no total vencido")
-                
-                # Visual Diferente: Donut Chart
-                fig_donut = px.pie(
-                    df_top10, 
-                    values='Total_Divida', 
-                    names='Beneficiario',
-                    hole=0.6, # Faz virar uma rosca (mais moderno)
-                    color_discrete_sequence=px.colors.sequential.RdBu # Paleta corporativa
-                )
-                fig_donut.update_traces(textposition='inside', textinfo='percent+label')
-                fig_donut.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), height=350)
-                st.plotly_chart(fig_donut, use_container_width=True)
-
-            with c_table:
-                st.markdown("#### 📋 Ranking Detalhado")
-                st.dataframe(
-                    df_top10[['Beneficiario', 'Total_Divida', 'Dias_Medio_Atraso', 'Qtd_Titulos']],
-                    column_config={
-                        "Beneficiario": st.column_config.TextColumn("Fornecedor"),
-                        "Total_Divida": st.column_config.ProgressColumn(
-                            "Dívida Total", 
-                            format="R$ %.2f", 
-                            min_value=0, 
-                            max_value=df_top10['Total_Divida'].max()
-                        ),
-                        "Dias_Medio_Atraso": st.column_config.NumberColumn("Atraso (dias)", format="%.0f"),
-                        "Qtd_Titulos": st.column_config.NumberColumn("Qtd Docs")
-                    },
-                    hide_index=True, use_container_width=True, height=400
-                )
+            # Tabela Rica com Scroll Interno (height=600)
+            st.dataframe(
+                df_ranking_final[['Beneficiario', 'Total_Divida', 'Dias_Medio_Atraso', 'Qtd_Titulos']],
+                column_config={
+                    "Beneficiario": st.column_config.TextColumn("Fornecedor", width="large"),
+                    # Progress Column mantém a barra azul visual
+                    "Total_Divida": st.column_config.ProgressColumn(
+                        "Dívida Total", 
+                        format="R$ %.2f", # Formato Monetário
+                        min_value=0, 
+                        max_value=df_ranking_final['Total_Divida'].max()
+                    ),
+                    "Dias_Medio_Atraso": st.column_config.NumberColumn("Atraso Méd (dias)", format="%.0f"),
+                    "Qtd_Titulos": st.column_config.NumberColumn("Qtd Docs")
+                },
+                hide_index=True, 
+                use_container_width=True, 
+                height=600 # Define a altura do bloco para habilitar scroll interno
+            )
         else:
             st.success("✅ Parabéns! Não há títulos vencidos na base.")
 
