@@ -166,13 +166,13 @@ def gerar_cnab_pix(df_pagamentos):
             f"{'00000':0>5}"                        # 24-28: Agência Fav
             f"{' ':1}"                              # 29-29: DV Ag (Espaço)
             
-            # --- CORREÇÃO CRÍTICA 1: CONTA COM VALOR 1 (DUMMY) ---
-            f"{'000000000001':0>12}"                # 30-41: Conta Fav (Dummy para passar validação > 0)
+            # --- CONTA DUMMY (Passa validação > 0) ---
+            f"{'000000000001':0>12}"                # 30-41: Conta Fav
             
-            f"{'0':<1}"                             # 42-42: DV Conta Fav (Pode ser 0 ou espaço, tentamos 0)
+            # --- CORREÇÃO FINAL: DV CONTA PREENCHIDO (0) ---
+            f"{'0':<1}"                             # 42-42: DV Conta Fav (ZERO, pois é obrigatório)
             
-            # --- CORREÇÃO CRÍTICA 2: DV AG/CONTA ESPAÇO ---
-            f"{' ':1}"                              # 43-43: DV Ag/Conta (ESPAÇO - Validação exige)
+            f"{' ':1}"                              # 43-43: DV Ag/Conta (ESPAÇO, pois não tem)
             
             f"{str(row['NOME_FAVORECIDO'])[:30]:<30}" # 44-73
             f"{chave_pix_raw:<20}"                  # 74-93
@@ -190,9 +190,7 @@ def gerar_cnab_pix(df_pagamentos):
             f"{'':<3}"                              # 227-229: CNAB (Brancos)
             f"{'0':<1}"                             # 230-230: Aviso
             
-            # --- CORREÇÃO CRÍTICA 3: OCORRÊNCIAS EM BRANCO ---
-            f"{'':<10}"                             # 231-240: Ocorrências (10 ESPAÇOS, removido '045')
-            
+            f"{'':<10}"                             # 231-240: Ocorrências (Espaços)
             f"\r\n"
         )
         seq_lote += 1
