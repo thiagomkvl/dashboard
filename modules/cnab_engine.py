@@ -94,9 +94,9 @@ def gerar_cnab_pix(df_pagamentos):
         f"{'0':<1}"                                 # 72-72
         f"{DADOS_HOSPITAL['nome']:<30}"             # 73-102
         f"{'PAGAMENTO FORNECEDORES':<40}"           # 103-142: Msg 1
-        # --- ENDEREÇO OBRIGATÓRIO ---
-        f"{DADOS_HOSPITAL['logradouro']:<30}"       # 143-172: Logradouro (30 chars)
-        f"{DADOS_HOSPITAL['numero']:0>5}"           # 173-177: Numero (5 nums)
+        # --- ENDEREÇO OBRIGATÓRIO (CORREÇÃO DE ERRO) ---
+        f"{DADOS_HOSPITAL['logradouro']:<30}"       # 143-172: Logradouro
+        f"{DADOS_HOSPITAL['numero']:0>5}"           # 173-177: Numero
         f"{DADOS_HOSPITAL['complemento']:<15}"      # 178-192: Compl
         f"{DADOS_HOSPITAL['cidade']:<20}"           # 193-212: Cidade
         f"{DADOS_HOSPITAL['cep']:0>5}"              # 213-217: CEP
@@ -134,8 +134,8 @@ def gerar_cnab_pix(df_pagamentos):
         # =====================================================================
         seg_a = (
             f"{'136':<3}"                           # 01-03
-            f"{'0001':<4}"                          # 04-07
-            f"{'3':<1}"                             # 08-08
+            f"{'0001':<4}"                          # 04-07: Lote
+            f"{'3':<1}"                             # 08-08: Detalhe
             f"{seq_lote:0>5}"                       # 09-13
             f"{'A':<1}"                             # 14-14
             f"{'000':<3}"                           # 15-17: Inclusão
@@ -147,7 +147,7 @@ def gerar_cnab_pix(df_pagamentos):
             f"{' ':1}"                              # 42-42
             f"{' ':1}"                              # 43-43
             f"{str(row['NOME_FAVORECIDO'])[:30]:<30}" # 44-73
-            f"{chave_pix_raw:<20}"                  # 74-93: Seu Numero (Chave Pix aqui para ref)
+            f"{chave_pix_raw:<20}"                  # 74-93: Seu Numero (Chave Pix aqui)
             f"{dt_str:<8}"                          # 94-101
             f"{'BRL':<3}"                           # 102-104
             f"{'0':>15}"                            # 105-119
