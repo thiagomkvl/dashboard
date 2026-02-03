@@ -81,7 +81,7 @@ def gerar_cnab_pix(df_pagamentos):
         f"{DADOS_HOSPITAL['dv_agencia']:<1}"        # 58-58: DV Ag
         f"{DADOS_HOSPITAL['conta']:0>12}"           # 59-70: Conta
         f"{DADOS_HOSPITAL['dv_conta']:<1}"          # 71-71: DV Conta
-        f"{' ':1}"                                  # 72-72: DV Ag/Conta (ESPAÇO - Correção Erro Header)
+        f"{' ':1}"                                  # 72-72: DV Ag/Conta (ESPAÇO)
         f"{DADOS_HOSPITAL['nome']:<30}"             # 73-102: Nome Emp
         f"{'UNICRED':<30}"                          # 103-132: Nome Banco
         f"{'':<10}"                                 # 133-142: Brancos
@@ -114,7 +114,7 @@ def gerar_cnab_pix(df_pagamentos):
         f"{DADOS_HOSPITAL['dv_agencia']:<1}"        # 58-58
         f"{DADOS_HOSPITAL['conta']:0>12}"           # 59-70
         f"{DADOS_HOSPITAL['dv_conta']:<1}"          # 71-71
-        f"{' ':1}"                                  # 72-72: DV Ag/Conta (ESPAÇO - Correção Erro Header Lote)
+        f"{' ':1}"                                  # 72-72: DV Ag/Conta (ESPAÇO)
         f"{DADOS_HOSPITAL['nome']:<30}"             # 73-102
         f"{'PAGAMENTO FORNECEDORES':<40}"           # 103-142
         f"{DADOS_HOSPITAL['logradouro']:<30}"       # 143-172: Logradouro
@@ -161,13 +161,19 @@ def gerar_cnab_pix(df_pagamentos):
             f"{seq_lote:0>5}"                       # 09-13
             f"{'A':<1}"                             # 14-14
             f"{'000':<3}"                           # 15-17
-            f"{'009':<3}"                           # 18-20
+            f"{'009':<3}"                           # 18-20: PIX
             f"{'000':<3}"                           # 21-23: Banco 000 (Externo)
             f"{'00000':0>5}"                        # 24-28: Agência Fav
             f"{' ':1}"                              # 29-29: DV Ag (Espaço)
-            f"{'000000000001':0>12}"                # 30-41: Conta Fav (DUMMY 1 - Correção "Maior que zero")
-            f"{' ':1}"                              # 42-42: DV Conta Fav (ESPAÇO - Correção "Obrigatório/Vazio")
-            f"{' ':1}"                              # 43-43: DV Ag/Conta (ESPAÇO - Correção "Espaços")
+            
+            # --- CORREÇÃO CRÍTICA 1: CONTA COM VALOR 1 (DUMMY) ---
+            f"{'000000000001':0>12}"                # 30-41: Conta Fav (Dummy para passar validação > 0)
+            
+            f"{'0':<1}"                             # 42-42: DV Conta Fav (Pode ser 0 ou espaço, tentamos 0)
+            
+            # --- CORREÇÃO CRÍTICA 2: DV AG/CONTA ESPAÇO ---
+            f"{' ':1}"                              # 43-43: DV Ag/Conta (ESPAÇO - Validação exige)
+            
             f"{str(row['NOME_FAVORECIDO'])[:30]:<30}" # 44-73
             f"{chave_pix_raw:<20}"                  # 74-93
             f"{dt_str:<8}"                          # 94-101
@@ -178,12 +184,15 @@ def gerar_cnab_pix(df_pagamentos):
             f"{dt_str:<8}"                          # 155-162
             f"{valor_str:<15}"                      # 163-177
             f"{'':<40}"                             # 178-217
-            f"{'  ':<2}"                            # 218-219
-            f"{'     ':<5}"                         # 220-224
-            f"{'  ':<2}"                            # 225-226
-            f"{'   ':<3}"                           # 227-229
+            f"{'00':<2}"                            # 218-219
+            f"{'':<5}"                              # 220-224: Finalidade TED (Brancos)
+            f"{'':<2}"                              # 225-226: Compl Finalidade (Brancos)
+            f"{'':<3}"                              # 227-229: CNAB (Brancos)
             f"{'0':<1}"                             # 230-230: Aviso
-            f"{'          ':<10}"                   # 231-240: Ocorrências (10 ESPAÇOS - Correção do "0045")
+            
+            # --- CORREÇÃO CRÍTICA 3: OCORRÊNCIAS EM BRANCO ---
+            f"{'':<10}"                             # 231-240: Ocorrências (10 ESPAÇOS, removido '045')
+            
             f"\r\n"
         )
         seq_lote += 1
@@ -203,7 +212,7 @@ def gerar_cnab_pix(df_pagamentos):
             f"{'3':<1}"                             # 08-08
             f"{seq_lote:0>5}"                       # 09-13
             f"{'B':<1}"                             # 14-14
-            f"{tipo_chave_code:<3}"                 # 15-17: Forma Iniciação (G100)
+            f"{tipo_chave_code:<3}"                 # 15-17: Forma Iniciação
             f"{tipo_insc:<1}"                       # 18-18
             f"{doc_fav:0>14}"                       # 19-32
             f"{'':<30}"                             # 33-62
