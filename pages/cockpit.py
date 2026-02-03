@@ -37,17 +37,17 @@ if 'df_pagamentos' not in st.session_state:
             else: 
                 df_p['CHAVE_PIX_OU_COD_BARRAS'] = ""
         
-        # --- CORREÇÃO DE TIPAGEM (O SEGREDO PARA NÃO DAR ERRO) ---
-        # Garante que Pagar? seja booleano
+        # --- CORREÇÃO DE TIPAGEM INICIAL ---
         df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
         
-        # Garante que VALOR seja float (substitui vírgula por ponto se for string e converte)
-        # Se vier do sheets como texto "150,00", isso corrige.
         if 'VALOR_PAGAMENTO' in df_p.columns:
             df_p['VALOR_PAGAMENTO'] = pd.to_numeric(
                 df_p['VALOR_PAGAMENTO'].astype(str).str.replace(',', '.'), 
                 errors='coerce'
             ).fillna(0.0)
+            
+        # Força Chave Pix para texto (evita erro de float no editor)
+        df_p['CHAVE_PIX_OU_COD_BARRAS'] = df_p['CHAVE_PIX_OU_COD_BARRAS'].astype(str).replace('nan', '').replace('None', '')
         
         st.session_state['df_pagamentos'] = df_p
     except Exception as e:
@@ -82,20 +82,20 @@ with st.expander("➕ Inserir Novo Título", expanded=False):
             novo = pd.DataFrame([{
                 'Pagar?': True, 
                 'NOME_FAVORECIDO': fn, 
-                'VALOR_PAGAMENTO': float(fv), # Garante float na inserção
+                'VALOR_PAGAMENTO': float(fv),
                 'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'),
                 'cnpj_beneficiario': fc.replace(".", "").replace("-", "").replace("/", ""),
-                'CHAVE_PIX_OU_COD_BARRAS': cod_limpo,
+                'CHAVE_PIX_OU_COD_BARRAS': str(cod_limpo), # Garante string na origem
                 'BANCO_FAVORECIDO': fb, 
                 'AGENCIA_FAVORECIDA': fa, 
                 'CONTA_FAVORECIDA': fcc, 
                 'DIGITO_CONTA_FAVORECIDA': fdg
             }])
             
-            # Concatena garantindo tipos
             st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo], ignore_index=True)
-            # Reforça a tipagem após concatenar
+            # Reforça tipagem
             st.session_state['df_pagamentos']['VALOR_PAGAMENTO'] = st.session_state['df_pagamentos']['VALOR_PAGAMENTO'].astype(float)
+            st.session_state['df_pagamentos']['CHAVE_PIX_OU_COD_BARRAS'] = st.session_state['df_pagamentos']['CHAVE_PIX_OU_COD_BARRAS'].astype(str)
             st.rerun()
 
 # --- TABELA PRINCIPAL ---
@@ -104,10 +104,15 @@ st.subheader("Lista de Pagamentos do Dia")
 if not st.session_state['df_pagamentos'].empty:
     df_display = st.session_state['df_pagamentos'].copy()
     
-    # --- BLINDAGEM CONTRA ERRO DE API (CRÍTICO) ---
-    # Antes de exibir, forçamos novamente a conversão para garantir que o Streamlit receba números
+    # --- BLINDAGEM CONTRA ERROS DE TIPO (CRÍTICO) ---
+    # 1. Valor vira Float
     df_display['VALOR_PAGAMENTO'] = pd.to_numeric(df_display['VALOR_PAGAMENTO'], errors='coerce').fillna(0.0)
+    # 2. Checkbox vira Bool
     df_display['Pagar?'] = df_display['Pagar?'].astype(bool)
+    # 3. Chave Pix vira String (CORREÇÃO DO ERRO ATUAL)
+    # Converte para string, remove 'nan' literal e remove '.0' se o pandas tiver lido como float (ex: 123.0 vira 123)
+    df_display['CHAVE_PIX_OU_COD_BARRAS'] = df_display['CHAVE_PIX_OU_COD_BARRAS'].astype(str).replace('nan', '')
+    df_display['CHAVE_PIX_OU_COD_BARRAS'] = df_display['CHAVE_PIX_OU_COD_BARRAS'].apply(lambda x: x.replace('.0', '') if x.endswith('.0') else x)
     
     # Identifica tipo visualmente
     df_display['Tipo'] = df_display.apply(identificar_tipo_pagamento, axis=1)
@@ -120,8 +125,8 @@ if not st.session_state['df_pagamentos'].empty:
             column_config={
                 "Pagar?": st.column_config.CheckboxColumn("Pagar?", default=True),
                 "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
-                # Agora é seguro usar NumberColumn pois convertemos acima
                 "VALOR_PAGAMENTO": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                # Agora é seguro usar TextColumn pois forçamos string acima
                 "CHAVE_PIX_OU_COD_BARRAS": st.column_config.TextColumn("Chave/Código", width="medium")
             }
         )
@@ -133,7 +138,8 @@ if not st.session_state['df_pagamentos'].empty:
 
     except Exception as e:
         st.error(f"Erro ao renderizar tabela: {e}")
-        st.write("Dados brutos para conferência:", df_display)
+        st.caption("Tentando exibir dados brutos:")
+        st.dataframe(df_display)
 
     st.divider()
     
@@ -148,7 +154,7 @@ if not st.session_state['df_pagamentos'].empty:
         lote_boleto = df_pagar[df_pagar['TIPO_DETECTADO'] == 'BOLETO']
         
         with col_resumo:
-            # Garante soma numérica
+            # Soma segura
             total = pd.to_numeric(lote_pix['VALOR_PAGAMENTO'], errors='coerce').sum() + pd.to_numeric(lote_boleto['VALOR_PAGAMENTO'], errors='coerce').sum()
             st.metric("Total a Pagar", formatar_real(total))
             st.caption(f"Pix: {len(lote_pix)} | Boletos: {len(lote_boleto)}")
