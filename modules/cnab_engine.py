@@ -35,7 +35,7 @@ def obter_proximo_sequencial():
 
 def detectar_tipo_chave(chave):
     """
-    Define o código de Iniciação (G100) conforme Página 10 do manual Unicred.
+    [cite_start]Define o código de Iniciação (G100) conforme Página 10 do manual Unicred[cite: 62].
     01-Telefone, 02-Email, 03-CPF/CNPJ, 04-Aleatória
     """
     chave = str(chave).strip()
@@ -55,7 +55,7 @@ def detectar_tipo_chave(chave):
     if len(nums) == 11 or len(nums) == 14:
         return '03 '
         
-    # 01 - Telefone (Padrão fallback para numéricos menores)
+    # 01 - Telefone (Padrão fallback para numéricos menores ou outros)
     return '01 '
 
 def gerar_cnab_pix(df_pagamentos):
@@ -66,7 +66,7 @@ def gerar_cnab_pix(df_pagamentos):
     data_arq = now.strftime('%d%m%Y')
     hora_arq = now.strftime('%H%M%S')
     
-    # --- HEADER DE ARQUIVO (240 POSIÇÕES) ---
+    # [cite_start]--- HEADER DE ARQUIVO (240 POSIÇÕES) [cite: 3] ---
     header_arq = (
         f"{'136':<3}"                               # 01-03: Banco
         f"{'0000':0>4}"                             # 04-07: Lote
@@ -79,7 +79,7 @@ def gerar_cnab_pix(df_pagamentos):
         f"{DADOS_HOSPITAL['dv_agencia']:<1}"        # 58-58: DV Ag
         f"{DADOS_HOSPITAL['conta']:0>12}"           # 59-70: Conta
         f"{DADOS_HOSPITAL['dv_conta']:<1}"          # 71-71: DV Conta
-        f"{' ':1}"                                  # 72-72: DV Ag/Conta (ESPAÇO - Correção Estrutura)
+        f"{' ':1}"                                  # 72-72: DV Ag/Conta
         f"{DADOS_HOSPITAL['nome']:<30}"             # 73-102: Nome Emp
         f"{'UNICRED':<30}"                          # 103-132: Nome Banco
         f"{'':<10}"                                 # 133-142: Brancos
@@ -93,14 +93,14 @@ def gerar_cnab_pix(df_pagamentos):
         f"\r\n"
     )
 
-    # --- HEADER DE LOTE (240 POSIÇÕES) ---
+    # [cite_start]--- HEADER DE LOTE (240 POSIÇÕES) [cite: 3] ---
     header_lote = (
         f"{'136':<3}"                               # 01-03
         f"{'0001':0>4}"                             # 04-07
         f"{'1':<1}"                                 # 08-08
         f"{'C':<1}"                                 # 09-09
         f"{'20':<2}"                                # 10-11: Pagto Fornecedor
-        f"{'45':<2}"                                # 12-13: Forma Pagto (45=PIX)
+        [cite_start]f"{'45':<2}"                                # 12-13: Forma Pagto (45=PIX) [cite: 22]
         f"{'046':<3}"                               # 14-16: Layout
         f"{'':<1}"                                  # 17-17
         f"{'2':<1}"                                 # 18-18
@@ -147,7 +147,7 @@ def gerar_cnab_pix(df_pagamentos):
             dt_str = dt_obj.strftime('%d%m%Y')
         except: dt_str = data_arq
 
-        # --- SEGMENTO A ---
+        # [cite_start]--- SEGMENTO A (240 POSIÇÕES) [cite: 36] ---
         seg_a = (
             f"{'136':<3}"                           # 01-03
             f"{'0001':0>4}"                         # 04-07
@@ -155,33 +155,34 @@ def gerar_cnab_pix(df_pagamentos):
             f"{seq_lote:0>5}"                       # 09-13
             f"{'A':<1}"                             # 14-14
             f"{'000':<3}"                           # 15-17
-            f"{'009':<3}"                           # 18-20: PIX
-            f"{'000':<3}"                           # 21-23: Banco 000
-            f"{'00000':0>5}"                        # 24-28: Agência Fav
-            f"{' ':1}"                              # 29-29
-            # TRUQUE: Conta 000000000001 para passar na validação (>0)
-            f"{'000000000001':0>12}"                # 30-41: Conta Fav
-            f"{'0':<1}"                             # 42-42: DV Conta Fav (Obrigatório)
-            f"{' ':1}"                              # 43-43: DV Ag/Conta
+            [cite_start]f"{'009':<3}"                           # 18-20: PIX [cite: 42, 51]
+            f"{'000':<3}"                           # 21-23: Banco 000 (Sinaliza Externo)
+            f"{'00000':0>5}"                        # 24-28: Agência Fav (ZEROS)
+            f"{' ':1}"                              # 29-29: DV Ag (Espaço)
+            f"{'000000000001':0>12}"                # 30-41: Conta Fav (CORREÇÃO: Valor 1 para passar validação >0)
+            f"{' ':1}"                              # 42-42: DV Conta Fav (Espaço ou 0 se obrigatório)
+            f"{' ':1}"                              # 43-43: DV Ag/Conta (CORREÇÃO: Espaço exigido pelo erro)
             f"{str(row['NOME_FAVORECIDO'])[:30]:<30}" # 44-73
             f"{chave_pix_raw:<20}"                  # 74-93: Seu Numero
             f"{dt_str:<8}"                          # 94-101
             f"{'BRL':<3}"                           # 102-104
-            f"{'0':0>15}"                           # 105-119: Qtd Moeda
+            f"{'0':0>15}"                           # 105-119: Qtd Moeda (ZEROS)
             f"{valor_str:<15}"                      # 120-134
-            f"{'':<20}"                             # 135-154
-            f"{dt_str:<8}"                          # 155-162
-            f"{valor_str:<15}"                      # 163-177
+            f"{'':<20}"                             # 135-154: Nosso Numero (Brancos)
+            f"{dt_str:<8}"                          # 155-162: Data Real
+            f"{valor_str:<15}"                      # 163-177: Valor Real (0 no retorno, mas mantendo simetria)
             f"{'':<40}"                             # 178-217: Info Comp
-            f"{'00':<2}"                            # 218-219: Fin Doc
-            f"{'':<10}"                             # 220-229: Finalidade
+            f"{'  ':<2}"                            # 218-219: Fin Doc
+            f"{'     ':<5}"                         # 220-224: Fin TED
+            f"{'  ':<2}"                            # 225-226: Fin Compl
+            f"{'   ':<3}"                           # 227-229: CNAB
             f"{'0':<1}"                             # 230-230: Aviso
-            f"{'':<10}"                             # 231-240: Ocorrências (BRANCOS para evitar erro)
+            f"{'          ':<10}"                   # 231-240: Ocorrências (CORREÇÃO: 10 Espaços, sem '045')
             f"\r\n"
         )
         seq_lote += 1
 
-        # --- SEGMENTO B ---
+        # [cite_start]--- SEGMENTO B (240 POSIÇÕES) [cite: 67] ---
         raw_doc = str(row.get('cnpj_beneficiario', '')).strip()
         if raw_doc.endswith('.0'): raw_doc = raw_doc[:-2]
         doc_fav = ''.join(filter(str.isdigit, raw_doc))
@@ -194,10 +195,9 @@ def gerar_cnab_pix(df_pagamentos):
             f"{'3':<1}"                             # 08-08
             f"{seq_lote:0>5}"                       # 09-13
             f"{'B':<1}"                             # 14-14
-            # POSIÇÕES 15-17: Forma Iniciação (G100) - Importante para PIX
-            f"{tipo_chave_code:<3}"                 # 15-17: Ex: '01 ' ou '03 '
-            f"{tipo_insc:<1}"                       # 18-18
-            f"{doc_fav:0>14}"                       # 19-32
+            [cite_start]f"{tipo_chave_code:<3}"                 # 15-17: G100 (01/02/03/04) [cite: 62]
+            f"{tipo_insc:<1}"                       # 18-18: Tipo Insc Fav
+            f"{doc_fav:0>14}"                       # 19-32: CNPJ/CPF Fav
             f"{'':<30}"                             # 33-62
             f"{'0':0>5}"                            # 63-67
             f"{'':<15}"                             # 68-82
@@ -206,7 +206,7 @@ def gerar_cnab_pix(df_pagamentos):
             f"{'00000':0>5}"                        # 118-122
             f"{'000':0>3}"                          # 123-125
             f"{'SC':<2}"                            # 126-127
-            f"{chave_pix_raw:<99}"                  # 128-226: CHAVE PIX
+            f"{chave_pix_raw:<99}"                  # 128-226: CHAVE PIX (Info 12)
             f"{'':<6}"                              # 227-232
             f"{'':<8}"                              # 233-240
             f"\r\n"
@@ -216,7 +216,7 @@ def gerar_cnab_pix(df_pagamentos):
         qtd_registros += 2
         detalhes += seg_a + seg_b
 
-    # --- TRAILER DE LOTE (240 POSIÇÕES) ---
+    # [cite_start]--- TRAILER DE LOTE (240 POSIÇÕES) [cite: 164] ---
     qtd_lote_total = qtd_registros + 2
     valor_total_str = f"{int(total_valor * 100):0>18}"
     
