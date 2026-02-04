@@ -44,7 +44,7 @@ def obter_proximo_sequencial():
 
 def limpar_numero(valor):
     if not valor: return ""
-    # Proteção contra notação científica do Excel
+    # Proteção contra notação científica do Excel e espaços
     s_val = str(valor)
     if 'e+' in s_val.lower():
         try: s_val = str(int(float(s_val)))
@@ -71,14 +71,13 @@ def converter_linha_digitavel_para_barras(linha):
 
     return linha[:44]
 
-# --- FUNÇÃO CRÍTICA DE VALIDAÇÃO (RESTAURADA) ---
-# O Cockpit provavelmente chama ESTA função para decidir se mostra o botão.
-# Mantenha o nome 'detectar_metodo_pagamento' e retornos simples.
+# --- FUNÇÃO CRÍTICA DE VALIDAÇÃO (NOME ORIGINAL) ---
+# O Cockpit chama esta função para validar a linha. 
+# Se ela quebrar ou retornar algo estranho, o botão some.
 
 def detectar_metodo_pagamento(dado):
     """
     Retorna 'BOLETO' ou 'PIX'.
-    NÃO ALTERE OS RETORNOS, pois o Cockpit depende deles.
     """
     limpo = limpar_numero(dado)
     # Lógica segura: 44 a 48 dígitos é Boleto
@@ -99,8 +98,11 @@ def detectar_tipo_chave(chave):
 # =============================================================================
 
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
-    """Gera J + J52 juntos para garantir aceitação"""
-    # 1. SEGMENTO J
+    """
+    Gera J + J52 juntos.
+    Isso satisfaz a exigência Febraban de identificação completa.
+    """
+    # 1. SEGMENTO J (Dados do Título)
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     try: valor = float(row['VALOR_PAGAMENTO'])
     except: valor = 0.0
@@ -120,8 +122,10 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
         f"{'':<20}{'':<20}{'09':<2}{'':<6}{'':<8}"
     )[:240] + "\r\n"
     
-    # 2. SEGMENTO J-52 (Incrementa sequencial)
+    # 2. SEGMENTO J-52 (Dados do Cedente/Sacado)
+    # Incrementa sequencial pois é uma nova linha
     seq_lote_interno += 1
+    
     doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc_cedente = "1" if len(doc_fav) <= 11 else "2"
@@ -146,13 +150,12 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     if chave_pix_raw.endswith('.0'): chave_pix_raw = chave_pix_raw[:-2]
     tipo_chave_code = detectar_tipo_chave(chave_pix_raw)
     
-    # Validação segura de conta
     banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', '000')) or "000"
     agencia_fav = limpar_numero(row.get('AGENCIA_FAVORECIDA', '0')) or "0"
     conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', '0')) or "0"
     dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '0')).strip() or "0"
     
-    # Dummy logic para evitar rejeição
+    # Dummy logic para evitar rejeição de valor zero
     if conta_fav == "0" or not conta_fav: conta_fav = "1"
     
     try:
@@ -219,6 +222,7 @@ def gerar_cnab_remessa(df_pagamentos):
     data_arq = now.strftime('%d%m%Y')
     hora_arq = now.strftime('%H%M%S')
     
+    # Header Arquivo
     header_arq = (
         f"{'136':<3}{'0000':0>4}{'0':<1}{'':<9}{'2':<1}{DADOS_HOSPITAL['cnpj']:0>14}"
         f"{DADOS_HOSPITAL['convenio']:0>20}{DADOS_HOSPITAL['agencia']:0>5}"
@@ -232,7 +236,7 @@ def gerar_cnab_remessa(df_pagamentos):
     lotes = {'PIX': [], 'BOLETO': []}
     
     for _, row in df_pagamentos.iterrows():
-        # Chama a função com o nome ORIGINAL que o Cockpit espera
+        # Chama a função segura
         metodo = detectar_metodo_pagamento(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         lotes[metodo].append(row)
             
@@ -240,7 +244,9 @@ def gerar_cnab_remessa(df_pagamentos):
     num_lote_arq = 1
     total_registros_arquivo = 0
 
-    # Configuração dos Lotes: (Chave, FormaLancamento, VersaoLayout)
+    # Configuração dos Lotes:
+    # Boletos -> Forma 31 (Outros Bancos) + Versão 040 (Estável)
+    # Pix -> Forma 45 (Pix) + Versão 046 (Novo)
     config = [('BOLETO', '31', '040'), ('PIX', '45', '046')]
 
     for tipo, forma, layout in config:
@@ -257,6 +263,7 @@ def gerar_cnab_remessa(df_pagamentos):
             if tipo == 'PIX':
                 seg_str, qtd = gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote_arq)
             else:
+                # Gera J + J52 (Exigência FEBRABAN)
                 seg_str, qtd = gerar_segmento_j_combo(row, seq_lote_interno, num_lote_arq)
             
             content += seg_str
@@ -276,5 +283,5 @@ def gerar_cnab_remessa(df_pagamentos):
     
     return content + trailer_arq
 
-# Alias de compatibilidade para chamadas antigas
+# Alias de compatibilidade
 gerar_cnab_pix = gerar_cnab_remessa
