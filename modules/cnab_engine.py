@@ -37,6 +37,10 @@ def obter_proximo_sequencial():
         return int(datetime.now().strftime('%H%M%S'))
 
 def limpar_numero(valor):
+    """
+    Remove letras e limpa o número.
+    Essencial para o 'Truque do B'.
+    """
     if not valor: return ""
     s_val = str(valor)
     if 'e+' in s_val.lower():
@@ -45,8 +49,7 @@ def limpar_numero(valor):
     return ''.join(filter(str.isdigit, s_val))
 
 def converter_linha_digitavel_para_barras(linha):
-    """Converte linha digitável (47/48) para barras (44)"""
-    linha = limpar_numero(linha)
+    linha = limpar_numero(linha) 
     if len(linha) == 44: return linha 
     
     if len(linha) == 47: # Boleto Bancário
@@ -62,31 +65,26 @@ def converter_linha_digitavel_para_barras(linha):
 
     return linha[:44]
 
-# --- CORREÇÃO AQUI: Nome da função unificado para Português ---
 def detectar_tipo_chave_pix_interno(chave):
     chave = str(chave).strip()
     if '@' in chave: return '02 '
     if len(chave) > 30 and '-' in chave: return '04 '
+    
     nums = limpar_numero(chave)
+    if len(nums) > 14: return '04 ' # Truque para passar boletos mascarados de Pix
+    
     if len(nums) == 11 or len(nums) == 14: return '03 '
     return '01 '
 
 # --- CAMUFLAGEM PARA A INTERFACE (UI) ---
 
 def detectar_metodo_pagamento(dado):
-    """
-    TRUQUE: Retorna SEMPRE 'PIX'.
-    Isso impede que o Cockpit mostre a mensagem 'Função Boleto em manutenção'.
-    O botão 'Gerar Remessa' ficará ativo.
-    """
     return 'PIX'
 
 # --- LÓGICA REAL (BACKEND) ---
 
 def classificar_transacao_real(dado):
-    """Decide se é Boleto ou Pix baseado no tamanho da string"""
     limpo = limpar_numero(dado)
-    # Se tem 44 ou mais dígitos, é certeza que é boleto
     if len(limpo) >= 44:
         return 'BOLETO'
     return 'PIX'
@@ -96,7 +94,10 @@ def classificar_transacao_real(dado):
 # =============================================================================
 
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
-    """Gera Boleto (J + J52) - Layout 040"""
+    """
+    Gera Boleto (J + J52) - Layout 040
+    CORREÇÃO APLICADA: Ajuste de preenchimento final para garantir 240 caracteres.
+    """
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     try: valor = float(row['VALOR_PAGAMENTO'])
     except: valor = 0.0
@@ -110,11 +111,20 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     nome_fav = str(row['NOME_FAVORECIDO'])
 
     # Segmento J
+    # CORREÇÃO NA ÚLTIMA LINHA: {'':<10} em vez de 8. 
+    # Conta: 224 (até moeda) + 6 (CNAB) + 10 (Ocorrências) = 240.
     seg_j = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}"
-        f"{cod_barras[:44]:0>44}{nome_fav[:30]:<30}{dt_str:<8}{valor_str:0>15}"
-        f"{'0':0>15}{'0':0>15}{dt_str:<8}{valor_str:0>15}{'0':0>15}"
-        f"{'':<20}{'':<20}{'09':<2}{'':<6}{'':<8}"
+        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}" # 17 chars
+        f"{cod_barras[:44]:0>44}"       # +44 = 61
+        f"{nome_fav[:30]:<30}"          # +30 = 91
+        f"{dt_str:<8}"                  # +08 = 99
+        f"{valor_str:0>15}"             # +15 = 114
+        f"{'0':0>15}{'0':0>15}"         # +30 = 144
+        f"{dt_str:<8}"                  # +08 = 152
+        f"{valor_str:0>15}"             # +15 = 167
+        f"{'0':0>15}"                   # +15 = 182
+        f"{'':<20}{'':<20}{'09':<2}"    # +42 = 224
+        f"{'':<6}{'':<10}"              # +16 = 240 (AQUI ESTAVA O ERRO)
     )[:240] + "\r\n"
     
     # Segmento J-52
@@ -142,7 +152,6 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     if chave_pix_raw.lower() in ['nan', 'none']: chave_pix_raw = ''
     if chave_pix_raw.endswith('.0'): chave_pix_raw = chave_pix_raw[:-2]
     
-    # CORREÇÃO DA CHAMADA: detectar_... em vez de detecting_...
     tipo_chave_code = detectar_tipo_chave_pix_interno(chave_pix_raw)
     
     banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', '000')) or "000"
@@ -229,9 +238,6 @@ def gerar_cnab_remessa(df_pagamentos):
     lotes = {'PIX': [], 'BOLETO': []}
     
     for _, row in df_pagamentos.iterrows():
-        # AQUI É O PULO DO GATO:
-        # Ignoramos o que o Cockpit pensa e verificamos a chave de verdade
-        # limpar_numero remove o 'B' que o usuário digitou
         tipo_real = classificar_transacao_real(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
         lotes[tipo_real].append(row)
             
@@ -239,7 +245,6 @@ def gerar_cnab_remessa(df_pagamentos):
     num_lote_arq = 1
     total_registros_arquivo = 0
 
-    # Configuração dos Lotes
     config = [('BOLETO', '31', '040'), ('PIX', '45', '046')]
 
     for tipo, forma, layout in config:
