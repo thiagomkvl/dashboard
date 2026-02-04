@@ -96,7 +96,7 @@ def classificar_transacao_real(dado):
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     """
     Gera Boleto (J + J52) - Layout 040
-    CORREÇÃO APLICADA: Ajuste de preenchimento final para garantir 240 caracteres.
+    CORREÇÃO J-52: Reposicionamento dos dados do Hospital para o bloco de 'Pagador' (Pos 132+)
     """
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     try: valor = float(row['VALOR_PAGAMENTO'])
@@ -111,23 +111,21 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     nome_fav = str(row['NOME_FAVORECIDO'])
 
     # Segmento J
-    # CORREÇÃO NA ÚLTIMA LINHA: {'':<10} em vez de 8. 
-    # Conta: 224 (até moeda) + 6 (CNAB) + 10 (Ocorrências) = 240.
     seg_j = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}" # 17 chars
-        f"{cod_barras[:44]:0>44}"       # +44 = 61
-        f"{nome_fav[:30]:<30}"          # +30 = 91
-        f"{dt_str:<8}"                  # +08 = 99
-        f"{valor_str:0>15}"             # +15 = 114
-        f"{'0':0>15}{'0':0>15}"         # +30 = 144
-        f"{dt_str:<8}"                  # +08 = 152
-        f"{valor_str:0>15}"             # +15 = 167
-        f"{'0':0>15}"                   # +15 = 182
-        f"{'':<20}{'':<20}{'09':<2}"    # +42 = 224
-        f"{'':<6}{'':<10}"              # +16 = 240 (AQUI ESTAVA O ERRO)
+        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}" 
+        f"{cod_barras[:44]:0>44}"       
+        f"{nome_fav[:30]:<30}"          
+        f"{dt_str:<8}"                  
+        f"{valor_str:0>15}"             
+        f"{'0':0>15}{'0':0>15}"         
+        f"{dt_str:<8}"                  
+        f"{valor_str:0>15}"             
+        f"{'0':0>15}"                   
+        f"{'':<20}{'':<20}{'09':<2}"    
+        f"{'':<6}{'':<10}"              
     )[:240] + "\r\n"
     
-    # Segmento J-52
+    # Segmento J-52 (CORRIGIDO)
     seq_lote_interno += 1
     doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
     if not doc_fav: doc_fav = "00000000000"
@@ -135,9 +133,19 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     
     seg_j52 = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'   ':<3}"
-        f"{'52':<2}{tipo_insc_cedente:<1}{doc_fav[:14]:0>15}{nome_fav[:40]:<40}"
-        f"{'2':<1}{DADOS_HOSPITAL['cnpj']:0>15}{DADOS_HOSPITAL['nome']:<40}"
-        f"{'':<53}{'':<56}"
+        f"{'52':<2}"                    # 18-19
+        f"{tipo_insc_cedente:<1}"       # 20: Tipo Insc CEDENTE
+        f"{doc_fav[:14]:0>15}"          # 21-35: CNPJ CEDENTE
+        f"{nome_fav[:40]:<40}"          # 36-75: Nome CEDENTE
+        # --- CORREÇÃO AQUI: PULAMOS O SACADOR/AVALISTA (Pos 76-131) ---
+        f"{'0':<1}"                     # 76: Tipo Insc SACADOR (0=Isento)
+        f"{'0':0>15}"                   # 77-91: CNPJ SACADOR (Zeros)
+        f"{'':<40}"                     # 92-131: Nome SACADOR (Branco)
+        # --- AQUI ENTRAM OS DADOS DO HOSPITAL (PAGADOR) (Pos 132+) ---
+        f"{'2':<1}"                     # 132: Tipo Insc PAGADOR (2=CNPJ)
+        f"{DADOS_HOSPITAL['cnpj']:0>15}"# 133-147: CNPJ PAGADOR
+        f"{DADOS_HOSPITAL['nome']:<40}" # 148-187: Nome PAGADOR
+        f"{'':<53}"                     # 188-240: Filler
     )[:240] + "\r\n"
     
     return seg_j + seg_j52, 2
@@ -192,12 +200,13 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     return seg_a + seg_b, 2
 
 def gerar_header_lote(num_lote, forma_lancamento, versao_layout):
+    # CORREÇÃO HEADER: Campo mensagem (PAGAMENTO FORNECEDORES) deve ser branco para evitar erro
     return (
         f"{'136':<3}{num_lote:0>4}{'1':<1}{'C':<1}{'20':<2}{forma_lancamento:<2}{versao_layout:<3}{'':<1}{'2':<1}"
         f"{DADOS_HOSPITAL['cnpj']:0>14}{DADOS_HOSPITAL['convenio']:0>20}"
         f"{DADOS_HOSPITAL['agencia']:0>5}{DADOS_HOSPITAL['dv_agencia']:<1}"
         f"{DADOS_HOSPITAL['conta']:0>12}{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}"
-        f"{DADOS_HOSPITAL['nome']:<30}{'PAGAMENTO FORNECEDORES':<40}"
+        f"{DADOS_HOSPITAL['nome']:<30}{'':<40}" # MUDANÇA: 'PAGAMENTO FORNECEDORES' -> ''
         f"{DADOS_HOSPITAL['logradouro']:<30}{DADOS_HOSPITAL['numero']:0>5}"
         f"{DADOS_HOSPITAL['complemento']:<15}{DADOS_HOSPITAL['cidade']:<20}"
         f"{DADOS_HOSPITAL['cep']:0>5}{DADOS_HOSPITAL['cep_sufixo']:0>3}"
