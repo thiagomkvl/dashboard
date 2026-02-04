@@ -87,7 +87,7 @@ def converter_linha_digitavel_para_barras(linha):
 # =============================================================================
 
 def gerar_segmento_j(row, seq_lote_interno):
-    """Gera Segmento J (Dados do Título)"""
+    """Gera Segmento J (Dados do Título) - SIMPLIFICADO SEM J52"""
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     
     try: valor = float(row['VALOR_PAGAMENTO'])
@@ -119,31 +119,6 @@ def gerar_segmento_j(row, seq_lote_interno):
         f"{'':<8}"                      # 233-240
     )
     return seg_j[:240] + "\r\n"
-
-def gerar_segmento_j52(row, seq_lote_interno):
-    """Gera Segmento J-52 (Dados do Cedente/Sacado)"""
-    doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
-    if not doc_fav: doc_fav = "00000000000"
-    tipo_insc_cedente = "1" if len(doc_fav) <= 11 else "2"
-    nome_fav = str(row['NOME_FAVORECIDO'])
-    
-    doc_pagador = DADOS_HOSPITAL['cnpj']
-    tipo_insc_pagador = "2" # CNPJ
-    nome_pagador = DADOS_HOSPITAL['nome']
-
-    seg_j52 = (
-        f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'   ':<3}"
-        f"{'52':<2}"                    # 18-19: Opcional 52
-        f"{tipo_insc_cedente:<1}"       # 20-20
-        f"{doc_fav[:14]:0>15}"          # 21-35
-        f"{nome_fav[:40]:<40}"          # 36-75
-        f"{tipo_insc_pagador:<1}"       # 76-76
-        f"{doc_pagador[:14]:0>15}"      # 77-91
-        f"{nome_pagador[:40]:<40}"      # 92-131
-        f"{'':<53}"                     # 132-184
-        f"{'':<56}"                     # 185-240
-    )
-    return seg_j52[:240] + "\r\n"
 
 def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq):
     """Gera Segmentos A + B para PIX"""
@@ -205,8 +180,11 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq):
     
     return seg_a + seg_b, 2
 
-def gerar_header_lote(num_lote, forma_lancamento, versao_layout='046'):
-    """Gera Header de Lote (Padrão 046 para tudo)"""
+def gerar_header_lote(num_lote, forma_lancamento, versao_layout):
+    """
+    Gera Header de Lote dinâmico.
+    PIX usa 046. Boletos usarão 040 para compatibilidade.
+    """
     return (
         f"{'136':<3}{num_lote:0>4}{'1':<1}{'C':<1}{'20':<2}{forma_lancamento:<2}{versao_layout:<3}{'':<1}{'2':<1}"
         f"{DADOS_HOSPITAL['cnpj']:0>14}{DADOS_HOSPITAL['convenio']:0>20}"
@@ -232,7 +210,7 @@ def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
 # =============================================================================
 
 def gerar_cnab_remessa(df_pagamentos):
-    """Gera CNAB com separação total de lotes e versões atualizadas"""
+    """Gera CNAB com separação total de lotes e versões compatíveis"""
     if df_pagamentos.empty: return None
 
     nsa = obter_proximo_sequencial()
@@ -252,9 +230,9 @@ def gerar_cnab_remessa(df_pagamentos):
 
     # SEPARAÇÃO EM 3 GRUPOS
     lotes = {
-        'PIX': [],              # Forma 45
-        'BOLETO_PROPRIO': [],   # Forma 30
-        'BOLETO_EXTERNO': []    # Forma 31
+        'PIX': [],              # Forma 45 (Layout 046)
+        'BOLETO_PROPRIO': [],   # Forma 30 (Layout 040)
+        'BOLETO_EXTERNO': []    # Forma 31 (Layout 040)
     }
     
     for _, row in df_pagamentos.iterrows():
@@ -264,20 +242,20 @@ def gerar_cnab_remessa(df_pagamentos):
     num_lote_arq = 1
     total_registros_arquivo = 0
 
-    # --- PROCESSADOR DE LOTES ---
-    # Definição das Formas de Lançamento
+    # Definição das Formas de Lançamento e VERSÕES
+    # AQUI ESTÁ O TRUQUE: BOLETOS USAM 040 (Compatível), PIX USA 046 (Novo)
     config_lotes = [
-        ('BOLETO_PROPRIO', '30'), # Títulos do Próprio Banco
-        ('BOLETO_EXTERNO', '31'), # Títulos de Outros Bancos
-        ('PIX', '45')             # Pix Transferência
+        ('BOLETO_PROPRIO', '30', '040'), 
+        ('BOLETO_EXTERNO', '31', '040'), 
+        ('PIX', '45', '046')             
     ]
 
-    for chave_lote, forma_lancamento in config_lotes:
+    for chave_lote, forma_lancamento, versao_layout in config_lotes:
         itens = lotes[chave_lote]
-        if not itens: continue # Pula se vazio
+        if not itens: continue
 
-        # Gera Header do Lote (Versão 046 para todos para evitar "Manutenção" em legado)
-        content += gerar_header_lote(num_lote_arq, forma_lancamento, '046')
+        # Gera Header do Lote com a versão específica
+        content += gerar_header_lote(num_lote_arq, forma_lancamento, versao_layout)
         
         seq_lote_interno = 1
         qtd_regs_lote = 0
@@ -288,19 +266,16 @@ def gerar_cnab_remessa(df_pagamentos):
                 # Gera PIX (A + B)
                 seg_str, qtd = gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq)
             else:
-                # Gera BOLETO (J + J52)
-                seg_j = gerar_segmento_j(row, seq_lote_interno)
-                seq_lote_interno += 1
-                seg_j52 = gerar_segmento_j52(row, seq_lote_interno)
-                seg_str = seg_j + seg_j52
-                qtd = 2
+                # Gera BOLETO (APENAS SEGMENTO J)
+                # Removemos J-52 para evitar erro de "manutenção"
+                seg_str = gerar_segmento_j(row, seq_lote_interno)
+                qtd = 1 # Apenas 1 registro por boleto
 
-            # Patch do Número do Lote nas linhas geradas
+            # Patch do Número do Lote
             lines = seg_str.split('\r\n')
             seg_ajustado = ""
             for line in lines:
                 if len(line) > 10:
-                    # Posições 04-07 é o lote
                     line_ajustada = line[:3] + f"{num_lote_arq:0>4}" + line[7:]
                     seg_ajustado += line_ajustada + "\r\n"
             
@@ -308,9 +283,9 @@ def gerar_cnab_remessa(df_pagamentos):
             
             # Incrementadores
             if chave_lote == 'PIX': 
-                seq_lote_interno += 2 # Já incrementei internamente no pix? Não, a func pix retorna 2 linhas mas pede seq inicial
+                seq_lote_interno += 2
             else:
-                pass # J e J52 já incrementaram a variavel seq_lote_interno manualmente acima
+                seq_lote_interno += 1
                 
             qtd_regs_lote += qtd
             try: total_valor_lote += float(row['VALOR_PAGAMENTO'])
