@@ -174,9 +174,17 @@ if not st.session_state['df_pagamentos'].empty:
                         mime="text/plain"
                     )
             
-            # BOTÃO BOLETO
+            # BOTÃO BOLETO (DESBLOQUEADO AGORA!)
             if not lote_boleto.empty:
-                c_btn2.info("Função Boleto em manutenção.")
+                # Reutilizamos a engine, pois ela agora é híbrida e sabe lidar com boletos
+                arquivo_boleto = gerar_cnab_pix(lote_boleto)
+                if arquivo_boleto:
+                    c_btn2.download_button(
+                        label=f"📥 Baixar Boleto ({len(lote_boleto)})", 
+                        data=arquivo_boleto, 
+                        file_name=f"CB{datetime.now().strftime('%d%m')}_BOLETO.txt",
+                        mime="text/plain"
+                    )
 
     else:
         st.info("Selecione itens na tabela para processar.")
