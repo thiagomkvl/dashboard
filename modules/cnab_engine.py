@@ -96,7 +96,7 @@ def classificar_transacao_real(dado):
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     """
     Gera Boleto (J + J52) - Layout 040
-    CORREÇÃO J-52: Reposicionamento dos dados do Hospital para o bloco de 'Pagador' (Pos 132+)
+    CORREÇÃO J-52: Preenche Sacador Avalista (76-131) com dados do Fornecedor.
     """
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     try: valor = float(row['VALOR_PAGAMENTO'])
@@ -125,7 +125,7 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
         f"{'':<6}{'':<10}"              
     )[:240] + "\r\n"
     
-    # Segmento J-52 (CORRIGIDO)
+    # Segmento J-52
     seq_lote_interno += 1
     doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
     if not doc_fav: doc_fav = "00000000000"
@@ -137,11 +137,13 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
         f"{tipo_insc_cedente:<1}"       # 20: Tipo Insc CEDENTE
         f"{doc_fav[:14]:0>15}"          # 21-35: CNPJ CEDENTE
         f"{nome_fav[:40]:<40}"          # 36-75: Nome CEDENTE
-        # --- CORREÇÃO AQUI: PULAMOS O SACADOR/AVALISTA (Pos 76-131) ---
-        f"{'0':<1}"                     # 76: Tipo Insc SACADOR (0=Isento)
-        f"{'0':0>15}"                   # 77-91: CNPJ SACADOR (Zeros)
-        f"{'':<40}"                     # 92-131: Nome SACADOR (Branco)
-        # --- AQUI ENTRAM OS DADOS DO HOSPITAL (PAGADOR) (Pos 132+) ---
+        
+        # --- CORREÇÃO: REPETE DADOS DO FORNECEDOR COMO SACADOR/AVALISTA ---
+        f"{tipo_insc_cedente:<1}"       # 76: Tipo Insc SACADOR (Repete Fornecedor)
+        f"{doc_fav[:14]:0>15}"          # 77-91: CNPJ SACADOR (Repete Fornecedor)
+        f"{nome_fav[:40]:<40}"          # 92-131: Nome SACADOR (Repete Fornecedor)
+        
+        # --- DADOS DO HOSPITAL (PAGADOR) ---
         f"{'2':<1}"                     # 132: Tipo Insc PAGADOR (2=CNPJ)
         f"{DADOS_HOSPITAL['cnpj']:0>15}"# 133-147: CNPJ PAGADOR
         f"{DADOS_HOSPITAL['nome']:<40}" # 148-187: Nome PAGADOR
@@ -200,13 +202,12 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     return seg_a + seg_b, 2
 
 def gerar_header_lote(num_lote, forma_lancamento, versao_layout):
-    # CORREÇÃO HEADER: Campo mensagem (PAGAMENTO FORNECEDORES) deve ser branco para evitar erro
     return (
         f"{'136':<3}{num_lote:0>4}{'1':<1}{'C':<1}{'20':<2}{forma_lancamento:<2}{versao_layout:<3}{'':<1}{'2':<1}"
         f"{DADOS_HOSPITAL['cnpj']:0>14}{DADOS_HOSPITAL['convenio']:0>20}"
         f"{DADOS_HOSPITAL['agencia']:0>5}{DADOS_HOSPITAL['dv_agencia']:<1}"
         f"{DADOS_HOSPITAL['conta']:0>12}{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}"
-        f"{DADOS_HOSPITAL['nome']:<30}{'':<40}" # MUDANÇA: 'PAGAMENTO FORNECEDORES' -> ''
+        f"{DADOS_HOSPITAL['nome']:<30}{'':<40}" 
         f"{DADOS_HOSPITAL['logradouro']:<30}{DADOS_HOSPITAL['numero']:0>5}"
         f"{DADOS_HOSPITAL['complemento']:<15}{DADOS_HOSPITAL['cidade']:<20}"
         f"{DADOS_HOSPITAL['cep']:0>5}{DADOS_HOSPITAL['cep_sufixo']:0>3}"
@@ -243,7 +244,6 @@ def gerar_cnab_remessa(df_pagamentos):
         f"{'083':<3}{'00000':0>5}{'':<69}\r\n"
     )[:242]
 
-    # SEPARAÇÃO INTERNA
     lotes = {'PIX': [], 'BOLETO': []}
     
     for _, row in df_pagamentos.iterrows():
