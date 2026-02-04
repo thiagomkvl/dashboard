@@ -34,20 +34,17 @@ def obter_proximo_sequencial():
     return novo
 
 def limpar_numero(valor):
-    """Remove tudo que não for dígito"""
     if not valor: return ""
     return ''.join(filter(str.isdigit, str(valor)))
 
 def detectar_metodo_pagamento(dado):
-    """Retorna 'BOLETO' ou 'PIX'"""
+    """Retorna 'BOLETO' (44-48 digitos) ou 'PIX'"""
     limpo = limpar_numero(dado)
-    # Boleto: Barras (44) ou Linha Digitável (47 ou 48)
     if len(limpo) >= 44 and len(limpo) <= 48:
         return 'BOLETO'
     return 'PIX'
 
 def detectar_tipo_chave(chave):
-    """G100: 01-Tel, 02-Email, 03-CPF/CNPJ, 04-Aleatoria"""
     chave = str(chave).strip()
     if '@' in chave: return '02 '
     if len(chave) > 30 and '-' in chave: return '04 '
@@ -56,63 +53,29 @@ def detectar_tipo_chave(chave):
     return '01 '
 
 def converter_linha_digitavel_para_barras(linha):
-    """
-    Converte Linha Digitável (47/48 dígitos) para Código de Barras (44 dígitos).
-    O Banco SÓ ACEITA OS 44 DÍGITOS no arquivo.
-    """
     linha = limpar_numero(linha)
+    if len(linha) == 44: return linha 
     
-    # Se já tem 44, assume que é barras
-    if len(linha) == 44:
-        return linha
-    
-    # Boleto Bancário (47 dígitos) -> Formato: AAABC.CCCCX DDDDD.DDDDDY EEEEE.EEEEEZ K UUUUVVVVVVVVVV
-    if len(linha) == 47:
-        # P1: 0-9 (Campo 1 - DVs no final)
-        # P2: 10-20 (Campo 2)
-        # P3: 21-31 (Campo 3)
-        # P4: 32 (DV Geral)
-        # P5: 33-47 (Fator Venc + Valor)
-        
-        # Barras: Banco(3) + Moeda(1) + DV_Geral(1) + FatorValor(14) + Campo1(4-9 sem DV) + Campo2(10-20 sem DV) + Campo3(21-31 sem DV)
-        # Atenção: A lógica exata de remontagem depende de remover os DVs (dígitos verificadores de cada campo)
-        
-        # Extração simplificada (removendo os dígitos verificadores das posições 9, 20 e 31)
-        # Campo 1: linha[0:9] (9 digitos) -> DV é o char 9
-        # Campo 2: linha[10:20] (10 digitos) -> DV é o char 20
-        # Campo 3: linha[21:31] (10 digitos) -> DV é o char 31
-        # Campo 4: linha[32] (1 digito)
-        # Campo 5: linha[33:] (14 digitos)
-        
-        c1 = linha[0:9]   # Banco + Moeda + 5 pos
-        c2 = linha[10:20] # 10 pos
-        c3 = linha[21:31] # 10 pos
+    # Lógica simplificada para extrair os 44 dígitos se vier linha digitável
+    if len(linha) == 47: # Boleto Bancário
+        c1 = linha[0:9]
+        c2 = linha[10:20]
+        c3 = linha[21:31]
         dv_geral = linha[32]
         fator_valor = linha[33:]
+        return c1[0:3] + c1[3:4] + dv_geral + fator_valor + c1[4:9] + c2 + c3
         
-        # Barras = Banco(0:3) + Moeda(3:4) + DV(1) + FatorValor(14) + C1(4:9) + C2 + C3
-        barras = c1[0:3] + c1[3:4] + dv_geral + fator_valor + c1[4:9] + c2 + c3
-        return barras
+    if len(linha) == 48: # Concessionária
+        return linha[0:11] + linha[12:23] + linha[24:35] + linha[36:47]
 
-    # Boleto Concessionária (48 dígitos) -> 4 blocos de 11 + 1 DV
-    if len(linha) == 48:
-        # Remove o último dígito de cada bloco de 12
-        b1 = linha[0:11]
-        b2 = linha[12:23]
-        b3 = linha[24:35]
-        b4 = linha[36:47]
-        return b1 + b2 + b3 + b4
-
-    # Se não for nenhum formato conhecido, retorna truncado em 44 (melhor esforço)
     return linha[:44]
 
 # =============================================================================
 # GERADORES DE SEGMENTO
 # =============================================================================
 
-def gerar_segmento_j(row, seq_lote):
-    """Gera Segmento J (Boletos)"""
-    # Converte e garante 44 dígitos
+def gerar_segmento_j(row, seq_lote_interno):
+    """Gera Segmento J (Boleto)"""
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     
     try: valor = float(row['VALOR_PAGAMENTO'])
@@ -126,29 +89,27 @@ def gerar_segmento_j(row, seq_lote):
 
     nome_fav = str(row['NOME_FAVORECIDO'])
 
-    # Layout Segmento J (240 pos)
     seg_j = (
-        f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote:0>5}{'J':<1}{'000':<3}" # 01-17
-        f"{cod_barras[:44]:0>44}"       # 18-61: Barras (Obrigatório 44)
-        f"{nome_fav[:30]:<30}"          # 62-91: Nome Cedente
-        f"{dt_str:<8}"                  # 92-101: Data Vencimento (Nominal)
-        f"{valor_str:0>15}"             # 102-116: Valor Título (Nominal)
-        f"{'0':0>15}"                   # 117-131: Desconto (0)
-        f"{'0':0>15}"                   # 132-146: Acréscimos (0)
+        f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}"
+        f"{cod_barras[:44]:0>44}"       # 18-61: Barras
+        f"{nome_fav[:30]:<30}"          # 62-91: Nome
+        f"{dt_str:<8}"                  # 92-101: Vencimento
+        f"{valor_str:0>15}"             # 102-116: Valor Nominal
+        f"{'0':0>15}"                   # 117-131: Desconto
+        f"{'0':0>15}"                   # 132-146: Juros
         f"{dt_str:<8}"                  # 147-154: Data Pagamento
         f"{valor_str:0>15}"             # 155-169: Valor Pagamento
         f"{'0':0>15}"                   # 170-184: Qtd Moeda
-        f"{'':<20}"                     # 185-204: Ref Sacado
-        f"{'':<20}"                     # 205-224: Nosso Número
-        f"{'09':<2}"                    # 225-226: Código Moeda (Real)
-        f"{'':<6}"                      # 227-232: CNAB
-        f"{'':<8}"                      # 233-240: Ocorrências
+        f"{'':<20}"                     # 185-204
+        f"{'':<20}"                     # 205-224
+        f"{'09':<2}"                    # 225-226: Real
+        f"{'':<6}"                      # 227-232
+        f"{'':<8}"                      # 233-240
     )
-    # Garante tamanho 240
     return seg_j[:240] + "\r\n", 1
 
-def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
-    """Gera Segmentos A + B para PIX (BLINDADO)"""
+def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq):
+    """Gera Segmentos A + B para PIX"""
     try: valor = float(row['VALOR_PAGAMENTO'])
     except: valor = 0.0
     valor_str = f"{int(valor * 100):0>15}"
@@ -163,11 +124,10 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
     conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', ''))
     dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '')).strip()
     
-    # Fallback para conta dummy (1) se vazia
+    # Fallback / Dummy
     eh_conta_zerada = False
     try:
-        if not conta_fav: eh_conta_zerada = True
-        elif int(conta_fav) == 0: eh_conta_zerada = True
+        if not conta_fav or int(conta_fav) == 0: eh_conta_zerada = True
     except: eh_conta_zerada = True
 
     if not banco_fav or int(banco_fav) == 0: banco_fav = "000"
@@ -182,9 +142,8 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
 
     nome_fav = str(row['NOME_FAVORECIDO'])
 
-    # Seg A
     seg_a = (
-        f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote:0>5}{'A':<1}{'000':<3}{'009':<3}"
+        f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote_interno:0>5}{'A':<1}{'000':<3}{'009':<3}"
         f"{banco_fav[:3]:0>3}{agencia_fav[:5]:0>5}{' ':1}"
         f"{conta_fav[:12]:0>12}{dv_conta_fav[:1]:<1}{' ':1}"
         f"{nome_fav[:30]:<30}{chave_pix_raw[:20]:<20}"
@@ -194,12 +153,12 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
     )
     seg_a = seg_a[:240] + "\r\n"
 
-    # Seg B
     doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc = "1" if len(doc_fav) <= 11 else "2"
     
-    seq_lote_b = seq_lote + 1
+    seq_lote_b = seq_lote_interno + 1
+    
     seg_b = (
         f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote_b:0>5}{'B':<1}"
         f"{tipo_chave_code[:3]:<3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
@@ -210,32 +169,13 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
     
     return seg_a + seg_b, 2
 
-# =============================================================================
-# MOTOR PRINCIPAL
-# =============================================================================
-
-def gerar_cnab_remessa(df_pagamentos):
-    """Gera CNAB Unificado"""
-    if df_pagamentos.empty: return None
-
-    nsa = obter_proximo_sequencial()
-    now = datetime.now()
-    data_arq = now.strftime('%d%m%Y')
-    hora_arq = now.strftime('%H%M%S')
-    
-    header_arq = (
-        f"{'136':<3}{'0000':0>4}{'0':<1}{'':<9}{'2':<1}{DADOS_HOSPITAL['cnpj']:0>14}"
-        f"{DADOS_HOSPITAL['convenio']:0>20}{DADOS_HOSPITAL['agencia']:0>5}"
-        f"{DADOS_HOSPITAL['dv_agencia']:<1}{DADOS_HOSPITAL['conta']:0>12}"
-        f"{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}{DADOS_HOSPITAL['nome']:<30}"
-        f"{'UNICRED':<30}{'':<10}{'1':<1}{data_arq:<8}{hora_arq:<6}{nsa:0>6}"
-        f"{'083':<3}{'00000':0>5}{'':<69}"
-    )
-    header_arq = header_arq[:240] + "\r\n"
-
-    # Header Lote Genérico (20 - Pagamento Fornecedor)
-    header_lote = (
-        f"{'136':<3}{'0001':0>4}{'1':<1}{'C':<1}{'20':<2}{'45':<2}{'046':<3}{'':<1}{'2':<1}"
+def gerar_header_lote(num_lote, forma_lancamento):
+    """
+    Gera Header de Lote dinâmico.
+    forma_lancamento: '45' (Pix) ou '31' (Boletos Outros Bancos)
+    """
+    return (
+        f"{'136':<3}{num_lote:0>4}{'1':<1}{'C':<1}{'20':<2}{forma_lancamento:<2}{'046':<3}{'':<1}{'2':<1}"
         f"{DADOS_HOSPITAL['cnpj']:0>14}{DADOS_HOSPITAL['convenio']:0>20}"
         f"{DADOS_HOSPITAL['agencia']:0>5}{DADOS_HOSPITAL['dv_agencia']:<1}"
         f"{DADOS_HOSPITAL['conta']:0>12}{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}"
@@ -243,47 +183,121 @@ def gerar_cnab_remessa(df_pagamentos):
         f"{DADOS_HOSPITAL['logradouro']:<30}{DADOS_HOSPITAL['numero']:0>5}"
         f"{DADOS_HOSPITAL['complemento']:<15}{DADOS_HOSPITAL['cidade']:<20}"
         f"{DADOS_HOSPITAL['cep']:0>5}{DADOS_HOSPITAL['cep_sufixo']:0>3}"
-        f"{DADOS_HOSPITAL['uf']:<2}{'':<8}{'':<10}"
-    )
-    header_lote = header_lote[:240] + "\r\n"
+        f"{DADOS_HOSPITAL['uf']:<2}{'':<8}{'':<10}\r\n"
+    )[:242] # Garante tamanho e quebra
 
-    detalhes = ""
-    qtd_registros = 0
-    total_valor = 0
-    seq_lote = 1
+def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
+    valor_total_str = f"{int(total_valor * 100):0>18}"
+    # Qtd registros = HeaderLote + Detalhes + TrailerLote
+    # Mas no campo trailer, conta-se SOMENTE os registros do lote (Header+Detalhes+Trailer)
+    qtd_total_lote = qtd_registros + 2 
+    
+    return (
+        f"{'136':<3}{num_lote:0>4}{'5':<1}{'':<9}{qtd_total_lote:0>6}"
+        f"{valor_total_str:<18}{'0':0>18}{'0':0>6}{'':<165}{'':<10}\r\n"
+    )[:242]
 
+# =============================================================================
+# MOTOR PRINCIPAL (MULTI-LOTE)
+# =============================================================================
+
+def gerar_cnab_remessa(df_pagamentos):
+    """Gera CNAB com Lotes Separados (Boletos vs Pix)"""
+    if df_pagamentos.empty: return None
+
+    nsa = obter_proximo_sequencial()
+    now = datetime.now()
+    data_arq = now.strftime('%d%m%Y')
+    hora_arq = now.strftime('%H%M%S')
+    
+    # Header Arquivo
+    content = (
+        f"{'136':<3}{'0000':0>4}{'0':<1}{'':<9}{'2':<1}{DADOS_HOSPITAL['cnpj']:0>14}"
+        f"{DADOS_HOSPITAL['convenio']:0>20}{DADOS_HOSPITAL['agencia']:0>5}"
+        f"{DADOS_HOSPITAL['dv_agencia']:<1}{DADOS_HOSPITAL['conta']:0>12}"
+        f"{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}{DADOS_HOSPITAL['nome']:<30}"
+        f"{'UNICRED':<30}{'':<10}{'1':<1}{data_arq:<8}{hora_arq:<6}{nsa:0>6}"
+        f"{'083':<3}{'00000':0>5}{'':<69}\r\n"
+    )[:242]
+
+    # SEPARAÇÃO DOS PAGAMENTOS
+    lote_boletos = []
+    lote_pix = []
+    
     for _, row in df_pagamentos.iterrows():
         metodo = detectar_metodo_pagamento(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-        
-        try: total_valor += float(row['VALOR_PAGAMENTO'])
-        except: pass
-
         if metodo == 'BOLETO':
-            seg_str, qtd = gerar_segmento_j(row, seq_lote)
-            detalhes += seg_str
-            seq_lote += qtd
-            qtd_registros += qtd
+            lote_boletos.append(row)
         else:
-            seg_str, qtd = gerar_segmentos_pix_a_b(row, seq_lote, data_arq)
-            detalhes += seg_str
-            seq_lote += qtd
-            qtd_registros += qtd
+            lote_pix.append(row)
+            
+    num_lote = 1
+    total_registros_arquivo = 0
 
-    qtd_lote_total = qtd_registros + 2
-    valor_total_str = f"{int(total_valor * 100):0>18}"
-    
-    trailer_lote = (
-        f"{'136':<3}{'0001':0>4}{'5':<1}{'':<9}{qtd_lote_total:0>6}"
-        f"{valor_total_str:<18}{'0':0>18}{'0':0>6}{'':<165}{'':<10}"
-    )
-    trailer_lote = trailer_lote[:240] + "\r\n"
+    # --- PROCESSA LOTE 1: BOLETOS (Se houver) ---
+    if lote_boletos:
+        # Header Lote Boletos (31 - Outros Bancos)
+        content += gerar_header_lote(num_lote, '31')
+        
+        seq_lote_interno = 1
+        qtd_regs_lote = 0
+        total_valor_lote = 0
+        
+        for row in lote_boletos:
+            seg_str, qtd = gerar_segmento_j(row, seq_lote_interno)
+            # Ajuste o número do lote nas linhas geradas (posições 04-07)
+            # O gerador faz com 0001 fixo, vamos substituir pelo num_lote correto
+            seg_str = seg_str[:3] + f"{num_lote:0>4}" + seg_str[7:]
+            
+            content += seg_str
+            seq_lote_interno += qtd
+            qtd_regs_lote += qtd
+            try: total_valor_lote += float(row['VALOR_PAGAMENTO'])
+            except: pass
+            
+        content += gerar_trailer_lote(num_lote, qtd_regs_lote, total_valor_lote)
+        
+        total_registros_arquivo += (qtd_regs_lote + 2)
+        num_lote += 1
 
+    # --- PROCESSA LOTE 2: PIX (Se houver) ---
+    if lote_pix:
+        # Header Lote Pix (45)
+        content += gerar_header_lote(num_lote, '45')
+        
+        seq_lote_interno = 1
+        qtd_regs_lote = 0
+        total_valor_lote = 0
+        
+        for row in lote_pix:
+            seg_str, qtd = gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq)
+            
+            # Ajuste o número do lote nas linhas geradas (Seg A e B)
+            # Como Seg A e B são duas linhas, precisamos ajustar em ambas
+            lines = seg_str.split('\r\n')
+            seg_ajustado = ""
+            for line in lines:
+                if len(line) > 10: # Ignora linha vazia do split
+                    line_ajustada = line[:3] + f"{num_lote:0>4}" + line[7:]
+                    seg_ajustado += line_ajustada + "\r\n"
+            
+            content += seg_ajustado
+            seq_lote_interno += qtd
+            qtd_regs_lote += qtd
+            try: total_valor_lote += float(row['VALOR_PAGAMENTO'])
+            except: pass
+            
+        content += gerar_trailer_lote(num_lote, qtd_regs_lote, total_valor_lote)
+        total_registros_arquivo += (qtd_regs_lote + 2)
+
+    # --- TRAILER ARQUIVO ---
     trailer_arq = (
         f"{'136':<3}{'9999':<4}{'9':<1}{'':<9}{'000001':0>6}"
-        f"{qtd_lote_total+2:0>6}{'000000':0>6}{'':<205}"
-    )
-    trailer_arq = trailer_arq[:240] + "\r\n"
+        f"{total_registros_arquivo+2:0>6}{'000000':0>6}{'':<205}\r\n"
+    )[:242]
+    
+    content += trailer_arq
 
-    return header_arq + header_lote + detalhes + trailer_lote + trailer_arq
+    return content
 
 gerar_cnab_pix = gerar_cnab_remessa
