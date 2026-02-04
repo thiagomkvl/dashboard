@@ -80,8 +80,8 @@ def gerar_segmento_j(row, seq_lote):
 
     seg_j = (
         f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote:0>5}{'J':<1}{'000':<3}" # 01-17
-        f"{cod_barras[:44]:0>44}"       # 18-61: Barras (TRUNCADO 44)
-        f"{nome_fav[:30]:<30}"          # 62-91: Nome (TRUNCADO 30)
+        f"{cod_barras[:44]:0>44}"       # 18-61: Barras
+        f"{nome_fav[:30]:<30}"          # 62-91: Nome
         f"{dt_str:<8}"                  # 92-101
         f"{valor_str:0>15}"             # 102-116
         f"{'0':0>15}"                   # 117-131
@@ -93,12 +93,12 @@ def gerar_segmento_j(row, seq_lote):
         f"{'':<20}"                     # 205-224
         f"{'09':<2}"                    # 225-226
         f"{'':<6}"                      # 227-232
-        f"{'':<8}"                      # 233-240 (Ajustado para fechar 240 exato)
+        f"{'':<8}"                      # 233-240
     )
     return seg_j[:240] + "\r\n", 1
 
 def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
-    """Gera Segmentos A + B para PIX (BLINDADO)"""
+    """Gera Segmentos A + B para PIX (BLINDADO & COM FALLBACK DUMMY ROBUSTO)"""
     try: valor = float(row['VALOR_PAGAMENTO'])
     except: valor = 0.0
     valor_str = f"{int(valor * 100):0>15}"
@@ -108,14 +108,30 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
     if chave_pix_raw.endswith('.0'): chave_pix_raw = chave_pix_raw[:-2]
     tipo_chave_code = detectar_tipo_chave(chave_pix_raw)
     
+    # Extrai dados do DF
     banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', ''))
     agencia_fav = limpar_numero(row.get('AGENCIA_FAVORECIDA', ''))
     conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', ''))
     dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '')).strip()
     
-    if not banco_fav: banco_fav = "000"
+    # --- LÓGICA DE FALLBACK BLINDADA ---
+    # Verifica matematicamente se é zero (pega 0, 00, 000, 0000...)
+    eh_conta_zerada = False
+    try:
+        if not conta_fav:
+            eh_conta_zerada = True
+        elif int(conta_fav) == 0:
+            eh_conta_zerada = True
+    except:
+        eh_conta_zerada = True # Se não for número, força dummy
+
+    if not banco_fav or int(banco_fav) == 0: banco_fav = "000"
     if not agencia_fav: agencia_fav = "0"
-    if not conta_fav: conta_fav = "0"
+    
+    # APLICAR DUMMY SE CONTA FOR ZERADA
+    if eh_conta_zerada:
+        conta_fav = "1"
+    
     if not dv_conta_fav: dv_conta_fav = "0"
 
     try:
@@ -131,16 +147,16 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
         f"{banco_fav[:3]:0>3}"                  # 21-23
         f"{agencia_fav[:5]:0>5}"                # 24-28
         f"{' ':1}"                              # 29-29
-        f"{conta_fav[:12]:0>12}"                # 30-41
+        f"{conta_fav[:12]:0>12}"                # 30-41 (AGORA VAI 1 COM CERTEZA)
         f"{dv_conta_fav[:1]:<1}"                # 42-42
         f"{' ':1}"                              # 43-43
-        f"{nome_fav[:30]:<30}"                  # 44-73 (TRUNCADO 30)
-        f"{chave_pix_raw[:20]:<20}"             # 74-93 (TRUNCADO 20 - Seu Num)
+        f"{nome_fav[:30]:<30}"                  # 44-73
+        f"{chave_pix_raw[:20]:<20}"             # 74-93
         f"{dt_str:<8}{'BRL':<3}"
         f"{'0':0>15}{valor_str:<15}{'':<20}{dt_str:<8}{valor_str:<15}"
         f"{'':<40}{'00':<2}{'':<5}{'':<2}{'':<3}{'0':<1}{'':<10}"
     )
-    seg_a = seg_a[:240] + "\r\n" # GARANTIA FINAL DE TAMANHO
+    seg_a = seg_a[:240] + "\r\n"
 
     # --- SEGMENTO B ---
     doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
@@ -149,18 +165,16 @@ def gerar_segmentos_pix_a_b(row, seq_lote, data_arq):
     
     seq_lote_b = seq_lote + 1
     
-    # ATENÇÃO: AQUI ESTAVA O ERRO DE 241 CARACTERES
-    # Aplicando truncagem explícita [:N] em todos os campos variáveis
     seg_b = (
         f"{'136':<3}{'0001':0>4}{'3':<1}{seq_lote_b:0>5}{'B':<1}"
-        f"{tipo_chave_code[:3]:<3}"             # 15-17 (TRUNCADO 3)
-        f"{tipo_insc[:1]:<1}"                   # 18-18 (TRUNCADO 1)
-        f"{doc_fav[:14]:0>14}"                  # 19-32 (TRUNCADO 14)
-        f"{'':<30}{'0':0>5}{'':<15}{'':<15}{'':<20}{'00000':0>5}{'000':0>3}{'SC':<2}" # Endereço (95 chars)
-        f"{chave_pix_raw[:99]:<99}"             # 128-226 (TRUNCADO 99 - AQUI OCORRIA O ERRO SE >99)
+        f"{tipo_chave_code[:3]:<3}"             # 15-17
+        f"{tipo_insc[:1]:<1}"                   # 18-18
+        f"{doc_fav[:14]:0>14}"                  # 19-32
+        f"{'':<30}{'0':0>5}{'':<15}{'':<15}{'':<20}{'00000':0>5}{'000':0>3}{'SC':<2}"
+        f"{chave_pix_raw[:99]:<99}"             # 128-226
         f"{'':<6}{'':<8}"                       # 227-240
     )
-    seg_b = seg_b[:240] + "\r\n" # GARANTIA FINAL DE TAMANHO
+    seg_b = seg_b[:240] + "\r\n"
     
     return seg_a + seg_b, 2
 
