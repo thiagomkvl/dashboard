@@ -1,284 +1,195 @@
-import os
-import re
+import streamlit as st
+import pandas as pd
 from datetime import datetime
+from database import conectar_sheets
 
-# --- CONFIGURAÇÕES GERAIS ---
-DADOS_HOSPITAL = {
-    'nome': 'SOS CARDIO SERVICOS HOSP',
-    'cnpj': '85307098000187', 
-    'banco': '136', 
-    'agencia': '1214',
-    'dv_agencia': '0',
-    'conta': '5886', 
-    'dv_conta': '6', 
-    'convenio': '985597',
-    'logradouro': 'RODOVIA SC 401',
-    'numero': '123', 
-    'complemento': 'SALA 01',
-    'cidade': 'FLORIANOPOLIS',
-    'cep': '88000',
-    'cep_sufixo': '000',
-    'uf': 'SC'
-}
+# --- IMPORTAÇÃO SEGURA DAS FUNÇÕES ---
+try:
+    from modules.utils import formatar_real, identificar_tipo_pagamento
+    from modules.cnab_engine import gerar_cnab_pix 
+except ImportError as e:
+    st.error(f"Erro crítico nos módulos: {e}")
+    st.stop()
 
-# --- FUNÇÕES UTILITÁRIAS ---
+# --- SEGURANÇA ---
+if not st.session_state.get("password_correct"):
+    st.warning("🔒 Acesso restrito. Faça login.")
+    st.stop()
 
-def obter_proximo_sequencial():
+st.title("🎛️ Cockpit de Pagamentos - SOS CARDIO")
+
+# --- CONEXÃO GOOGLE SHEETS ---
+if 'df_pagamentos' not in st.session_state:
     try:
-        arquivo_nsa = "nsa_counter.txt"
-        if not os.path.exists(arquivo_nsa):
-            with open(arquivo_nsa, "w") as f: f.write("1")
-            return 1
-        with open(arquivo_nsa, "r") as f: atual = int(f.read().strip())
-        novo = atual + 1
-        with open(arquivo_nsa, "w") as f: f.write(str(novo))
-        return novo
-    except:
-        return int(datetime.now().strftime('%H%M%S'))
-
-def limpar_numero(valor):
-    """
-    Remove letras e limpa o número.
-    Essencial para o 'Truque do B'.
-    """
-    if not valor: return ""
-    s_val = str(valor)
-    if 'e+' in s_val.lower():
-        try: s_val = str(int(float(s_val)))
-        except: pass
-    return ''.join(filter(str.isdigit, s_val))
-
-def converter_linha_digitavel_para_barras(linha):
-    linha = limpar_numero(linha) 
-    if len(linha) == 44: return linha 
-    
-    if len(linha) == 47: # Boleto Bancário
-        c1 = linha[0:9]
-        c2 = linha[10:20]
-        c3 = linha[21:31]
-        dv_geral = linha[32]
-        fator_valor = linha[33:]
-        return c1[0:3] + c1[3:4] + dv_geral + fator_valor + c1[4:9] + c2 + c3
+        conn = conectar_sheets()
+        df_p = conn.read(worksheet="Pagamentos_Dia", ttl=0)
         
-    if len(linha) == 48: # Concessionária
-        return linha[0:11] + linha[12:23] + linha[24:35] + linha[36:47]
+        # Garante estrutura mínima se vier vazia
+        if df_p.empty:
+            df_p = pd.DataFrame(columns=['Pagar?', 'NOME_FAVORECIDO', 'VALOR_PAGAMENTO', 'DATA_PAGAMENTO', 'CHAVE_PIX_OU_COD_BARRAS', 'cnpj_beneficiario'])
+            
+        if 'Pagar?' not in df_p.columns: df_p.insert(0, 'Pagar?', True)
+        
+        # Unifica colunas de pagamento
+        if 'CHAVE_PIX_OU_COD_BARRAS' not in df_p.columns: 
+            if 'CHAVE_PIX' in df_p.columns: 
+                df_p['CHAVE_PIX_OU_COD_BARRAS'] = df_p['CHAVE_PIX']
+            else: 
+                df_p['CHAVE_PIX_OU_COD_BARRAS'] = ""
+        
+        # --- CORREÇÃO DE TIPAGEM INICIAL ---
+        df_p['Pagar?'] = df_p['Pagar?'].astype(bool)
+        
+        if 'VALOR_PAGAMENTO' in df_p.columns:
+            df_p['VALOR_PAGAMENTO'] = pd.to_numeric(
+                df_p['VALOR_PAGAMENTO'].astype(str).str.replace(',', '.'), 
+                errors='coerce'
+            ).fillna(0.0)
+            
+        # Força Chave Pix para texto (evita erro de float no editor)
+        df_p['CHAVE_PIX_OU_COD_BARRAS'] = df_p['CHAVE_PIX_OU_COD_BARRAS'].astype(str).replace('nan', '').replace('None', '')
+        
+        st.session_state['df_pagamentos'] = df_p
+    except Exception as e:
+        st.error(f"Erro ao conectar na planilha: {e}")
+        st.session_state['df_pagamentos'] = pd.DataFrame()
 
-    return linha[:44]
+# --- FORMULÁRIO DE INSERÇÃO ---
+with st.expander("➕ Inserir Novo Título", expanded=False):
+    with st.form("form_novo", clear_on_submit=True):
+        c1, c2, c3 = st.columns(3)
+        fn = c1.text_input("Fornecedor/Beneficiário")
+        fv = c2.number_input("Valor (R$)", min_value=0.01, format="%.2f")
+        fd = c3.date_input("Vencimento", datetime.now())
+        
+        c4, c5 = st.columns([2, 1])
+        cod = c4.text_input("Chave PIX ou Código de Barras (Boleto)")
+        fc = c5.text_input("CNPJ/CPF Beneficiário (Somente Números)")
+        
+        st.caption("Dados Bancários (Apenas se for TED - Opcional para PIX/Boleto):")
+        cb1, cb2, cb3, cb4 = st.columns(4)
+        fb = cb1.text_input("Banco")
+        fa = cb2.text_input("Agência")
+        fcc = cb3.text_input("Conta")
+        fdg = cb4.text_input("DV")
+        
+        if st.form_submit_button("Adicionar"):
+            # Limpeza de Dados
+            cod_limpo = cod.strip()
+            if "@" not in cod_limpo:
+                cod_limpo = cod_limpo.replace(".", "").replace("-", "").replace("/", "").replace(" ", "")
+            
+            novo = pd.DataFrame([{
+                'Pagar?': True, 
+                'NOME_FAVORECIDO': fn, 
+                'VALOR_PAGAMENTO': float(fv),
+                'DATA_PAGAMENTO': fd.strftime('%d/%m/%Y'),
+                'cnpj_beneficiario': fc.replace(".", "").replace("-", "").replace("/", ""),
+                'CHAVE_PIX_OU_COD_BARRAS': str(cod_limpo), # Garante string na origem
+                'BANCO_FAVORECIDO': fb, 
+                'AGENCIA_FAVORECIDA': fa, 
+                'CONTA_FAVORECIDA': fcc, 
+                'DIGITO_CONTA_FAVORECIDA': fdg
+            }])
+            
+            st.session_state['df_pagamentos'] = pd.concat([st.session_state['df_pagamentos'], novo], ignore_index=True)
+            # Reforça tipagem
+            st.session_state['df_pagamentos']['VALOR_PAGAMENTO'] = st.session_state['df_pagamentos']['VALOR_PAGAMENTO'].astype(float)
+            st.session_state['df_pagamentos']['CHAVE_PIX_OU_COD_BARRAS'] = st.session_state['df_pagamentos']['CHAVE_PIX_OU_COD_BARRAS'].astype(str)
+            st.rerun()
 
-def detectar_tipo_chave_pix_interno(chave):
-    chave = str(chave).strip()
-    if '@' in chave: return '02 '
-    if len(chave) > 30 and '-' in chave: return '04 '
-    
-    nums = limpar_numero(chave)
-    if len(nums) > 14: return '04 ' # Truque para passar boletos mascarados de Pix
-    
-    if len(nums) == 11 or len(nums) == 14: return '03 '
-    return '01 '
+# --- TABELA PRINCIPAL ---
+st.subheader("Lista de Pagamentos do Dia")
 
-# --- CAMUFLAGEM PARA A INTERFACE (UI) ---
-
-def detectar_metodo_pagamento(dado):
-    return 'PIX'
-
-# --- LÓGICA REAL (BACKEND) ---
-
-def classificar_transacao_real(dado):
-    limpo = limpar_numero(dado)
-    if len(limpo) >= 44:
-        return 'BOLETO'
-    return 'PIX'
-
-# =============================================================================
-# GERADORES DE SEGMENTO
-# =============================================================================
-
-def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
-    """
-    Gera Boleto (J + J52) - Layout 040
-    CORREÇÃO APLICADA: Ajuste de preenchimento final para garantir 240 caracteres.
-    """
-    cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-    try: valor = float(row['VALOR_PAGAMENTO'])
-    except: valor = 0.0
-    valor_str = f"{int(valor * 100):0>15}"
+if not st.session_state['df_pagamentos'].empty:
+    df_display = st.session_state['df_pagamentos'].copy()
     
-    try:
-        dt_obj = datetime.strptime(str(row['DATA_PAGAMENTO']), '%d/%m/%Y')
-        dt_str = dt_obj.strftime('%d%m%Y')
-    except: dt_str = datetime.now().strftime('%d%m%Y')
+    # --- BLINDAGEM CONTRA ERROS DE TIPO (CRÍTICO) ---
+    # 1. Valor vira Float
+    df_display['VALOR_PAGAMENTO'] = pd.to_numeric(df_display['VALOR_PAGAMENTO'], errors='coerce').fillna(0.0)
+    # 2. Checkbox vira Bool
+    df_display['Pagar?'] = df_display['Pagar?'].astype(bool)
+    # 3. Chave Pix vira String (CORREÇÃO DO ERRO ATUAL)
+    # Converte para string, remove 'nan' literal e remove '.0' se o pandas tiver lido como float (ex: 123.0 vira 123)
+    df_display['CHAVE_PIX_OU_COD_BARRAS'] = df_display['CHAVE_PIX_OU_COD_BARRAS'].astype(str).replace('nan', '')
+    df_display['CHAVE_PIX_OU_COD_BARRAS'] = df_display['CHAVE_PIX_OU_COD_BARRAS'].apply(lambda x: x.replace('.0', '') if x.endswith('.0') else x)
     
-    nome_fav = str(row['NOME_FAVORECIDO'])
-
-    # Segmento J
-    # CORREÇÃO NA ÚLTIMA LINHA: {'':<10} em vez de 8. 
-    # Conta: 224 (até moeda) + 6 (CNAB) + 10 (Ocorrências) = 240.
-    seg_j = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}" # 17 chars
-        f"{cod_barras[:44]:0>44}"       # +44 = 61
-        f"{nome_fav[:30]:<30}"          # +30 = 91
-        f"{dt_str:<8}"                  # +08 = 99
-        f"{valor_str:0>15}"             # +15 = 114
-        f"{'0':0>15}{'0':0>15}"         # +30 = 144
-        f"{dt_str:<8}"                  # +08 = 152
-        f"{valor_str:0>15}"             # +15 = 167
-        f"{'0':0>15}"                   # +15 = 182
-        f"{'':<20}{'':<20}{'09':<2}"    # +42 = 224
-        f"{'':<6}{'':<10}"              # +16 = 240 (AQUI ESTAVA O ERRO)
-    )[:240] + "\r\n"
-    
-    # Segmento J-52
-    seq_lote_interno += 1
-    doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
-    if not doc_fav: doc_fav = "00000000000"
-    tipo_insc_cedente = "1" if len(doc_fav) <= 11 else "2"
-    
-    seg_j52 = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'   ':<3}"
-        f"{'52':<2}{tipo_insc_cedente:<1}{doc_fav[:14]:0>15}{nome_fav[:40]:<40}"
-        f"{'2':<1}{DADOS_HOSPITAL['cnpj']:0>15}{DADOS_HOSPITAL['nome']:<40}"
-        f"{'':<53}{'':<56}"
-    )[:240] + "\r\n"
-    
-    return seg_j + seg_j52, 2
-
-def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
-    """Gera Pix (A + B) - Layout 046"""
-    try: valor = float(row['VALOR_PAGAMENTO'])
-    except: valor = 0.0
-    valor_str = f"{int(valor * 100):0>15}"
-    
-    chave_pix_raw = str(row.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
-    if chave_pix_raw.lower() in ['nan', 'none']: chave_pix_raw = ''
-    if chave_pix_raw.endswith('.0'): chave_pix_raw = chave_pix_raw[:-2]
-    
-    tipo_chave_code = detectar_tipo_chave_pix_interno(chave_pix_raw)
-    
-    banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', '000')) or "000"
-    agencia_fav = limpar_numero(row.get('AGENCIA_FAVORECIDA', '0')) or "0"
-    conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', '0')) or "0"
-    dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '0')).strip() or "0"
-    
-    if conta_fav == "0" or not conta_fav: conta_fav = "1"
+    # Identifica tipo visualmente
+    df_display['Tipo'] = df_display.apply(identificar_tipo_pagamento, axis=1)
     
     try:
-        dt_obj = datetime.strptime(str(row['DATA_PAGAMENTO']), '%d/%m/%Y')
-        dt_str = dt_obj.strftime('%d%m%Y')
-    except: dt_str = data_arq
-    
-    nome_fav = str(row['NOME_FAVORECIDO'])
-
-    seg_a = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'A':<1}{'000':<3}{'009':<3}"
-        f"{banco_fav[:3]:0>3}{agencia_fav[:5]:0>5}{' ':1}"
-        f"{conta_fav[:12]:0>12}{dv_conta_fav[:1]:<1}{' ':1}"
-        f"{nome_fav[:30]:<30}{chave_pix_raw[:20]:<20}{dt_str:<8}{'BRL':<3}"
-        f"{'0':0>15}{valor_str:<15}{'':<20}{dt_str:<8}{valor_str:<15}"
-        f"{'':<40}{'00':<2}{'':<5}{'':<2}{'':<3}{'0':<1}{'':<10}"
-    )[:240] + "\r\n"
-
-    seq_lote_interno += 1
-    doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
-    if not doc_fav: doc_fav = "00000000000"
-    tipo_insc = "1" if len(doc_fav) <= 11 else "2"
-    
-    seg_b = (
-        f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'B':<1}"
-        f"{tipo_chave_code[:3]:<3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
-        f"{'':<30}{'0':0>5}{'':<15}{'':<15}{'':<20}{'00000':0>5}{'000':0>3}{'SC':<2}"
-        f"{chave_pix_raw[:99]:<99}{'':<6}{'':<8}"
-    )[:240] + "\r\n"
-    
-    return seg_a + seg_b, 2
-
-def gerar_header_lote(num_lote, forma_lancamento, versao_layout):
-    return (
-        f"{'136':<3}{num_lote:0>4}{'1':<1}{'C':<1}{'20':<2}{forma_lancamento:<2}{versao_layout:<3}{'':<1}{'2':<1}"
-        f"{DADOS_HOSPITAL['cnpj']:0>14}{DADOS_HOSPITAL['convenio']:0>20}"
-        f"{DADOS_HOSPITAL['agencia']:0>5}{DADOS_HOSPITAL['dv_agencia']:<1}"
-        f"{DADOS_HOSPITAL['conta']:0>12}{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}"
-        f"{DADOS_HOSPITAL['nome']:<30}{'PAGAMENTO FORNECEDORES':<40}"
-        f"{DADOS_HOSPITAL['logradouro']:<30}{DADOS_HOSPITAL['numero']:0>5}"
-        f"{DADOS_HOSPITAL['complemento']:<15}{DADOS_HOSPITAL['cidade']:<20}"
-        f"{DADOS_HOSPITAL['cep']:0>5}{DADOS_HOSPITAL['cep_sufixo']:0>3}"
-        f"{DADOS_HOSPITAL['uf']:<2}{'':<8}{'':<10}\r\n"
-    )[:242]
-
-def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
-    valor_total_str = f"{int(total_valor * 100):0>18}"
-    qtd_total_lote = qtd_registros + 2 
-    return (
-        f"{'136':<3}{num_lote:0>4}{'5':<1}{'':<9}{qtd_total_lote:0>6}"
-        f"{valor_total_str:<18}{'0':0>18}{'0':0>6}{'':<165}{'':<10}\r\n"
-    )[:242]
-
-# =============================================================================
-# MOTOR PRINCIPAL
-# =============================================================================
-
-def gerar_cnab_remessa(df_pagamentos):
-    """Gera CNAB Unificado - Misto"""
-    if df_pagamentos.empty: return None
-
-    nsa = obter_proximo_sequencial()
-    now = datetime.now()
-    data_arq = now.strftime('%d%m%Y')
-    hora_arq = now.strftime('%H%M%S')
-    
-    header_arq = (
-        f"{'136':<3}{'0000':0>4}{'0':<1}{'':<9}{'2':<1}{DADOS_HOSPITAL['cnpj']:0>14}"
-        f"{DADOS_HOSPITAL['convenio']:0>20}{DADOS_HOSPITAL['agencia']:0>5}"
-        f"{DADOS_HOSPITAL['dv_agencia']:<1}{DADOS_HOSPITAL['conta']:0>12}"
-        f"{DADOS_HOSPITAL['dv_conta']:<1}{' ':1}{DADOS_HOSPITAL['nome']:<30}"
-        f"{'UNICRED':<30}{'':<10}{'1':<1}{data_arq:<8}{hora_arq:<6}{nsa:0>6}"
-        f"{'083':<3}{'00000':0>5}{'':<69}\r\n"
-    )[:242]
-
-    # SEPARAÇÃO INTERNA
-    lotes = {'PIX': [], 'BOLETO': []}
-    
-    for _, row in df_pagamentos.iterrows():
-        tipo_real = classificar_transacao_real(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-        lotes[tipo_real].append(row)
-            
-    content = header_arq
-    num_lote_arq = 1
-    total_registros_arquivo = 0
-
-    config = [('BOLETO', '31', '040'), ('PIX', '45', '046')]
-
-    for tipo, forma, layout in config:
-        itens = lotes[tipo]
-        if not itens: continue
-
-        content += gerar_header_lote(num_lote_arq, forma, layout)
+        edited_df = st.data_editor(
+            df_display, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "Pagar?": st.column_config.CheckboxColumn("Pagar?", default=True),
+                "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
+                "VALOR_PAGAMENTO": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                # Agora é seguro usar TextColumn pois forçamos string acima
+                "CHAVE_PIX_OU_COD_BARRAS": st.column_config.TextColumn("Chave/Código", width="medium")
+            }
+        )
         
-        seq_lote_interno = 1
-        qtd_regs_lote = 0
-        total_valor_lote = 0
-        
-        for row in itens:
-            if tipo == 'PIX':
-                seg_str, qtd = gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote_arq)
-            else:
-                seg_str, qtd = gerar_segmento_j_combo(row, seq_lote_interno, num_lote_arq)
-            
-            content += seg_str
-            seq_lote_interno += qtd
-            qtd_regs_lote += qtd
-            try: total_valor_lote += float(row['VALOR_PAGAMENTO'])
-            except: pass
-            
-        content += gerar_trailer_lote(num_lote_arq, qtd_regs_lote, total_valor_lote)
-        total_registros_arquivo += (qtd_regs_lote + 2)
-        num_lote_arq += 1
+        # Atualiza estado se houver edição
+        if not edited_df.equals(df_display):
+            colunas_reais = [c for c in edited_df.columns if c != 'Tipo']
+            st.session_state['df_pagamentos'] = edited_df[colunas_reais]
 
-    trailer_arq = (
-        f"{'136':<3}{'9999':<4}{'9':<1}{'':<9}{'000001':0>6}"
-        f"{total_registros_arquivo+2:0>6}{'000000':0>6}{'':<205}\r\n"
-    )[:242]
+    except Exception as e:
+        st.error(f"Erro ao renderizar tabela: {e}")
+        st.caption("Tentando exibir dados brutos:")
+        st.dataframe(df_display)
+
+    st.divider()
     
-    return content + trailer_arq
+    # --- RESUMO E GERAÇÃO ---
+    col_resumo, col_botoes = st.columns([1, 2])
+    
+    df_pagar = st.session_state['df_pagamentos'][st.session_state['df_pagamentos']['Pagar?'] == True].copy()
+    
+    if not df_pagar.empty:
+        df_pagar['TIPO_DETECTADO'] = df_pagar.apply(identificar_tipo_pagamento, axis=1)
+        lote_pix = df_pagar[df_pagar['TIPO_DETECTADO'] == 'PIX']
+        lote_boleto = df_pagar[df_pagar['TIPO_DETECTADO'] == 'BOLETO']
+        
+        with col_resumo:
+            # Soma segura
+            total = pd.to_numeric(lote_pix['VALOR_PAGAMENTO'], errors='coerce').sum() + pd.to_numeric(lote_boleto['VALOR_PAGAMENTO'], errors='coerce').sum()
+            st.metric("Total a Pagar", formatar_real(total))
+            st.caption(f"Pix: {len(lote_pix)} | Boletos: {len(lote_boleto)}")
+        
+        with col_botoes:
+            st.write("### 🚀 Gerar Remessa")
+            c_btn1, c_btn2 = st.columns(2)
+            
+            # BOTÃO PIX
+            if not lote_pix.empty:
+                arquivo_pix = gerar_cnab_pix(lote_pix)
+                if arquivo_pix:
+                    c_btn1.download_button(
+                        label=f"📥 Baixar PIX ({len(lote_pix)})", 
+                        data=arquivo_pix, 
+                        file_name=f"CB{datetime.now().strftime('%d%m')}_PIX.txt",
+                        mime="text/plain"
+                    )
+            
+            # BOTÃO BOLETO (DESBLOQUEADO AGORA!)
+            if not lote_boleto.empty:
+                # Reutilizamos a engine, pois ela agora é híbrida e sabe lidar com boletos
+                arquivo_boleto = gerar_cnab_pix(lote_boleto)
+                if arquivo_boleto:
+                    c_btn2.download_button(
+                        label=f"📥 Baixar Boleto ({len(lote_boleto)})", 
+                        data=arquivo_boleto, 
+                        file_name=f"CB{datetime.now().strftime('%d%m')}_BOLETO.txt",
+                        mime="text/plain"
+                    )
 
-# Alias
-gerar_cnab_pix = gerar_cnab_remessa
+    else:
+        st.info("Selecione itens na tabela para processar.")
+
+st.divider()
+if st.button("💾 Salvar na Planilha"):
+    conectar_sheets().update(worksheet="Pagamentos_Dia", data=st.session_state['df_pagamentos'])
+    st.toast("Dados salvos no Google Sheets!", icon="✅")
