@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import conectar_sheets
 
 # --- IMPORTAÇÃO SEGURA ---
@@ -16,7 +16,7 @@ except ImportError as e:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cockpit Financeiro - SOS Cardio", page_icon="🎛️", layout="wide")
 
-# --- CUSTOM CSS (Para deixar mais parecido com o layout da foto) ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .status-dot { height: 12px; width: 12px; background-color: #00C851; border-radius: 50%; display: inline-block; margin-left: 5px; margin-right: 20px;}
@@ -47,14 +47,13 @@ def carregar_dados_reais():
         df = conn.read(worksheet="Pagamentos_Dia", ttl=0)
         if df.empty: return pd.DataFrame()
         
-        # Tipagem e Formatação Básica
         if 'Pagar?' not in df.columns: df.insert(0, 'Pagar?', True)
         df['Pagar?'] = df['Pagar?'].astype(bool)
         
         if 'VALOR_PAGAMENTO' in df.columns:
             df['VALOR_PAGAMENTO'] = pd.to_numeric(df['VALOR_PAGAMENTO'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
         
-        # Adiciona colunas visuais fictícias se não existirem (Para bater com a foto)
+        # Mockups de colunas faltantes para bater com a imagem
         if 'Categoria' not in df.columns: df['Categoria'] = 'Estoque Medicamentos'
         if 'OC' not in df.columns: df['OC'] = np.random.randint(100000, 999999, df.shape[0])
         if 'NF' not in df.columns: df['NF'] = np.random.randint(1000, 9999, df.shape[0])
@@ -69,9 +68,8 @@ def carregar_dados_reais():
 df_real = carregar_dados_reais()
 
 # ==============================================================================
-# 3. MÓDULO DE KPIs SUPERIORES (API SANTANDER / OPEN FINANCE MOCKUP)
+# 3. MÓDULO DE KPIs SUPERIORES
 # ==============================================================================
-# Calculando a saída real + fictícia
 total_saidas = df_real['VALOR_PAGAMENTO'].sum() if not df_real.empty else 457590.90
 saldo_disponivel = 957590.90
 saldo_resgate = 20457590.90
@@ -82,25 +80,25 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 with kpi1:
     st.markdown("<div class='kpi-title'>Saldo disponível</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='kpi-value'>{formatar_real(saldo_disponivel)}</div>", unsafe_allow_html=True)
-    st.progress(0.50) # 50%
+    st.progress(0.50) 
     st.caption("Comprometido: 66,7%")
 
 with kpi2:
     st.markdown("<div class='kpi-title'>Saldo Resgate</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='kpi-value'>{formatar_real(saldo_resgate)}</div>", unsafe_allow_html=True)
-    st.progress(0.56) # 56%
+    st.progress(0.56) 
     st.caption("Comprometido: 66,7%")
 
 with kpi3:
     st.markdown("<div class='kpi-title'>Saídas Previstas</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='kpi-value'>{formatar_real(total_saidas)}</div>", unsafe_allow_html=True)
-    st.progress(1.0) # 100% (Amarelo no seu print, o Streamlit usa a cor de tema)
+    st.progress(1.0) 
     st.caption("Comprometido: 66,7%")
 
 with kpi4:
     st.markdown("<div class='kpi-title'>Saldo Final Previsto</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='kpi-value'>{formatar_real(saldo_final)}</div>", unsafe_allow_html=True)
-    st.progress(0.26) # 26%
+    st.progress(0.26) 
     st.caption("Comprometido: 66,7%")
 
 st.divider()
@@ -108,7 +106,7 @@ st.divider()
 # ==============================================================================
 # 4. CORPO PRINCIPAL (TABELA À ESQUERDA, GRÁFICOS À DIREITA)
 # ==============================================================================
-col_left, col_right = st.columns([1.2, 1])
+col_left, col_right = st.columns([1.3, 1])
 
 # --- ESQUERDA: TABELA E GERAÇÃO CNAB ---
 with col_left:
@@ -116,35 +114,31 @@ with col_left:
     
     with tab1:
         if not df_real.empty:
-            # Organizando as colunas na ordem da sua foto
             colunas_visuais = ['Pagar?', 'NOME_FAVORECIDO', 'Categoria', 'OC', 'NF', 'Observação', 'DATA_PAGAMENTO', 'VALOR_PAGAMENTO', 'Banco_Origem', 'CHAVE_PIX_OU_COD_BARRAS', 'cnpj_beneficiario']
-            
-            # Garante que as colunas existem
             for col in colunas_visuais:
                 if col not in df_real.columns: df_real[col] = ""
                 
             df_display = df_real[colunas_visuais].copy()
             
-            # Edição da Tabela
+            # Altura ajustada para 700 para se alinhar perfeitamente aos 2 gráficos da direita
             edited_df = st.data_editor(
                 df_display,
                 hide_index=True,
                 use_container_width=True,
-                height=500,
+                height=700, 
                 column_config={
                     "Pagar?": st.column_config.CheckboxColumn("Pagar", default=True),
                     "NOME_FAVORECIDO": "Pagamento",
                     "DATA_PAGAMENTO": "Venc. original",
                     "VALOR_PAGAMENTO": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
                     "Banco_Origem": "Banco",
-                    "CHAVE_PIX_OU_COD_BARRAS": None, # Oculta na tela mas mantém no DF
+                    "CHAVE_PIX_OU_COD_BARRAS": None, 
                     "cnpj_beneficiario": None
                 }
             )
             
             st.write("")
             
-            # Geração do CNAB
             df_pagar = edited_df[edited_df['Pagar?'] == True].copy()
             if st.button("🚀 Gerar Arquivo de Remessa (CNAB 240)", type="primary"):
                 if not df_pagar.empty:
@@ -164,40 +158,58 @@ with col_left:
     with tab2:
         st.info("Aqui entrará a query direta do banco de dados do Tasy listando os títulos vencidos.")
 
-# --- DIREITA: GRÁFICOS E KPIs SECUNDÁRIOS ---
+# --- DIREITA: GRÁFICOS ALINHADOS À REALIDADE DO HOSPITAL ---
 with col_right:
-    # Sub-KPIs
+    # Sub-KPIs mantidos
     skpi1, skpi2 = st.columns(2)
-    skpi1.metric("Total Acordos", "R$ 0,00")
-    skpi2.metric("Total Ordem de Compras", "R$ 0,00")
+    skpi1.metric("Total Acordos", "R$ 45.320,00") # Fictício para não ficar zerado
+    skpi2.metric("Total Ordem de Compras", "R$ 128.450,00")
     
     st.write("")
     
-    # Gráfico 1: Receitas & Despesas
-    st.markdown("<h4 style='text-align: center; color: #4F4F4F;'>Receitas & Despesas</h4>", unsafe_allow_html=True)
-    meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
-    receitas = [3000, 2500, 2800, 3200, 3000, 2900, 3100, 3300, 3500, 2900, 4000, 3100]
-    despesas = [1500, 1800, 1600, 2000, 2200, 2100, 1900, 1800, 2300, 1700, 2100, 2200]
-    saldo = [r - d for r, d in zip(receitas, despesas)]
+    # ---------------------------------------------------------
+    # Gráfico 1: Total a Pagar x Total Pago (Realidade do Caixa)
+    # ---------------------------------------------------------
+    st.markdown("<h4 style='text-align: center; color: #4F4F4F;'>Total a Pagar x Total Pago (Últimos 7 Dias)</h4>", unsafe_allow_html=True)
+    
+    # Mockup de dados (Dias da semana)
+    dias = [(datetime.now() - timedelta(days=i)).strftime('%d/%m') for i in range(6, -1, -1)]
+    a_pagar = [120000, 150000, 110000, 180000, 90000, 130000, 250000] # Montante de dívida vencida no dia
+    pago =    [90000,  110000, 110000, 130000, 80000, 100000, 150000]  # O que efetivamente saiu do caixa
     
     fig1 = go.Figure()
-    fig1.add_trace(go.Bar(x=meses, y=receitas, name='Receitas', marker_color='#1cc88a'))
-    fig1.add_trace(go.Bar(x=meses, y=despesas, name='Despesas', marker_color='#e74a3b'))
-    fig1.add_trace(go.Scatter(x=meses, y=saldo, name='Saldo', mode='lines+markers', line=dict(color='#5a5c69', width=3)))
+    fig1.add_trace(go.Bar(x=dias, y=a_pagar, name='A Pagar (Vencido)', marker_color='#e74a3b')) # Vermelho
+    fig1.add_trace(go.Bar(x=dias, y=pago, name='Efetivamente Pago', marker_color='#1cc88a'))    # Verde
     
-    fig1.update_layout(barmode='group', margin=dict(l=0, r=0, t=30, b=0), height=300, legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
+    fig1.update_layout(
+        barmode='group', 
+        margin=dict(l=0, r=0, t=20, b=0), 
+        height=300, 
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+    )
     st.plotly_chart(fig1, use_container_width=True)
     
-    # Gráfico 2: Investimentos & Poupança
-    st.markdown("<h4 style='text-align: center; color: #4F4F4F;'>Investimentos & Poupança</h4>", unsafe_allow_html=True)
-    investimento_mensal = [500] * 12
-    acumulado = np.cumsum(investimento_mensal)
-    meta = [6000] * 12
+    # ---------------------------------------------------------
+    # Gráfico 2: Categorias das Despesas Diarizadas (Para onde foi o dinheiro?)
+    # ---------------------------------------------------------
+    st.markdown("<h4 style='text-align: center; color: #4F4F4F;'>Despesas por Categoria (Visão Diária)</h4>", unsafe_allow_html=True)
+    
+    # Mockup de Categorias em gráfico empilhado (Stacked Bar)
+    cat_med = [40000, 50000, 30000, 60000, 35000, 40000, 70000]
+    cat_hon = [30000, 40000, 50000, 40000, 25000, 30000, 50000]
+    cat_man = [10000, 10000, 15000, 20000, 10000, 20000, 15000]
+    cat_imp = [10000, 10000, 15000, 10000, 10000, 10000, 15000]
     
     fig2 = go.Figure()
-    fig2.add_trace(go.Bar(x=meses, y=investimento_mensal, name='Investimento Mensal', marker_color='#f6c23e'))
-    fig2.add_trace(go.Scatter(x=meses, y=acumulado, name='Acumulado', mode='lines', line=dict(color='#f6c23e', width=3, dash='dash')))
-    fig2.add_trace(go.Scatter(x=meses, y=meta, name='Meta Anual', mode='lines', line=dict(color='#5a5c69', width=3)))
+    fig2.add_trace(go.Bar(x=dias, y=cat_med, name='Medicamentos/Insumos', marker_color='#4e73df')) # Azul
+    fig2.add_trace(go.Bar(x=dias, y=cat_hon, name='Honorários Médicos', marker_color='#36b9cc'))   # Ciano
+    fig2.add_trace(go.Bar(x=dias, y=cat_man, name='Manutenção/Geral', marker_color='#f6c23e'))     # Amarelo
+    fig2.add_trace(go.Bar(x=dias, y=cat_imp, name='Impostos', marker_color='#858796'))             # Cinza
     
-    fig2.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300, legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
+    fig2.update_layout(
+        barmode='stack', # Empilhado mostra o volume total do dia dividido em fatias
+        margin=dict(l=0, r=0, t=20, b=0), 
+        height=300, 
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+    )
     st.plotly_chart(fig2, use_container_width=True)
