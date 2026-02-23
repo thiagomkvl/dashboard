@@ -133,11 +133,12 @@ with col_left:
                 
             df_display = df_real[colunas_visuais].copy()
             
+            # Altura cravada em 760 para alinhar com o bloco de HTML + os 2 gráficos da direita
             edited_df = st.data_editor(
                 df_display,
                 hide_index=True,
                 use_container_width=True,
-                height=700, 
+                height=760, 
                 column_config={
                     "Pagar?": st.column_config.CheckboxColumn("Pagar", default=True),
                     "NOME_FAVORECIDO": "Pagamento",
@@ -194,7 +195,7 @@ with col_right:
     chart_config = {'scrollZoom': False, 'displayModeBar': False}
 
     # ---------------------------------------------------------
-    # Gráfico 1: Total a Pagar x Total Pago 
+    # Gráfico 1: Total a Pagar x Total Pago (DUAS TENDÊNCIAS)
     # ---------------------------------------------------------
     dias = [(datetime.now() - timedelta(days=i)).strftime('%d/%m') for i in range(13, -1, -1)] # 14 dias para dar efeito de scroll
     a_pagar = [100000, 95000, 120000, 150000, 110000, 180000, 90000, 130000, 250000, 140000, 160000, 110000, 190000, 145000]
@@ -204,11 +205,14 @@ with col_right:
     text_pago = [form_k(v) for v in pago]
 
     fig1 = go.Figure()
+    
+    # Barras principais
     fig1.add_trace(go.Bar(x=dias, y=a_pagar, name='A Pagar', marker_color='#e74a3b', text=text_pagar, textposition='outside', textfont=dict(size=11))) 
     fig1.add_trace(go.Bar(x=dias, y=pago, name='Pago', marker_color='#1cc88a', text=text_pago, textposition='outside', textfont=dict(size=11)))    
     
-    # Linha de Tendência (A Pagar)
-    fig1.add_trace(go.Scatter(x=dias, y=a_pagar, name='Tendência (Dívida)', mode='lines', line=dict(color='#858796', width=2, dash='dot')))
+    # Duas Linhas de Tendência (Uma para cada métrica)
+    fig1.add_trace(go.Scatter(x=dias, y=a_pagar, name='Tend. (A Pagar)', mode='lines', line=dict(color='#e74a3b', width=2, dash='dash')))
+    fig1.add_trace(go.Scatter(x=dias, y=pago, name='Tend. (Pago)', mode='lines', line=dict(color='#1cc88a', width=2, dash='dash')))
 
     fig1.update_layout(
         title=dict(text="Total a Pagar x Total Pago", font=dict(color="#4F4F4F", size=16), x=0.5),
