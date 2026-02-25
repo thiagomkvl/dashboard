@@ -30,11 +30,16 @@ def check_password():
 if not check_password():
     st.stop() # Para o código aqui se não estiver logado
 
-# Definição das Páginas (Apontando para seus arquivos novos)
+# Definição das Páginas (Apontando para seus arquivos)
 pg = st.navigation([
+    # O seu dashboard original (mantido como página inicial padrão)
     st.Page("pages/dashboard.py", title="Dashboard Gerencial", icon="📊", default=True),
+    
+    # O novo painel de Fluxo de Caixa que acabamos de criar
+    st.Page("pages/Fluxo_de_Caixa.py", title="Fluxo de Caixa (FCx)", icon="📈"), 
+    
     st.Page("pages/cockpit.py",   title="Cockpit de Pagamentos", icon="💸"),
-    st.Page("pages/hub_bancos.py", title="Hub Multi Bancos", icon="🏦"), # <--- NOVA PÁGINA ADICIONADA AQUI
+    st.Page("pages/hub_bancos.py", title="Hub Multi Bancos", icon="🏦"), 
     st.Page("pages/upload.py",    title="Upload de Base", icon="📂"),
 ])
 
