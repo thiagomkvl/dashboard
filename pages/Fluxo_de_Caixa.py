@@ -1,179 +1,189 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Fluxo de Caixa Detalhado", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Dashboard Gerencial - SOS Cardio", page_icon="📊", layout="wide")
 
-# --- CUSTOM CSS (Para melhorar a visualização da tabela densa) ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    /* Destaque para colunas de Realizado */
-    [data-testid="stDataFrame"] th:contains("(R)") {
-        background-color: #e8f4f8 !important; /* Azul bem clarinho para destacar o Realizado */
-        color: #0277bd !important;
+    .status-dot { height: 12px; width: 12px; background-color: #00C851; border-radius: 50%; display: inline-block; margin-left: 5px; margin-right: 20px;}
+    .status-text { font-size: 16px; font-weight: bold; color: #4F4F4F; display: inline-block; }
+    
+    .kpi-card {
+        background-color: #F8F9FA; 
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid #E9ECEF;
+        border-left: 5px solid #4e73df;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        margin-bottom: 20px;
     }
-    /* Destaque para Saldos */
-    [data-testid="stDataFrame"] th:contains("Saldo") {
-        font-weight: 900 !important;
-    }
-    .status-dot { height: 12px; width: 12px; background-color: #00C851; border-radius: 50%; display: inline-block; margin-left: 5px; margin-right: 10px;}
+    .kpi-title { font-size: 14px; color: #6c757d; font-weight: 600; margin-bottom: 5px;}
+    .kpi-value { font-size: 28px; font-weight: bold; color: #343a40;}
+    .kpi-delta { font-size: 13px; font-weight: bold; margin-top: 5px;}
+    .delta-up { color: #1cc88a; }
+    .delta-down { color: #e74a3b; }
     </style>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# 1. MOTOR DE GERAÇÃO DE DADOS FICTÍCIOS (SIMULAÇÃO PROJ x REAL)
-# ==============================================================================
-@st.cache_data
-def gerar_fcx_detalhado(dias=31, saldo_inicial=17710825.46):
-    """
-    Gera um DataFrame complexo simulando um fluxo de caixa diário
-    com colunas Projetadas (P) e Realizadas (R) via 'Open Finance'.
-    """
-    data_inicial = datetime(2026, 1, 1)
-    datas = [data_inicial + timedelta(days=i) for i in range(dias)]
-    
-    # Estrutura base
-    df = pd.DataFrame({'Data': datas})
-    df['Dia da Semana'] = df['Data'].dt.day_name().map({
-        'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 
-        'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sáb', 'Sunday': 'Dom'
-    })
-
-    # --- RECEITAS (Variação positiva ou negativa no realizado) ---
-    # Unimed (Recebimentos grandes e pontuais)
-    df['Rec. Unimed (P)'] = np.where(df['Data'].dt.day.isin([5, 15, 25]), np.random.uniform(1.5e6, 2.5e6, len(df)), 0)
-    df['Rec. Unimed (R)'] = df['Rec. Unimed (P)'] * np.random.uniform(0.98, 1.02, len(df)) # Variação de 2%
-
-    # Bradesco Saúde (Recebimentos semanais)
-    df['Rec. Bradesco (P)'] = np.where(df['Data'].dt.dayofweek == 4, np.random.uniform(800e3, 1.2e6, len(df)), 0) # Toda sexta
-    df['Rec. Bradesco (R)'] = df['Rec. Bradesco (P)'] * np.random.uniform(0.95, 1.05, len(df)) # Variação de 5%
-    
-    # Particular/Outros (Diário, menor valor, alta volatilidade no realizado)
-    df['Rec. Particular (P)'] = np.where(df['Data'].dt.dayofweek < 5, np.random.uniform(50e3, 150e3, len(df)), 10e3)
-    df['Rec. Particular (R)'] = df['Rec. Particular (P)'] * np.random.uniform(0.80, 1.30, len(df)) # Variação de 20% a 30%
-
-    # --- DESPESAS (Realizado geralmente igual ou maior que o projetado) ---
-    # Folha de Pagamento (Dia 5 e 20)
-    df['Pag. Folha (P)'] = np.where(df['Data'].dt.day.isin([5, 20]), np.random.uniform(2e6, 2.2e6, len(df)), 0)
-    df['Pag. Folha (R)'] = df['Pag. Folha (P)'] # Folha geralmente bate exato
-
-    # Fornecedores Médicos (Pagamentos toda terça e quinta)
-    df['Pag. Fornecedores (P)'] = np.where(df['Data'].dt.dayofweek.isin([1, 3]), np.random.uniform(300e3, 600e3, len(df)), 0)
-    df['Pag. Fornecedores (R)'] = df['Pag. Fornecedores (P)'] * np.random.uniform(1.00, 1.03, len(df)) # Tendência de pagar 3% a mais
-
-    # Tributos e Impostos (Dia 20)
-    df['Pag. Tributos (P)'] = np.where(df['Data'].dt.day == 20, np.random.uniform(1.1e6, 1.3e6, len(df)), 0)
-    df['Pag. Tributos (R)'] = df['Pag. Tributos (P)']
-
-    # Despesas Financeiras/Bancárias (Pico no início do mês conforme seu histórico)
-    df['Pag. Financeiras (P)'] = np.where(df['Data'].dt.day == 2, 5966344.06, np.random.uniform(1000, 5000, len(df)))
-    df['Pag. Financeiras (R)'] = df['Pag. Financeiras (P)'] * np.random.uniform(1.0, 1.01, len(df))
-
-    # --- CÁLCULO DOS SALDOS (CORRIDA DE CAIXA) ---
-    saldo_proj = saldo_inicial
-    saldo_real = saldo_inicial
-    
-    saldos_p = []
-    saldos_r = []
-    
-    cols_rec_p = [c for c in df.columns if 'Rec.' in c and '(P)' in c]
-    cols_pag_p = [c for c in df.columns if 'Pag.' in c and '(P)' in c]
-    cols_rec_r = [c for c in df.columns if 'Rec.' in c and '(R)' in c]
-    cols_pag_r = [c for c in df.columns if 'Pag.' in c and '(R)' in c]
-
-    for index, row in df.iterrows():
-        # Total do dia Projetado
-        tot_rec_p = sum([row[c] for c in cols_rec_p])
-        tot_pag_p = sum([row[c] for c in cols_pag_p])
-        saldo_proj = saldo_proj + tot_rec_p - tot_pag_p
-        saldos_p.append(saldo_proj)
-        
-        # Total do dia Realizado (Open Finance)
-        tot_rec_r = sum([row[c] for c in cols_rec_r])
-        tot_pag_r = sum([row[c] for c in cols_pag_r])
-        saldo_real = saldo_real + tot_rec_r - tot_pag_r
-        saldos_r.append(saldo_real)
-
-    df['Saldo Final (P)'] = saldos_p
-    df['Saldo Final (R)'] = saldos_r
-
-    # Limpeza e Organização das Colunas
-    cols_order = ['Data', 'Dia da Semana'] + \
-                 sorted([c for c in df.columns if 'Rec.' in c]) + \
-                 sorted([c for c in df.columns if 'Pag.' in c]) + \
-                 ['Saldo Final (P)', 'Saldo Final (R)']
-    
-    return df[cols_order]
-
-# Gerar os dados
-df_raw = gerar_fcx_detalhado()
+def formatar_k(valor):
+    if valor >= 1000000: return f"R$ {valor/1000000:.1f}M"
+    if valor >= 1000: return f"R$ {valor/1000:.0f}k"
+    return f"R$ {valor:.2f}"
 
 # ==============================================================================
-# 2. HEADER E FILTROS
+# 1. HEADER
 # ==============================================================================
-st.title("Fluxo de Caixa Detalhado (Projetado x Realizado)")
 st.markdown("""
-    <div style='display: flex; align-items: center; margin-bottom: 20px; font-size: 14px; color: #666;'>
-        <span>(P) = Projetado no Planejamento</span><span class='status-dot' style='background-color: #ccc; margin-left: 5px;'></span>
-        <span style='margin-left: 15px;'>(R) = Realizado via Open Finance</span><span class='status-dot' style='background-color: #0277bd; margin-left: 5px;'></span>
+    <div style='display: flex; align-items: center; margin-bottom: 20px;'>
+        <div class='status-text'>Planejamento Estratégico & FCx</div><span class='status-dot'></span>
+        <div class='status-text'>Bases de Projeção Ativas</div><span class='status-dot'></span>
     </div>
 """, unsafe_allow_html=True)
 
-# Filtro de Data (Opcional, para focar em uma semana específica)
-col_filtro, _ = st.columns([1, 3])
-with col_filtro:
-    date_range = st.date_input("Período de Visualização", value=(df_raw['Data'].min(), df_raw['Data'].max()), format="DD/MM/YYYY")
+# ==============================================================================
+# 2. DADOS (Baseados na planilha de FCx Projeção 2026 e Faturamento)
+# ==============================================================================
+# Meses do ano
+meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
-# Aplica filtro se selecionado
-if len(date_range) == 2:
-    mask = (df_raw['Data'].dt.date >= date_range[0]) & (df_raw['Data'].dt.date <= date_range[1])
-    df_filtered = df_raw.loc[mask].copy()
-else:
-    df_filtered = df_raw.copy()
+# Faturamento Realizado 2025 vs Projetado 2026 (Com base nos 14.7M de Jan/25)
+fat_realizado_25 = [14789523, 15162673, 14689192, 15786600, 15200000, 14900000, 15500000, 16100000, 15800000, 16200000, 15900000, 16500000]
+fat_projetado_26 = [v * 0.9 for v in fat_realizado_25] # Aplicando o redutor de 0.9 da planilha
+fat_realizado_26 = [13500000, 13800000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] # Simulação: Apenas Jan e Fev consolidados em 2026
+
+# Fluxo de Caixa Diário/Mensal 2026 (Saldos Iniciais projetados)
+saldo_inicial_26 = [17710825, 9776541, 6742379, 4234696, 2893941, 2202602, 1381900, 12155811, 12066452, 12347873, 13870899, 11673453]
+despesas_fin =     [5966344, 911344,  911344,  911344,  911344,  911344,  911344,  911344,   911344,   911344,   911344,   911344]
 
 # ==============================================================================
-# 3. FORMATAÇÃO PARA VISUALIZAÇÃO (R$)
+# 3. KPIs SUPERIORES
 # ==============================================================================
-df_display = df_filtered.copy()
+k1, k2, k3, k4 = st.columns(4)
 
-# Formata a data
-df_display['Data'] = df_display['Data'].dt.strftime('%d/%m/%Y')
+with k1:
+    st.markdown(f"""
+    <div class='kpi-card' style='border-left-color: #4e73df;'>
+        <div class='kpi-title'>Faturamento Realizado (YTD)</div>
+        <div class='kpi-value'>{formatar_k(sum(fat_realizado_26[:2]))}</div>
+        <div class='kpi-delta delta-down'>▼ Meta: {formatar_k(sum(fat_projetado_26[:2]))}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Função para formatar moeda brasileira
-def to_brl(val):
-    if pd.isna(val): return ""
-    s = f"{val:,.2f}"
-    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+with k2:
+    st.markdown(f"""
+    <div class='kpi-card' style='border-left-color: #1cc88a;'>
+        <div class='kpi-title'>Projeção Faturamento 2026</div>
+        <div class='kpi-value'>{formatar_k(sum(fat_projetado_26))}</div>
+        <div class='kpi-delta delta-up'>▲ Base 2025: {formatar_k(sum(fat_realizado_25))}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Aplica formatação em todas as colunas numéricas
-numeric_cols = df_display.select_dtypes(include=['float64', 'int64']).columns
-for col in numeric_cols:
-    df_display[col] = df_display[col].apply(to_brl)
+with k3:
+    st.markdown(f"""
+    <div class='kpi-card' style='border-left-color: #f6c23e;'>
+        <div class='kpi-title'>Despesas Financeiras (Ano)</div>
+        <div class='kpi-value'>{formatar_k(sum(despesas_fin))}</div>
+        <div class='kpi-delta delta-down'>Pico em Jan: {formatar_k(despesas_fin[0])}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k4:
+    st.markdown(f"""
+    <div class='kpi-card' style='border-left-color: #36b9cc;'>
+        <div class='kpi-title'>Variação de Caixa Projetada</div>
+        <div class='kpi-value'>{formatar_k(saldo_inicial_26[-1] - saldo_inicial_26[0])}</div>
+        <div class='kpi-delta delta-down'>Saldo Inicial Dez x Jan</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 4. EXIBIÇÃO DA TABELA DETALHADA
+# 4. GRÁFICOS PRINCIPAIS
 # ==============================================================================
-# Configuração das colunas para o st.dataframe
-column_config = {
-    "Data": st.column_config.TextColumn("Data", width="medium", pinned=True),
-    "Dia da Semana": st.column_config.TextColumn("Dia", width="small", pinned=True),
-    "Saldo Final (P)": st.column_config.TextColumn("Saldo Final (P)", width="medium"),
-    "Saldo Final (R)": st.column_config.TextColumn("Saldo Final (R)", width="medium"),
-}
+c_graf1, c_graf2 = st.columns(2)
+chart_config = {'scrollZoom': False, 'displayModeBar': False}
 
-# Ajuste de largura para as colunas de valores
-for col in numeric_cols:
-    if "Saldo" not in col:
-        column_config[col] = st.column_config.TextColumn(col, width="medium")
+# --- Gráfico 1: Projetado x Realizado (Faturamento) ---
+with c_graf1:
+    fig1 = go.Figure()
+    
+    # Barra de Projeção (Cinza claro/Tracejado)
+    fig1.add_trace(go.Bar(
+        x=meses, y=fat_projetado_26, name='Projetado 2026', 
+        marker_color='#D1D3E2', opacity=0.8
+    ))
+    
+    # Barra de Realizado (Azul Hospital)
+    fig1.add_trace(go.Bar(
+        x=meses[:2], y=fat_realizado_26[:2], name='Realizado 2026', 
+        marker_color='#4e73df'
+    ))
+    
+    # Linha Histórica de 2025 para comparação (Preto/Cinza Escuro)
+    fig1.add_trace(go.Scatter(
+        x=meses, y=fat_realizado_25, name='Realizado 2025 (Histórico)', 
+        mode='lines+markers', line=dict(color='#5a5c69', width=2, dash='dot')
+    ))
+
+    fig1.update_layout(
+        title=dict(text="Faturamento: Projetado x Realizado (2026)", font=dict(color="#4F4F4F", size=16), x=0.5),
+        barmode='overlay', # Overlay para mostrar o realizado preenchendo o projetado
+        margin=dict(l=20, r=20, t=50, b=20), height=350,
+        paper_bgcolor='#F8F9FA', plot_bgcolor='#F8F9FA',
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+        dragmode='pan'
+    )
+    st.plotly_chart(fig1, use_container_width=True, config=chart_config)
+
+# --- Gráfico 2: Curva do Fluxo de Caixa (Saldo Inicial Projetado) ---
+with c_graf2:
+    fig2 = go.Figure()
+    
+    # Área de Saldo Inicial
+    fig2.add_trace(go.Scatter(
+        x=meses, y=saldo_inicial_26, name='Saldo Inicial FCx', 
+        mode='lines+markers', fill='tozeroy', 
+        fillcolor='rgba(28, 200, 138, 0.2)', line=dict(color='#1cc88a', width=3)
+    ))
+    
+    # Barras de impacto de Despesas Financeiras
+    fig2.add_trace(go.Bar(
+        x=meses, y=despesas_fin, name='Despesas Fin. (Impacto)', 
+        marker_color='#e74a3b', opacity=0.7
+    ))
+
+    fig2.update_layout(
+        title=dict(text="Projeção de Curva de Caixa x Despesas Financeiras", font=dict(color="#4F4F4F", size=16), x=0.5),
+        barmode='group',
+        margin=dict(l=20, r=20, t=50, b=20), height=350,
+        paper_bgcolor='#F8F9FA', plot_bgcolor='#F8F9FA',
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+        dragmode='pan'
+    )
+    st.plotly_chart(fig2, use_container_width=True, config=chart_config)
+
+# ==============================================================================
+# 5. TABELA DE DETALHAMENTO (FCX)
+# ==============================================================================
+st.markdown("<h4 style='color: #4F4F4F; margin-top: 20px;'>Detalhamento de Caixa Projetado (R$)</h4>", unsafe_allow_html=True)
+
+df_detalhe = pd.DataFrame({
+    'Mês': meses,
+    'Saldo Inicial': [f"{v:,.2f}".replace(',','X').replace('.',',').replace('X','.') for v in saldo_inicial_26],
+    'Faturamento (Projetado)': [f"{v:,.2f}".replace(',','X').replace('.',',').replace('X','.') for v in fat_projetado_26],
+    'Despesas Financeiras': [f"{v:,.2f}".replace(',','X').replace('.',',').replace('X','.') for v in despesas_fin],
+    'Devolução Paciente': ['170.000,00'] * 12,
+    'Despesas Processuais': ['15.000,00'] * 12
+})
 
 st.dataframe(
-    df_display,
-    hide_index=True,
+    df_detalhe, 
+    hide_index=True, 
     use_container_width=True,
-    height=600, # Altura maior para ver vários dias
-    column_config=column_config
+    column_config={
+        "Mês": st.column_config.TextColumn("Período", width="small")
+    }
 )
-
-st.caption("Nota: Os valores na coluna (R) são simulações de retorno de APIs bancárias (Open Finance), podendo apresentar variações em relação ao projetado (P).")
