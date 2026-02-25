@@ -34,6 +34,7 @@ if not check_password():
 pg = st.navigation([
     st.Page("pages/dashboard.py", title="Dashboard Gerencial", icon="📊", default=True),
     st.Page("pages/cockpit.py",   title="Cockpit de Pagamentos", icon="💸"),
+    st.Page("pages/hub_bancos.py", title="Hub Multi Bancos", icon="🏦"), # <--- NOVA PÁGINA ADICIONADA AQUI
     st.Page("pages/upload.py",    title="Upload de Base", icon="📂"),
 ])
 
