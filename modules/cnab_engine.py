@@ -198,12 +198,15 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc = "1" if len(doc_fav) <= 11 else "2"
     
+    # --- CORREÇÃO DO ERRO DE OBRIGATORIEDADE (INFORMAÇÃO 10) ---
+    info_10 = "NAO INFORMADO".ljust(35)[:35]
+    
     # Configuração rígida dos campos de Informação (10, 11 e 12) do Segmento B
     seg_b = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'B':<1}"
         f"{tipo_chave_code[:3]:0>3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
-        f"{'':<35}"  # Informação 10 (TX ID)
-        f"{'0':0>5}{'':<15}{'':<15}{'':<15}{'00000':0>5}{'000':0>3}{'SC':<2}" # Informação 11 (Endereço Formatado)
+        f"{info_10}"  # Informação 10 com a vacina (NAO INFORMADO)
+        f"{'0':0>5}{'':<15}{'BAIRRO':<15}{'CIDADE':<15}{'00000':0>5}{'000':0>3}{'SC':<2}" # Informação 11 preenchida
         f"{chave_pix_raw[:99]:<99}" # Informação 12 (Chave PIX)
         f"{'':<6}{'':<8}" # UG e ISPB
     )[:240] + "\r\n"
