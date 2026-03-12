@@ -37,25 +37,33 @@ def obter_proximo_sequencial():
     except:
         return int(datetime.now().strftime('%H%M%S'))
 
+def get_val(row, possible_names, default=''):
+    """
+    Buscador Inteligente: Procura o valor na linha do dataframe ignorando espaços, 
+    letras maiúsculas ou minúsculas no nome da coluna vinda do Excel/Tasy.
+    """
+    for key in row.keys():
+        key_clean = str(key).strip().upper()
+        for name in possible_names:
+            if key_clean == name.upper():
+                val = row[key]
+                if pd.notna(val) and str(val).strip() != '':
+                    return val
+    return default
+
 def limpar_numero(valor):
-    """
-    Remove letras e limpa o número. Resolve o bug dos R$ 1.8M
-    onde o pandas/excel transformava 136 em 136.0 e quebrava o CNAB.
-    """
     if pd.isna(valor) or valor == '' or valor is None: 
         return ""
     s_val = str(valor).strip()
-    # Se o Pandas leu como float (ex: 136.0), removemos o '.0' antes de limpar
     if s_val.endswith('.0'):
         s_val = s_val[:-2]
-    # Remove tudo que não for dígito
     return ''.join(filter(str.isdigit, s_val))
 
 def converter_linha_digitavel_para_barras(linha):
     linha = limpar_numero(linha) 
     if len(linha) == 44: return linha 
     
-    if len(linha) == 47: # Boleto Bancário
+    if len(linha) == 47: 
         c1 = linha[0:9]
         c2 = linha[10:20]
         c3 = linha[21:31]
@@ -63,15 +71,12 @@ def converter_linha_digitavel_para_barras(linha):
         fator_valor = linha[33:]
         return c1[0:3] + c1[3:4] + dv_geral + fator_valor + c1[4:9] + c2 + c3
         
-    if len(linha) == 48: # Concessionária
+    if len(linha) == 48: 
         return linha[0:11] + linha[12:23] + linha[24:35] + linha[36:47]
 
     return linha[:44]
 
 def detectar_tipo_chave_pix_interno(chave_raw):
-    """
-    Retorna o código exato de 3 posições exigido pelo manual da Unicred.
-    """
     chave = str(chave_raw).strip()
     if not chave or str(chave).lower() in ['nan', 'none']: 
         return '005' # Dados bancários (Ag/Conta)
@@ -81,7 +86,6 @@ def detectar_tipo_chave_pix_interno(chave_raw):
     
     nums = limpar_numero(chave)
     if len(nums) == 11:
-        # Se começa com DDD válido ou tem caracteres de telefone
         if chave.startswith('(') or chave.startswith('+'):
             return '001' # Telefone
         return '003' # CPF
@@ -89,8 +93,6 @@ def detectar_tipo_chave_pix_interno(chave_raw):
         return '003' # CNPJ
         
     return '001' # Fallback para telefone
-
-# --- LÓGICA REAL (BACKEND) ---
 
 def classificar_transacao_real(dado):
     limpo = limpar_numero(dado)
@@ -103,22 +105,20 @@ def classificar_transacao_real(dado):
 # =============================================================================
 
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
-    """
-    Gera Boleto (J + J52) - Layout 040
-    """
-    cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
-    try: valor = float(row['VALOR_PAGAMENTO'])
+    chave_bruta = get_val(row, ['CHAVE_PIX_OU_COD_BARRAS', 'COD_BARRAS', 'CHAVE_PIX'])
+    cod_barras = converter_linha_digitavel_para_barras(chave_bruta)
+    
+    try: valor = float(get_val(row, ['VALOR_PAGAMENTO', 'VALOR'], 0.0))
     except: valor = 0.0
     valor_str = f"{int(valor * 100):0>15}"
     
     try:
-        dt_obj = datetime.strptime(str(row['DATA_PAGAMENTO']), '%d/%m/%Y')
+        dt_obj = datetime.strptime(str(get_val(row, ['DATA_PAGAMENTO', 'DATA'])), '%d/%m/%Y')
         dt_str = dt_obj.strftime('%d%m%Y')
     except: dt_str = datetime.now().strftime('%d%m%Y')
     
-    nome_fav = str(row['NOME_FAVORECIDO'])
+    nome_fav = str(get_val(row, ['NOME_FAVORECIDO', 'NOME', 'FAVORECIDO']))
 
-    # Segmento J
     seg_j = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'000':<3}" 
         f"{cod_barras[:44]:0>44}"       
@@ -133,56 +133,53 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
         f"{'':<6}{'':<10}"              
     )[:240] + "\r\n"
     
-    # Segmento J-52
     seq_lote_interno += 1
-    doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
+    doc_fav = limpar_numero(get_val(row, ['cnpj_beneficiario', 'CNPJ']))
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc_cedente = "1" if len(doc_fav) <= 11 else "2"
     
     seg_j52 = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'J':<1}{'   ':<3}"
-        f"{'52':<2}"                    # 18-19
-        f"{tipo_insc_cedente:<1}"       # 20: Tipo Insc CEDENTE
-        f"{doc_fav[:14]:0>15}"          # 21-35: CNPJ CEDENTE
-        f"{nome_fav[:40]:<40}"          # 36-75: Nome CEDENTE
-        f"{tipo_insc_cedente:<1}"       # 76: Tipo Insc SACADOR (Repete Fornecedor)
-        f"{doc_fav[:14]:0>15}"          # 77-91: CNPJ SACADOR (Repete Fornecedor)
-        f"{nome_fav[:40]:<40}"          # 92-131: Nome SACADOR (Repete Fornecedor)
-        f"{'2':<1}"                     # 132: Tipo Insc PAGADOR (2=CNPJ)
-        f"{DADOS_HOSPITAL['cnpj']:0>15}"# 133-147: CNPJ PAGADOR
-        f"{DADOS_HOSPITAL['nome']:<40}" # 148-187: Nome PAGADOR
-        f"{'':<53}"                     # 188-240: Filler
+        f"{'52':<2}"                    
+        f"{tipo_insc_cedente:<1}"       
+        f"{doc_fav[:14]:0>15}"          
+        f"{nome_fav[:40]:<40}"          
+        f"{tipo_insc_cedente:<1}"       
+        f"{doc_fav[:14]:0>15}"          
+        f"{nome_fav[:40]:<40}"          
+        f"{'2':<1}"                     
+        f"{DADOS_HOSPITAL['cnpj']:0>15}"
+        f"{DADOS_HOSPITAL['nome']:<40}" 
+        f"{'':<53}"                     
     )[:240] + "\r\n"
     
     return seg_j + seg_j52, 2
 
 def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
-    """Gera Pix ou TED (A + B) - Layout 046"""
-    try: valor = float(row['VALOR_PAGAMENTO'])
+    try: valor = float(get_val(row, ['VALOR_PAGAMENTO', 'VALOR'], 0.0))
     except: valor = 0.0
     valor_str = f"{int(valor * 100):0>15}"
     
-    chave_pix_raw = str(row.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
+    chave_pix_raw = str(get_val(row, ['CHAVE_PIX_OU_COD_BARRAS', 'CHAVE_PIX', 'CHAVE'])).strip()
     if chave_pix_raw.lower() in ['nan', 'none']: chave_pix_raw = ''
     
-    # Identifica o método corretamente para o Header da Unicred
     tipo_chave_code = detectar_tipo_chave_pix_interno(chave_pix_raw)
     
-    # A MÁGICA DOS ZEROS À ESQUERDA ESTÁ AQUI (Garante que nunca mais ocorra o erro)
-    banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', '000')) or "000"
-    agencia_fav = limpar_numero(row.get('AGENCIA_FAVORECIDA', '0')) or "0"
-    dv_agencia_fav = str(row.get('DIGITO_AGENCIA_FAVORECIDA', ' ')).strip() or " "
-    conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', '0')) or "0"
-    dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '0')).strip() or "0"
+    # Busca blindada dos Dados Bancários (Imune a erros de nome de coluna no Excel)
+    banco_fav = limpar_numero(get_val(row, ['BANCO_FAVORECIDO', 'BANCO'], '000')) or "000"
+    agencia_fav = limpar_numero(get_val(row, ['AGENCIA_FAVORECIDA', 'AGENCIA'], '0')) or "0"
+    dv_agencia_fav = str(get_val(row, ['DIGITO_AGENCIA_FAVORECIDA', 'DV_AGENCIA'], ' ')).strip() or " "
+    conta_fav = limpar_numero(get_val(row, ['CONTA_FAVORECIDA', 'CONTA'], '0')) or "0"
+    dv_conta_fav = str(get_val(row, ['DIGITO_CONTA_FAVORECIDA', 'DV_CONTA'], '0')).strip() or "0"
     
     if conta_fav == "0" or not conta_fav: conta_fav = "1"
     
     try:
-        dt_obj = datetime.strptime(str(row['DATA_PAGAMENTO']), '%d/%m/%Y')
+        dt_obj = datetime.strptime(str(get_val(row, ['DATA_PAGAMENTO', 'DATA'])), '%d/%m/%Y')
         dt_str = dt_obj.strftime('%d%m%Y')
     except: dt_str = data_arq
     
-    nome_fav = str(row['NOME_FAVORECIDO'])
+    nome_fav = str(get_val(row, ['NOME_FAVORECIDO', 'NOME', 'FAVORECIDO']))
 
     seg_a = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'A':<1}{'000':<3}{'009':<3}"
@@ -194,21 +191,32 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     )[:240] + "\r\n"
 
     seq_lote_interno += 1
-    doc_fav = limpar_numero(row.get('cnpj_beneficiario', ''))
+    doc_fav = limpar_numero(get_val(row, ['cnpj_beneficiario', 'CNPJ']))
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc = "1" if len(doc_fav) <= 11 else "2"
     
-    # --- CORREÇÃO DO ERRO DE OBRIGATORIEDADE (INFORMAÇÃO 10) ---
     info_10 = "NAO INFORMADO".ljust(35)[:35]
     
-    # Configuração rígida dos campos de Informação (10, 11 e 12) do Segmento B
+    # --- LÓGICA DO TIPO DE CONTA PARA DADOS BANCÁRIOS (05) ---
+    if tipo_chave_code == '005':
+        tipo_conta = "01" # Default para Conta Corrente
+        tc_raw = str(get_val(row, ['TIPO_CONTA'])).upper()
+        if 'POUPANCA' in tc_raw or 'POUPANÇA' in tc_raw:
+            tipo_conta = "03"
+        elif 'PAGAMENTO' in tc_raw:
+            tipo_conta = "02"
+        # O manual exige que se envie o tipo da conta na informação 11 (60 posições)
+        info_11 = tipo_conta.ljust(60)[:60]
+    else:
+        info_11 = f"{'0':0>5}{'':<15}{'BAIRRO':<15}{'CIDADE':<15}{'00000':0>5}{'000':0>3}{'SC':<2}"
+
     seg_b = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'B':<1}"
         f"{tipo_chave_code[:3]:0>3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
-        f"{info_10}"  # Informação 10 com a vacina (NAO INFORMADO)
-        f"{'0':0>5}{'':<15}{'BAIRRO':<15}{'CIDADE':<15}{'00000':0>5}{'000':0>3}{'SC':<2}" # Informação 11 preenchida
-        f"{chave_pix_raw[:99]:<99}" # Informação 12 (Chave PIX)
-        f"{'':<6}{'':<8}" # UG e ISPB
+        f"{info_10}"
+        f"{info_11}"
+        f"{chave_pix_raw[:99]:<99}"
+        f"{'':<6}{'':<8}"
     )[:240] + "\r\n"
     
     return seg_a + seg_b, 2
@@ -239,7 +247,6 @@ def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
 # =============================================================================
 
 def gerar_cnab_remessa(df_pagamentos):
-    """Gera CNAB Unificado - Misto"""
     if df_pagamentos.empty: return None
 
     nsa = obter_proximo_sequencial()
@@ -259,7 +266,8 @@ def gerar_cnab_remessa(df_pagamentos):
     lotes = {'PIX': [], 'BOLETO': []}
     
     for _, row in df_pagamentos.iterrows():
-        tipo_real = classificar_transacao_real(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
+        chave_bruta = get_val(row, ['CHAVE_PIX_OU_COD_BARRAS', 'COD_BARRAS', 'CHAVE_PIX'])
+        tipo_real = classificar_transacao_real(chave_bruta)
         lotes[tipo_real].append(row)
             
     content = header_arq
@@ -287,7 +295,7 @@ def gerar_cnab_remessa(df_pagamentos):
             content += seg_str
             seq_lote_interno += qtd
             qtd_regs_lote += qtd
-            try: total_valor_lote += float(row['VALOR_PAGAMENTO'])
+            try: total_valor_lote += float(get_val(row, ['VALOR_PAGAMENTO', 'VALOR'], 0.0))
             except: pass
             
         content += gerar_trailer_lote(num_lote_arq, qtd_regs_lote, total_valor_lote)
