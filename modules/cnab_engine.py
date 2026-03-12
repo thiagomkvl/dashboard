@@ -1,5 +1,6 @@
 import os
 import re
+import pandas as pd
 from datetime import datetime
 
 # --- CONFIGURAÇÕES GERAIS ---
@@ -38,14 +39,16 @@ def obter_proximo_sequencial():
 
 def limpar_numero(valor):
     """
-    Remove letras e limpa o número.
-    Essencial para o 'Truque do B'.
+    Remove letras e limpa o número. Resolve o bug dos R$ 1.8M
+    onde o pandas/excel transformava 136 em 136.0 e quebrava o CNAB.
     """
-    if not valor: return ""
-    s_val = str(valor)
-    if 'e+' in s_val.lower():
-        try: s_val = str(int(float(s_val)))
-        except: pass
+    if pd.isna(valor) or valor == '' or valor is None: 
+        return ""
+    s_val = str(valor).strip()
+    # Se o Pandas leu como float (ex: 136.0), removemos o '.0' antes de limpar
+    if s_val.endswith('.0'):
+        s_val = s_val[:-2]
+    # Remove tudo que não for dígito
     return ''.join(filter(str.isdigit, s_val))
 
 def converter_linha_digitavel_para_barras(linha):
@@ -65,21 +68,27 @@ def converter_linha_digitavel_para_barras(linha):
 
     return linha[:44]
 
-def detectar_tipo_chave_pix_interno(chave):
-    chave = str(chave).strip()
-    if '@' in chave: return '02 '
-    if len(chave) > 30 and '-' in chave: return '04 '
+def detectar_tipo_chave_pix_interno(chave_raw):
+    """
+    Retorna o código exato de 3 posições exigido pelo manual da Unicred.
+    """
+    chave = str(chave_raw).strip()
+    if not chave or str(chave).lower() in ['nan', 'none']: 
+        return '005' # Dados bancários (Ag/Conta)
+        
+    if '@' in chave: return '002' # Email
+    if len(chave) > 30 and '-' in chave: return '004' # Aleatória
     
     nums = limpar_numero(chave)
-    if len(nums) > 14: return '04 ' # Truque para passar boletos mascarados de Pix
-    
-    if len(nums) == 11 or len(nums) == 14: return '03 '
-    return '01 '
-
-# --- CAMUFLAGEM PARA A INTERFACE (UI) ---
-
-def detectar_metodo_pagamento(dado):
-    return 'PIX'
+    if len(nums) == 11:
+        # Se começa com DDD válido ou tem caracteres de telefone
+        if chave.startswith('(') or chave.startswith('+'):
+            return '001' # Telefone
+        return '003' # CPF
+    if len(nums) == 14: 
+        return '003' # CNPJ
+        
+    return '001' # Fallback para telefone
 
 # --- LÓGICA REAL (BACKEND) ---
 
@@ -96,7 +105,6 @@ def classificar_transacao_real(dado):
 def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     """
     Gera Boleto (J + J52) - Layout 040
-    CORREÇÃO J-52: Preenche Sacador Avalista (76-131) com dados do Fornecedor.
     """
     cod_barras = converter_linha_digitavel_para_barras(row.get('CHAVE_PIX_OU_COD_BARRAS', ''))
     try: valor = float(row['VALOR_PAGAMENTO'])
@@ -137,13 +145,9 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
         f"{tipo_insc_cedente:<1}"       # 20: Tipo Insc CEDENTE
         f"{doc_fav[:14]:0>15}"          # 21-35: CNPJ CEDENTE
         f"{nome_fav[:40]:<40}"          # 36-75: Nome CEDENTE
-        
-        # --- CORREÇÃO: REPETE DADOS DO FORNECEDOR COMO SACADOR/AVALISTA ---
         f"{tipo_insc_cedente:<1}"       # 76: Tipo Insc SACADOR (Repete Fornecedor)
         f"{doc_fav[:14]:0>15}"          # 77-91: CNPJ SACADOR (Repete Fornecedor)
         f"{nome_fav[:40]:<40}"          # 92-131: Nome SACADOR (Repete Fornecedor)
-        
-        # --- DADOS DO HOSPITAL (PAGADOR) ---
         f"{'2':<1}"                     # 132: Tipo Insc PAGADOR (2=CNPJ)
         f"{DADOS_HOSPITAL['cnpj']:0>15}"# 133-147: CNPJ PAGADOR
         f"{DADOS_HOSPITAL['nome']:<40}" # 148-187: Nome PAGADOR
@@ -153,19 +157,21 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     return seg_j + seg_j52, 2
 
 def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
-    """Gera Pix (A + B) - Layout 046"""
+    """Gera Pix ou TED (A + B) - Layout 046"""
     try: valor = float(row['VALOR_PAGAMENTO'])
     except: valor = 0.0
     valor_str = f"{int(valor * 100):0>15}"
     
     chave_pix_raw = str(row.get('CHAVE_PIX_OU_COD_BARRAS', '')).strip()
     if chave_pix_raw.lower() in ['nan', 'none']: chave_pix_raw = ''
-    if chave_pix_raw.endswith('.0'): chave_pix_raw = chave_pix_raw[:-2]
     
+    # Identifica o método corretamente para o Header da Unicred
     tipo_chave_code = detectar_tipo_chave_pix_interno(chave_pix_raw)
     
+    # A MÁGICA DOS ZEROS À ESQUERDA ESTÁ AQUI (Garante que nunca mais ocorra o erro)
     banco_fav = limpar_numero(row.get('BANCO_FAVORECIDO', '000')) or "000"
     agencia_fav = limpar_numero(row.get('AGENCIA_FAVORECIDA', '0')) or "0"
+    dv_agencia_fav = str(row.get('DIGITO_AGENCIA_FAVORECIDA', ' ')).strip() or " "
     conta_fav = limpar_numero(row.get('CONTA_FAVORECIDA', '0')) or "0"
     dv_conta_fav = str(row.get('DIGITO_CONTA_FAVORECIDA', '0')).strip() or "0"
     
@@ -180,10 +186,10 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
 
     seg_a = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'A':<1}{'000':<3}{'009':<3}"
-        f"{banco_fav[:3]:0>3}{agencia_fav[:5]:0>5}{' ':1}"
+        f"{banco_fav[:3]:0>3}{agencia_fav[:5]:0>5}{dv_agencia_fav[:1]:<1}"
         f"{conta_fav[:12]:0>12}{dv_conta_fav[:1]:<1}{' ':1}"
         f"{nome_fav[:30]:<30}{chave_pix_raw[:20]:<20}{dt_str:<8}{'BRL':<3}"
-        f"{'0':0>15}{valor_str:<15}{'':<20}{dt_str:<8}{valor_str:<15}"
+        f"{'0':0>15}{valor_str:0>15}{'':<20}{dt_str:<8}{valor_str:0>15}"
         f"{'':<40}{'00':<2}{'':<5}{'':<2}{'':<3}{'0':<1}{'':<10}"
     )[:240] + "\r\n"
 
@@ -192,11 +198,14 @@ def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     if not doc_fav: doc_fav = "00000000000"
     tipo_insc = "1" if len(doc_fav) <= 11 else "2"
     
+    # Configuração rígida dos campos de Informação (10, 11 e 12) do Segmento B
     seg_b = (
         f"{'136':<3}{num_lote:0>4}{'3':<1}{seq_lote_interno:0>5}{'B':<1}"
-        f"{tipo_chave_code[:3]:<3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
-        f"{'':<30}{'0':0>5}{'':<15}{'':<15}{'':<20}{'00000':0>5}{'000':0>3}{'SC':<2}"
-        f"{chave_pix_raw[:99]:<99}{'':<6}{'':<8}"
+        f"{tipo_chave_code[:3]:0>3}{tipo_insc[:1]:<1}{doc_fav[:14]:0>14}"
+        f"{'':<35}"  # Informação 10 (TX ID)
+        f"{'0':0>5}{'':<15}{'':<15}{'':<15}{'00000':0>5}{'000':0>3}{'SC':<2}" # Informação 11 (Endereço Formatado)
+        f"{chave_pix_raw[:99]:<99}" # Informação 12 (Chave PIX)
+        f"{'':<6}{'':<8}" # UG e ISPB
     )[:240] + "\r\n"
     
     return seg_a + seg_b, 2
