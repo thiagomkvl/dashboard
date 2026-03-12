@@ -152,10 +152,18 @@ with col_left:
             
             st.write("")
             
-            df_pagar = edited_df[edited_df['Pagar?'] == True].copy()
+            # --- CORREÇÃO DEFINITIVA DO MATCH DE ÍNDICE ---
+            # Pegamos os números das linhas que foram marcadas com True na interface
+            linhas_selecionadas = edited_df[edited_df['Pagar?'] == True].index
+            
             if st.button("🚀 Gerar Arquivo de Remessa (CNAB 240)", type="primary"):
-                if not df_pagar.empty:
-                    arquivo_cnab = gerar_cnab_pix(df_pagar)
+                if len(linhas_selecionadas) > 0:
+                    
+                    # Resgatamos as linhas da BASE ORIGINAL, garantindo que colunas invisíveis como AGENCIA_FAVORECIDA venham junto
+                    df_pagar_completo = df_real.loc[linhas_selecionadas].copy()
+                    
+                    arquivo_cnab = gerar_cnab_pix(df_pagar_completo)
+                    
                     if arquivo_cnab:
                         st.download_button(
                             label="📥 Baixar CNAB", 
@@ -247,7 +255,7 @@ with col_right:
     fig2.add_trace(go.Bar(x=dias, y=cat_med, name='Insumos', marker_color='#4e73df')) 
     fig2.add_trace(go.Bar(x=dias, y=cat_hon, name='Médicos', marker_color='#36b9cc'))   
     fig2.add_trace(go.Bar(x=dias, y=cat_man, name='Geral', marker_color='#f6c23e'))     
-    fig2.add_trace(go.Bar(x=dias, y=cat_imp, name='Impostos', marker_color='#858796'))             
+    fig2.add_trace(go.Bar(x=dias, y=cat_imp, name='Impostos', marker_color='#858796'))              
     
     # Linha de Tendência + Rótulo Total Fixo no Topo
     fig2.add_trace(go.Scatter(x=dias, y=totais, name='Tendência (Geral)', mode='lines+text', text=text_totais, textposition='top center', textfont=dict(size=12, color='#343a40'), line=dict(color='#858796', width=2)))
