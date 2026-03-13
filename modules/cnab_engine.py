@@ -110,7 +110,9 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
     
     try: valor = float(get_val(row, ['VALOR_PAGAMENTO', 'VALOR'], 0.0))
     except: valor = 0.0
-    valor_str = f"{int(valor * 100):0>15}"
+    
+    # CORREÇÃO 1: Fuga do erro de ponto flutuante (Boletos)
+    valor_str = f"{valor:.2f}".replace(".", "").zfill(15)
     
     try:
         dt_obj = datetime.strptime(str(get_val(row, ['DATA_PAGAMENTO', 'DATA'])), '%d/%m/%Y')
@@ -158,7 +160,9 @@ def gerar_segmento_j_combo(row, seq_lote_interno, num_lote):
 def gerar_segmentos_pix_a_b(row, seq_lote_interno, data_arq, num_lote):
     try: valor = float(get_val(row, ['VALOR_PAGAMENTO', 'VALOR'], 0.0))
     except: valor = 0.0
-    valor_str = f"{int(valor * 100):0>15}"
+    
+    # CORREÇÃO 2: String formatada direto em 15 posições (PIX)
+    valor_str = f"{valor:.2f}".replace(".", "").zfill(15)
     
     chave_pix_raw = str(get_val(row, ['CHAVE_PIX_OU_COD_BARRAS', 'CHAVE_PIX', 'CHAVE'])).strip()
     if chave_pix_raw.lower() in ['nan', 'none']: chave_pix_raw = ''
@@ -235,7 +239,9 @@ def gerar_header_lote(num_lote, forma_lancamento, versao_layout):
     )[:242]
 
 def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
-    valor_total_str = f"{int(total_valor * 100):0>18}"
+    # CORREÇÃO 3: Trailer exige 18 posições numéricas, zfill(18)
+    valor_total_str = f"{total_valor:.2f}".replace(".", "").zfill(18)
+    
     qtd_total_lote = qtd_registros + 2 
     return (
         f"{'136':<3}{num_lote:0>4}{'5':<1}{'':<9}{qtd_total_lote:0>6}"
