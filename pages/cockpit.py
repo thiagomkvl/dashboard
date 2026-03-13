@@ -162,6 +162,9 @@ with col_left:
                     # Resgatamos as linhas da BASE ORIGINAL, garantindo que colunas invisíveis como AGENCIA_FAVORECIDA venham junto
                     df_pagar_completo = df_real.loc[linhas_selecionadas].copy()
                     
+                    # 🔴 BALA DE PRATA: Força o arredondamento comercial NA HORA DO CLIQUE, ignorando qualquer cache do Streamlit!
+                    df_pagar_completo['VALOR_PAGAMENTO'] = np.floor(df_pagar_completo['VALOR_PAGAMENTO'] * 100 + 0.5) / 100
+                    
                     arquivo_cnab = gerar_cnab_pix(df_pagar_completo)
                     
                     if arquivo_cnab:
