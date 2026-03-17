@@ -27,14 +27,30 @@ DADOS_HOSPITAL = {
 def obter_proximo_sequencial():
     try:
         arquivo_nsa = "nsa_counter.txt"
-        if not os.path.exists(arquivo_nsa):
-            with open(arquivo_nsa, "w") as f: f.write("1")
-            return 1
-        with open(arquivo_nsa, "r") as f: atual = int(f.read().strip())
+        
+        # 1. Verifica se o arquivo já existe e lê o número que está lá
+        if os.path.exists(arquivo_nsa):
+            with open(arquivo_nsa, "r") as f: 
+                conteudo = f.read().strip()
+                atual = int(conteudo) if conteudo else 0
+        else:
+            atual = 0
+            
+        # 2. O PULO DO GATO: Se o banco travou os números baixos (testes), forçamos o salto para o 15
+        if atual < 15:
+            atual = 14
+            
+        # 3. Soma +1 (ou seja, vai gerar o 15 agora, e amanhã o 16, 17...)
         novo = atual + 1
-        with open(arquivo_nsa, "w") as f: f.write(str(novo))
+        
+        # 4. Salva o novo número para a próxima vez
+        with open(arquivo_nsa, "w") as f: 
+            f.write(str(novo))
+            
         return novo
-    except:
+        
+    except Exception as e:
+        # Fallback de segurança 
         return int(datetime.now().strftime('%H%M%S'))
 
 def get_val(row, possible_names, default=''):
