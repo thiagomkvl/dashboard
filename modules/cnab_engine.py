@@ -1,5 +1,7 @@
 import os
 import re
+import io  # <--- Adicionado para manipulação de arquivos em memória
+import pdfplumber  # <--- Adicionado para leitura dos PDFs de protesto
 import pandas as pd
 from datetime import datetime
 
@@ -265,7 +267,7 @@ def gerar_trailer_lote(num_lote, qtd_registros, total_valor):
     )[:242]
 
 # =============================================================================
-# MOTOR PRINCIPAL
+# MOTOR PRINCIPAL DE REMESSA
 # =============================================================================
 
 def gerar_cnab_remessa(df_pagamentos):
@@ -333,3 +335,74 @@ def gerar_cnab_remessa(df_pagamentos):
 
 # Alias
 gerar_cnab_pix = gerar_cnab_remessa
+
+
+# =============================================================================
+# 📄 NOVA FUNCIONALIDADE: LEITOR INTELIGENTE DE PROTESTOS (PDF)
+# =============================================================================
+
+def extrair_dados_protesto_pdf(uploaded_files):
+    """
+    Processa os arquivos PDF de certidões de protesto carregados via Streamlit
+    e devolve um DataFrame estruturado para a Controladoria.
+    """
+    all_records = []
+    
+    for uploaded_file in uploaded_files:
+        text = ""
+        # Lendo o arquivo diretamente do buffer de memória do Streamlit
+        with pdfplumber.open(io.BytesIO(uploaded_file.read())) as pdf:
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+
+        # Quebra flexível usando o separador "Protocolo" (suporta variações de escrita e espaços)
+        chunks = re.split(r'Protocolo[:\s]*', text, flags=re.IGNORECASE)
+
+        for chunk in chunks[1:]:
+            record = {'Cartório/Arquivo': uploaded_file.name}
+
+            # 1. Protocolo
+            m_prot = re.match(r'^([A-Za-z0-9\-\.]+)', chunk.strip())
+            record['Protocolo'] = m_prot.group(1) if m_prot else "-"
+
+            # 2. Credor / Sacador / Apresentante
+            sacador = re.search(r'(?:Sacador|Apresentante|Credor(?:\s+atual)?):?\s*([^\n\d]+)', chunk, re.IGNORECASE)
+            record['Credor/Sacador'] = sacador.group(1).strip() if sacador else "Não identificado"
+
+            # 3. CNPJ / CPF do Devedor (Para conferência do SOS Cardio)
+            documento = re.search(r'(?:CNPJ|CPF)(?: do Devedor)?:?\s*([\d\.\-\/]+)', chunk, re.IGNORECASE)
+            record['CNPJ/CPF Devedor'] = documento.group(1).strip() if documento else "-"
+
+            # 4. Valor Original / Saldo
+            valor = re.search(r'(?:Valor(?: Original| Declarado)?|Saldo)[:\s]*R\$\s*([\d\.,]+)', chunk, re.IGNORECASE)
+            record['Valor/Saldo'] = f"R$ {valor.group(1).strip()}" if valor else "-"
+
+            # 5. Custas Cartorárias / Emolumentos (Taxas extras do cartório)
+            custas = re.search(r'(?:Custas|Emolumentos|Taxas)[:\s]*R\$\s*([\d\.,]+)', chunk, re.IGNORECASE)
+            record['Custas/Taxas'] = f"R$ {custas.group(1).strip()}" if custas else "R$ 0,00"
+
+            # 6. Emissão do Título
+            emissao = re.search(r'(?:Emissão|Data Emissã[oo])[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
+            record['Emissão'] = emissao.group(1) if emissao else "-"
+
+            # 7. Vencimento original
+            vencimento = re.search(r'(?:Vencimento|Venc\.)[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
+            record['Vencimento'] = vencimento.group(1) if vencimento else "-"
+
+            # 8. Data do Protesto
+            protesto = re.search(r'(?:Data(?:\s+do)?\s+Protesto|Protestado\s+em)[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
+            record['Data do Protesto'] = protesto.group(1) if protesto else "-"
+
+            # 9. Título/Número
+            titulo = re.search(r'(?:nº(?:\s+do)?\s+Título|Título\s+n|Número)[:\s]*(\S+)', chunk, re.IGNORECASE)
+            record['Título/Número'] = titulo.group(1).strip() if titulo else "-"
+
+            # 10. Espécie (Duplicata Mercantil, Cheque, etc.)
+            especie = re.search(r'Espécie[:\s]*([A-Za-z0-9\s\-\/]+?)(?:\n|Emissão|Valor|\-|R\$)', chunk, re.IGNORECASE)
+            record['Espécie'] = especie.group(1).strip() if especie else "-"
+
+            all_records.append(record)
+            
+    return pd.DataFrame(all_records)
