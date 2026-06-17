@@ -2,13 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import io  # <--- Adicionado para manipulação de bytes na memória para download
 from datetime import datetime, timedelta
 from database import conectar_sheets
 
 # --- IMPORTAÇÃO SEGURA ---
 try:
     from modules.utils import formatar_real, identificar_tipo_pagamento
-    from modules.cnab_engine import gerar_cnab_pix 
+    # 🔴 EVOLUÇÃO: Importando a função do motor do cnab_engine atualizado
+    from modules.cnab_engine import gerar_cnab_pix, extrair_dados_protesto_pdf 
 except ImportError as e:
     st.error(f"Erro crítico nos módulos: {e}")
     st.stop()
@@ -123,7 +125,8 @@ col_left, col_right = st.columns([1.3, 1])
 
 # --- ESQUERDA: TABELA E GERAÇÃO CNAB ---
 with col_left:
-    tab1, tab2 = st.tabs(["Enviar Remessa de Pagamentos", "Títulos Vencidos"])
+    # 🔴 EVOLUÇÃO: Expandido para criar a terceira aba nativa do painel
+    tab1, tab2, tab3 = st.tabs(["Enviar Remessa de Pagamentos", "Títulos Vencidos", "📄 Auditoria de Protestos (PDF)"])
     
     with tab1:
         if not df_real.empty:
@@ -153,16 +156,13 @@ with col_left:
             st.write("")
             
             # --- CORREÇÃO DEFINITIVA DO MATCH DE ÍNDICE ---
-            # Pegamos os números das linhas que foram marcadas com True na interface
             linhas_selecionadas = edited_df[edited_df['Pagar?'] == True].index
             
             if st.button("🚀 Gerar Arquivo de Remessa (CNAB 240)", type="primary"):
                 if len(linhas_selecionadas) > 0:
-                    
-                    # Resgatamos as linhas da BASE ORIGINAL, garantindo que colunas invisíveis como AGENCIA_FAVORECIDA venham junto
                     df_pagar_completo = df_real.loc[linhas_selecionadas].copy()
                     
-                    # 🔴 BALA DE PRATA: Força o arredondamento comercial NA HORA DO CLIQUE, ignorando qualquer cache do Streamlit!
+                    # BALA DE PRATA: Força o arredondamento comercial NA HORA DO CLIQUE, ignorando o cache
                     df_pagar_completo['VALOR_PAGAMENTO'] = np.floor(df_pagar_completo['VALOR_PAGAMENTO'] * 100 + 0.5) / 100
                     
                     arquivo_cnab = gerar_cnab_pix(df_pagar_completo)
@@ -182,9 +182,45 @@ with col_left:
     with tab2:
         st.info("Aqui entrará a query direta do banco de dados do Tasy listando os títulos vencidos.")
 
+    # 🔴 INTERFACE DA NOVA FUNCIONALIDADE: Conversor de PDFs de Protesto
+    with tab3:
+        st.subheader("Conversor Inteligente de Certidões de Protesto")
+        st.markdown("Arraste e solte uma ou múltiplas certidões em PDF recebidas dos cartórios para estruturar em uma planilha limpa para a Controladoria.")
+        
+        # Uploader múltiplo de arquivos em memória
+        arquivos_pdf = st.file_uploader("Selecione os PDFs de Protesto", type=["pdf"], accept_multiple_files=True, key="uploader_protestos")
+        
+        if arquivos_pdf:
+            st.write("")
+            if st.button("📊 Processar PDFs e Estruturar Planilha", type="primary"):
+                with st.spinner("Escovando os bits dos arquivos PDF... Aguarde."):
+                    # Executa a inteligência de regexes que adicionamos ao cnab_engine
+                    df_protestos = extrair_dados_protesto_pdf(arquivos_pdf)
+                    
+                    if not df_protestos.empty:
+                        st.success(f"Sucesso! {len(df_protestos)} registros de protesto identificados de forma estruturada.")
+                        
+                        # Mostra a prévia da tabela na tela respeitando o design do painel (altura menor para caber na aba)
+                        st.data_editor(df_protestos, use_container_width=True, hide_index=True, height=450)
+                        
+                        # Processamento do arquivo Excel direto no buffer binário da memória
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            df_protestos.to_excel(writer, index=False, sheet_name='Protestos')
+                        processado_excel = output.getvalue()
+                        
+                        st.write("")
+                        st.download_button(
+                            label="📥 Baixar Planilha Pronta para Auditoria (.xlsx)",
+                            data=processado_excel,
+                            file_name=f"Protestos_Processados_{datetime.now().strftime('%d%m')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.warning("Nenhuma estrutura padrão de bloco de protesto foi reconhecida nos PDFs enviados.")
+
 # --- DIREITA: GRÁFICOS ALINHADOS À REALIDADE DO HOSPITAL ---
 with col_right:
-    # Blocos HTML Alinhados com a Tabela (margin-top compensa as Abas) e linha vertical
     st.markdown("""
     <div style="display: flex; gap: 15px; margin-top: 48px; margin-bottom: 20px;">
         <div style="flex: 1; background-color: #F8F9FA; padding: 15px; border-radius: 8px; border: 1px solid #E9ECEF; border-left: 5px solid #36b9cc;">
@@ -198,17 +234,13 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
     
-    # Função auxiliar para formatar em K (ex: 120k) e não poluir o gráfico
     def form_k(valor):
         return f"{valor/1000:.0f}k" if valor >= 1000 else str(valor)
 
-    # Configuração de Interatividade (Arrastar/Pan Mode)
     chart_config = {'scrollZoom': False, 'displayModeBar': False}
 
-    # ---------------------------------------------------------
-    # Gráfico 1: Total a Pagar x Total Pago (DUAS TENDÊNCIAS)
-    # ---------------------------------------------------------
-    dias = [(datetime.now() - timedelta(days=i)).strftime('%d/%m') for i in range(13, -1, -1)] # 14 dias para dar efeito de scroll
+    # Gráfico 1: Total a Pagar x Total Pago
+    dias = [(datetime.now() - timedelta(days=i)).strftime('%d/%m') for i in range(13, -1, -1)]
     a_pagar = [100000, 95000, 120000, 150000, 110000, 180000, 90000, 130000, 250000, 140000, 160000, 110000, 190000, 145000]
     pago =    [80000,  90000, 90000,  110000, 110000, 130000, 80000, 100000, 150000, 100000, 150000, 100000, 180000, 120000]
     
@@ -216,41 +248,27 @@ with col_right:
     text_pago = [form_k(v) for v in pago]
 
     fig1 = go.Figure()
-    
-    # Barras principais
     fig1.add_trace(go.Bar(x=dias, y=a_pagar, name='A Pagar', marker_color='#e74a3b', text=text_pagar, textposition='outside', textfont=dict(size=11))) 
     fig1.add_trace(go.Bar(x=dias, y=pago, name='Pago', marker_color='#1cc88a', text=text_pago, textposition='outside', textfont=dict(size=11)))    
-    
-    # Duas Linhas de Tendência (Uma para cada métrica)
     fig1.add_trace(go.Scatter(x=dias, y=a_pagar, name='Tend. (A Pagar)', mode='lines', line=dict(color='#e74a3b', width=2, dash='dash')))
     fig1.add_trace(go.Scatter(x=dias, y=pago, name='Tend. (Pago)', mode='lines', line=dict(color='#1cc88a', width=2, dash='dash')))
 
     fig1.update_layout(
         title=dict(text="Total a Pagar x Total Pago", font=dict(color="#4F4F4F", size=16), x=0.5),
-        barmode='group', 
-        margin=dict(l=20, r=20, t=50, b=20), 
-        height=300, 
-        paper_bgcolor='#F8F9FA',
-        plot_bgcolor='#F8F9FA',
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
-        dragmode='pan' # Ativa o arraste
+        barmode='group', margin=dict(l=20, r=20, t=50, b=20), height=300, paper_bgcolor='#F8F9FA', plot_bgcolor='#F8F9FA',
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5), dragmode='pan'
     )
-    # Mostra apenas os últimos 6 dias e permite arrastar para a esquerda
     fig1.update_xaxes(fixedrange=False, range=[len(dias)-6.5, len(dias)-0.5]) 
-    fig1.update_yaxes(fixedrange=True, range=[0, max(a_pagar)*1.2]) # Espaço para o texto no topo
+    fig1.update_yaxes(fixedrange=True, range=[0, max(a_pagar)*1.2])
     
     st.plotly_chart(fig1, use_container_width=True, config=chart_config)
     
-    # ---------------------------------------------------------
     # Gráfico 2: Categorias das Despesas Diarizadas
-    # ---------------------------------------------------------
-    # Dados expandidos para 14 dias
     cat_med = [40000, 50000, 30000, 60000, 35000, 40000, 70000, 40000, 50000, 30000, 60000, 35000, 40000, 70000]
     cat_hon = [30000, 40000, 50000, 40000, 25000, 30000, 50000, 30000, 40000, 50000, 40000, 25000, 30000, 50000]
     cat_man = [10000, 10000, 15000, 20000, 10000, 20000, 15000, 10000, 10000, 15000, 20000, 10000, 20000, 15000]
     cat_imp = [10000, 10000, 15000, 10000, 10000, 10000, 15000, 10000, 10000, 15000, 10000, 10000, 10000, 15000]
     
-    # Calculando Totais para colocar no topo da barra
     totais = [m+h+ma+i for m, h, ma, i in zip(cat_med, cat_hon, cat_man, cat_imp)]
     text_totais = [f"<b>{form_k(v)}</b>" for v in totais]
 
@@ -259,21 +277,13 @@ with col_right:
     fig2.add_trace(go.Bar(x=dias, y=cat_hon, name='Médicos', marker_color='#36b9cc'))   
     fig2.add_trace(go.Bar(x=dias, y=cat_man, name='Geral', marker_color='#f6c23e'))     
     fig2.add_trace(go.Bar(x=dias, y=cat_imp, name='Impostos', marker_color='#858796'))              
-    
-    # Linha de Tendência + Rótulo Total Fixo no Topo
     fig2.add_trace(go.Scatter(x=dias, y=totais, name='Tendência (Geral)', mode='lines+text', text=text_totais, textposition='top center', textfont=dict(size=12, color='#343a40'), line=dict(color='#858796', width=2)))
 
     fig2.update_layout(
         title=dict(text="Despesas por Categoria (Visão Diária)", font=dict(color="#4F4F4F", size=16), x=0.5),
-        barmode='stack', 
-        margin=dict(l=20, r=20, t=50, b=20), 
-        height=300, 
-        paper_bgcolor='#F8F9FA',
-        plot_bgcolor='#F8F9FA',
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
-        dragmode='pan'
+        barmode='stack', margin=dict(l=20, r=20, t=50, b=20), height=300, paper_bgcolor='#F8F9FA', plot_bgcolor='#F8F9FA',
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5), dragmode='pan'
     )
-    
     fig2.update_xaxes(fixedrange=False, range=[len(dias)-6.5, len(dias)-0.5]) 
     fig2.update_yaxes(fixedrange=True, range=[0, max(totais)*1.2])
     
