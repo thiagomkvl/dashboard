@@ -343,45 +343,43 @@ gerar_cnab_pix = gerar_cnab_remessa
 
 def extrair_dados_protesto_pdf(uploaded_files):
     """
-    Processa os arquivos PDF de certidões de protesto carregados via Streamlit
-    e devolve um DataFrame estruturado para a Controladoria.
+    Processa os arquivos PDF de certidões de protesto (suporta múltiplos layouts de cartórios).
     """
     all_records = []
     
     for uploaded_file in uploaded_files:
         text = ""
-        # Lendo o arquivo diretamente do buffer de memória do Streamlit
         with pdfplumber.open(io.BytesIO(uploaded_file.read())) as pdf:
             for page in pdf.pages:
                 extracted = page.extract_text()
                 if extracted:
                     text += extracted + "\n"
 
-        # Quebra flexível usando o separador "Protocolo" (suporta variações de escrita e espaços)
-        chunks = re.split(r'Protocolo[:\s]*', text, flags=re.IGNORECASE)
+        # Quebra o texto sempre que encontrar a palavra "Protocolo" (início de um novo título)
+        chunks = re.split(r'(?i)Protocolo[:\s]*', text)
 
-        for chunk in chunks[1:]:
+        for chunk in chunks[1:]: # Ignora o cabeçalho do cartório
             record = {'Cartório/Arquivo': uploaded_file.name}
 
-            # 1. Protocolo
-            m_prot = re.match(r'^([A-Za-z0-9\-\.]+)', chunk.strip())
+            # 1. Protocolo (Pega a primeira sequência de 5 a 10 números no bloco)
+            m_prot = re.search(r'\b(\d{5,10})\b', chunk[:150])
             record['Protocolo'] = m_prot.group(1) if m_prot else "-"
 
-            # 2. Credor / Sacador / Apresentante
-            sacador = re.search(r'(?:Sacador|Apresentante|Credor(?:\s+atual)?):?\s*([^\n\d]+)', chunk, re.IGNORECASE)
+            # 2. Credor / Sacador / Apresentante (Suporta múltiplas linhas e formatos)
+            sacador = re.search(r'(?:Sacador|Credor(?: original)?|Apresentante)[:\s]+([A-Za-zÀ-ÿ0-9\s\.\&\']+?)(?:\s*-|\s*CNPJ|\s*Documento|\n\s*\d|$)', chunk, re.IGNORECASE)
             record['Credor/Sacador'] = sacador.group(1).strip() if sacador else "Não identificado"
 
-            # 3. CNPJ / CPF do Devedor (Para conferência do SOS Cardio)
-            documento = re.search(r'(?:CNPJ|CPF)(?: do Devedor)?:?\s*([\d\.\-\/]+)', chunk, re.IGNORECASE)
-            record['CNPJ/CPF Devedor'] = documento.group(1).strip() if documento else "-"
+            # 3. CNPJ / CPF Devedor (Força a busca padrão ou assume SOS Cardio)
+            documento = re.search(r'(?:85\.307\.098/0001\-87|\d{2}\.\d{3}\.\d{3}/\d{4}\-\d{2})', chunk)
+            record['CNPJ/CPF Devedor'] = documento.group(0) if documento else "85.307.098/0001-87"
 
-            # 4. Valor Original / Saldo
-            valor = re.search(r'(?:Valor(?: Original| Declarado)?|Saldo)[:\s]*R\$\s*([\d\.,]+)', chunk, re.IGNORECASE)
+            # 4. A BALA DE PRATA DO VALOR: Pega "Valor", "Valor Original" ou "Saldo", COM ou SEM "R$"
+            valor = re.search(r'(?:Valor(?: Original| Declarado)?|Saldo)[:\s]*(?:R\$)?\s*([\d\.,]{4,})', chunk, re.IGNORECASE)
             record['Valor/Saldo'] = f"R$ {valor.group(1).strip()}" if valor else "-"
 
-            # 5. Custas Cartorárias / Emolumentos (Taxas extras do cartório)
-            custas = re.search(r'(?:Custas|Emolumentos|Taxas)[:\s]*R\$\s*([\d\.,]+)', chunk, re.IGNORECASE)
-            record['Custas/Taxas'] = f"R$ {custas.group(1).strip()}" if custas else "R$ 0,00"
+            # 5. Custas Cartorárias (Alguns cartórios cobram no final do arquivo, outros por título)
+            custas = re.search(r'(?:Custas|Emolumentos|Taxas)[:\s]*(?:R\$)?\s*([\d\.,]{3,})', chunk, re.IGNORECASE)
+            record['Custas/Taxas'] = f"R$ {custas.group(1).strip()}" if custas else "-"
 
             # 6. Emissão do Título
             emissao = re.search(r'(?:Emissão|Data Emissã[oo])[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
@@ -392,17 +390,17 @@ def extrair_dados_protesto_pdf(uploaded_files):
             record['Vencimento'] = vencimento.group(1) if vencimento else "-"
 
             # 8. Data do Protesto
-            protesto = re.search(r'(?:Data(?:\s+do)?\s+Protesto|Protestado\s+em)[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
+            protesto = re.search(r'(?:Data(?:\s+do)?\s+Protesto|Protestado\s+em|Protesto\s+em)[:\s]*(\d{2}/\d{2}/\d{4})', chunk, re.IGNORECASE)
             record['Data do Protesto'] = protesto.group(1) if protesto else "-"
 
-            # 9. Título/Número
-            titulo = re.search(r'(?:nº(?:\s+do)?\s+Título|Título\s+n|Número)[:\s]*(\S+)', chunk, re.IGNORECASE)
+            # 9. Título/Número (Suporta caracteres especiais e quebras estranhas)
+            titulo = re.search(r'(?:nº(?:\s+do)?\s+Título|Título\s+n.*?|Número)[:\s]*([A-Za-z0-9\-\.\/]+)', chunk, re.IGNORECASE)
             record['Título/Número'] = titulo.group(1).strip() if titulo else "-"
 
-            # 10. Espécie (Duplicata Mercantil, Cheque, etc.)
-            especie = re.search(r'Espécie[:\s]*([A-Za-z0-9\s\-\/]+?)(?:\n|Emissão|Valor|\-|R\$)', chunk, re.IGNORECASE)
+            # 10. Espécie (DMI, Duplicata, CDA, etc)
+            especie = re.search(r'Espécie(?: do Titulo)?[:\s]+([A-Za-zÀ-ÿ0-9\s\(\)]+?)(?:\s*-|\s*Emissão|\s*Saldo|\s*Vencimento|\n)', chunk, re.IGNORECASE)
             record['Espécie'] = especie.group(1).strip() if especie else "-"
 
-            all_records.append(record)
-            
-    return pd.DataFrame(all_records)
+            # Filtro anti-lixo: Só adiciona na planilha se realmente for um título válido (tem protocolo e valor)
+            if record['Protocolo'] != "-" and record['Valor/Saldo'] != "-":
+                all_records.append(record)
