@@ -366,24 +366,29 @@ def extrair_dados_protesto_pdf(uploaded_files):
                 m_prot = re.search(r'\b(\d{5,10})\b', chunk[:150])
                 record['Protocolo'] = m_prot.group(1) if m_prot else "-"
 
-                # 2. Credor / Sacador / Apresentante (Com faxina pesada para o Cartório Salles)
-                sacador = re.search(r'(?:Sacador|Cedente|Credor(?: original)?|Apresentante)[:\s]+([A-Za-zÀ-ÿ0-9\s\.\&\']+?)(?:\s*-|\s*CNPJ|\s*Documento|\n\s*Nome|\n\s*Endereço|\n\s*Cep|\n\s*Valor|\n\s*\d{2,}|$)', chunk, re.IGNORECASE)
+                # 2. Credor / Sacador (Regras de faxina para o Cartório Salles)
+                sacador_match = re.search(r'(?:Sacador|Credor(?: original)?|Cedente)[:\s]+(?:Endere[çc]o[:\s]+)?([^\n]+)', chunk, re.IGNORECASE)
                 
-                if sacador:
-                    nome_limpo = sacador.group(1).strip()
-                    # Remove a palavra "Endereço:" que o Salles joga no meio do nome
-                    nome_limpo = re.sub(r'(?i)Endereço[:\s]+', '', nome_limpo)
-                    # Remove o código do banco colado no nome (ex: "341ITAU" vira "ITAU")
+                if not sacador_match:
+                    sacador_match = re.search(r'Apresentante[:\s]+([^\n]+)', chunk, re.IGNORECASE)
+
+                if sacador_match:
+                    nome_limpo = sacador_match.group(1).strip()
+                    nome_limpo = re.split(r'(?i)\s*-|\s*CNPJ|\s*CPF|\s*Documento', nome_limpo)[0].strip()
                     nome_limpo = re.sub(r'^\d{3,4}(?=[A-Za-z])', '', nome_limpo)
-                    record['Credor/Sacador'] = nome_limpo.strip()
+                    record['Credor/Sacador'] = nome_limpo
                 else:
                     record['Credor/Sacador'] = "Não identificado"
 
-                # 3. CNPJ / CPF Devedor (Força a busca ou assume SOS Cardio)
-                documento = re.search(r'(?:85\.307\.098/0001\-87|\d{2}\.\d{3}\.\d{3}/\d{4}\-\d{2})', chunk)
-                record['CNPJ/CPF Devedor'] = documento.group(0) if documento else "85.307.098/0001-87"
+                # 3. CNPJ / CPF do Credor (A BALA DE PRATA PARA PEGAR O FORNECEDOR E IGNORAR O HOSPITAL)
+                # Extrai todos os padrões de CNPJ e CPF do bloco do protesto
+                todos_documentos = re.findall(r'\d{2}\.\d{3}\.\d{3}/\d{4}\-\d{2}|\d{3}\.\d{3}\.\d{3}\-\d{2}', chunk)
+                # Remove o CNPJ do hospital da lista para sobrar apenas o do fornecedor
+                docs_fornecedor = [doc for doc in todos_documentos if doc != '85.307.098/0001-87']
+                
+                record['CNPJ/CPF Credor'] = docs_fornecedor[0] if docs_fornecedor else "-"
 
-                # 4. Valor (Bala de Prata)
+                # 4. Valor
                 valor = re.search(r'(?:Valor(?: Original| Declarado)?|Saldo)[:\s]*(?:R\$)?\s*([\d\.,]{4,})', chunk, re.IGNORECASE)
                 record['Valor/Saldo'] = f"R$ {valor.group(1).strip()}" if valor else "-"
 
