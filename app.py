@@ -196,7 +196,7 @@ with col_left:
                     # Chama o motor que colocamos no cnab_engine
                     df_protestos = extrair_dados_protesto_pdf(arquivos_pdf)
                     
-                    if not df_protestos.empty:
+                    if df_protestos is not None and not df_protestos.empty:
                         st.success(f"Sucesso! {len(df_protestos)} registros de protesto identificados.")
                         
                         # Mostra os dados estruturados na tela para conferência rápida
