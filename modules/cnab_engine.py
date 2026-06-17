@@ -366,9 +366,18 @@ def extrair_dados_protesto_pdf(uploaded_files):
                 m_prot = re.search(r'\b(\d{5,10})\b', chunk[:150])
                 record['Protocolo'] = m_prot.group(1) if m_prot else "-"
 
-                # 2. Credor / Sacador / Apresentante 
-                sacador = re.search(r'(?:Sacador|Credor(?: original)?|Apresentante)[:\s]+([A-Za-zÀ-ÿ0-9\s\.\&\']+?)(?:\s*-|\s*CNPJ|\s*Documento|\n\s*\d|$)', chunk, re.IGNORECASE)
-                record['Credor/Sacador'] = sacador.group(1).strip() if sacador else "Não identificado"
+                # 2. Credor / Sacador / Apresentante (Com faxina pesada para o Cartório Salles)
+                sacador = re.search(r'(?:Sacador|Cedente|Credor(?: original)?|Apresentante)[:\s]+([A-Za-zÀ-ÿ0-9\s\.\&\']+?)(?:\s*-|\s*CNPJ|\s*Documento|\n\s*Nome|\n\s*Endereço|\n\s*Cep|\n\s*Valor|\n\s*\d{2,}|$)', chunk, re.IGNORECASE)
+                
+                if sacador:
+                    nome_limpo = sacador.group(1).strip()
+                    # Remove a palavra "Endereço:" que o Salles joga no meio do nome
+                    nome_limpo = re.sub(r'(?i)Endereço[:\s]+', '', nome_limpo)
+                    # Remove o código do banco colado no nome (ex: "341ITAU" vira "ITAU")
+                    nome_limpo = re.sub(r'^\d{3,4}(?=[A-Za-z])', '', nome_limpo)
+                    record['Credor/Sacador'] = nome_limpo.strip()
+                else:
+                    record['Credor/Sacador'] = "Não identificado"
 
                 # 3. CNPJ / CPF Devedor (Força a busca ou assume SOS Cardio)
                 documento = re.search(r'(?:85\.307\.098/0001\-87|\d{2}\.\d{3}\.\d{3}/\d{4}\-\d{2})', chunk)
@@ -402,13 +411,12 @@ def extrair_dados_protesto_pdf(uploaded_files):
                 especie = re.search(r'Espécie(?: do Titulo)?[:\s]+([A-Za-zÀ-ÿ0-9\s\(\)]+?)(?:\s*-|\s*Emissão|\s*Saldo|\s*Vencimento|\n)', chunk, re.IGNORECASE)
                 record['Espécie'] = especie.group(1).strip() if especie else "-"
 
+                # Filtro anti-lixo
                 if record['Protocolo'] != "-" and record['Valor/Saldo'] != "-":
                     all_records.append(record)
                 
-        # Esta linha é vital para não dar o erro de "NoneType"
         return pd.DataFrame(all_records)
         
     except Exception as e:
         print(f"Erro interno ao ler PDF: {e}")
-        # Em caso de falha crítica, retorna uma tabela vazia no lugar de "None"
         return pd.DataFrame()
