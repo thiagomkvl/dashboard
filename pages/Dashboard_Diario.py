@@ -108,47 +108,55 @@ def carregar_dados():
         df_hoje = df_hoje.sort_values(by=col_conta)
 
         # =========================================================
-        # TRATAMENTO DO HISTÓRICO (CORREÇÃO DO GRÁFICO DE LINHA)
+        # TRATAMENTO DO HISTÓRICO (CÁLCULO DE ENTRADA/SAÍDA POR SALDO)
         # =========================================================
+        df_saldo_linha = pd.DataFrame()
         df_analise = pd.DataFrame()
         
         if not df_historico.empty:
             df_historico.columns = [c.strip() for c in df_historico.columns]
-            df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
             
-            # Se tiver colunas de Entrada e Saída, usamos para análise
-            if 'Entrada' in df_historico.columns and 'Saída' in df_historico.columns:
-                df_historico['Entrada'] = df_historico['Entrada'].apply(limpa_moeda_br).apply(lambda x: abs(x))
-                df_historico['Saída'] = df_historico['Saída'].apply(limpa_moeda_br).apply(lambda x: -abs(x) if x != 0 else 0)
+            # Tenta achar a coluna de saldo no histórico
+            col_saldo_hist = None
+            for col in df_historico.columns:
+                if 'saldo' in col.lower():
+                    col_saldo_hist = col
+                    break
+            
+            # Se não encontrar coluna de saldo, não dá pra fazer análise
+            if col_saldo_hist:
+                df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
+                df_historico[col_saldo_hist] = df_historico[col_saldo_hist].apply(limpa_moeda_br)
                 
-                # Agrupa por data para criar análise de Fluxo
-                df_analise = df_historico.groupby(col_data).agg({
-                    'Entrada': 'sum',
-                    'Saída': 'sum'
-                }).reset_index().sort_values(col_data)
-
-            # Cálculo do Saldo Diário para o gráfico de Linha
-            # Pega os últimos 7 dias para o gráfico
-            datas_unicas = sorted(df_historico[col_data].unique(), reverse=True)[:7]
-            df_saldo_linha = pd.DataFrame()
-            
-            for data in datas_unicas:
-                # Pega os dados daquele dia
-                df_dia = df_historico[df_historico[col_data] == data]
-                # Soma o Saldo Final de todos os bancos naquele dia
-                if 'Saldo Final' in df_dia.columns:
-                    saldo_dia = df_dia['Saldo Final'].apply(limpa_moeda_br).sum()
-                    df_saldo_linha = pd.concat([df_saldo_linha, pd.DataFrame({'Data': [data], 'Saldo': [saldo_dia]})])
-            
-            # Ordena do mais antigo para o mais novo
-            df_saldo_linha = df_saldo_linha.sort_values('Data')
-            
-        else:
-            # Dados Mock caso esteja vazio (apenas para não quebrar o gráfico)
-            hoje = datetime.now()
-            dias = [(hoje - timedelta(days=i)) for i in range(7, -1, -1)]
-            df_saldo_linha = pd.DataFrame({'Data': dias, 'Saldo': [0]*8})
-            df_analise = pd.DataFrame({'Data': dias, 'Entrada': [0]*8, 'Saída': [0]*8})
+                # Filtra apenas os últimos 7 dias para o gráfico, e ordena
+                datas_unicas = sorted(df_historico[col_data].unique(), reverse=True)[:8]
+                df_analise_raw = pd.DataFrame()
+                
+                for data in datas_unicas:
+                    df_dia = df_historico[df_historico[col_data] == data]
+                    saldo_total_dia = df_dia[col_saldo_hist].sum()
+                    df_analise_raw = pd.concat([df_analise_raw, pd.DataFrame({'Data': [data], 'Saldo': [saldo_total_dia]})])
+                
+                df_analise_raw = df_analise_raw.sort_values('Data')
+                
+                # Cálculo de Entrada e Saída baseado na diferença de saldo
+                # Entrada = Diff Positiva, Saída = Diff Negativa (em módulo)
+                df_analise_raw['Diferença'] = df_analise_raw['Saldo'].diff().fillna(0)
+                df_analise_raw['Entrada'] = df_analise_raw['Diferença'].apply(lambda x: x if x > 0 else 0)
+                df_analise_raw['Saída'] = df_analise_raw['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
+                
+                # Prepara o dataset final (Remove o primeiro dia, pois não tem diferença com o anterior)
+                df_analise = df_analise_raw[df_analise_raw['Data'] != df_analise_raw['Data'].min()]
+                
+                # O gráfico de Linha vai usar o próprio df_analise_raw (com o saldo de cada dia)
+                df_saldo_linha = df_analise_raw[['Data', 'Saldo']].copy()
+                
+            else:
+                # Caso não tenha coluna de saldo, cria dados mock (para não quebrar o painel)
+                hoje = datetime.now()
+                dias = [(hoje - timedelta(days=i)) for i in range(7, -1, -1)]
+                df_saldo_linha = pd.DataFrame({'Data': dias, 'Saldo': [0]*8})
+                df_analise = pd.DataFrame({'Data': dias[1:], 'Entrada': [0]*7, 'Saída': [0]*7})
 
         return df_bancos, df_saldo_linha, df_analise, df_hoje, col_conta
         
@@ -189,11 +197,11 @@ fig_donut.update_layout(
     showlegend=True, 
     legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=20, l=10, r=10), 
-    height=280, # Aumentei a altura para evitar corte
+    height=280,
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico 2: Evolução Diária (Linha) - Correção de lógica
+# Gráfico 2: Evolução Diária (Linha)
 fig_linha = px.line(df_saldo_linha, x='Data', y='Saldo', markers=True)
 fig_linha.update_traces(line_color='#4e73df', marker=dict(size=6, color='#4e73df'))
 fig_linha.update_layout(
@@ -203,18 +211,15 @@ fig_linha.update_layout(
     showlegend=False
 )
 
-# Gráfico 3: Análise de Fluxo (Barras Agrupadas Entrada/Saída) - Substitui Top 5
+# Gráfico 3: Análise de Entrada/Saída (Barras Agrupadas - Cálculo por saldo)
 if not df_analise.empty:
-    # Pega os últimos 7 dias
-    df_analise_plot = df_analise.tail(7)
-    
     fig_barras = go.Figure()
-    fig_barras.add_trace(go.Bar(x=df_analise_plot['Data'], y=df_analise_plot['Entrada'], name='Entradas', marker_color='#1cc88a'))
-    fig_barras.add_trace(go.Bar(x=df_analise_plot['Data'], y=df_analise_plot['Saída'].apply(abs), name='Saídas', marker_color='#e74a3b'))
+    fig_barras.add_trace(go.Bar(x=df_analise['Data'], y=df_analise['Entrada'], name='Entradas', marker_color='#1cc88a'))
+    fig_barras.add_trace(go.Bar(x=df_analise['Data'], y=df_analise['Saída'], name='Saídas', marker_color='#e74a3b'))
     
     fig_barras.update_layout(
         barmode='group',
-        margin=dict(t=10, b=10, l=5, r=5), height=210,
+        margin=dict(t=10, b=10, l=5, r=5), height=240, # Aumentei levemente a altura
         xaxis=dict(tickfont=dict(size=9), showgrid=False), 
         yaxis=dict(showticklabels=False, showgrid=False),
         legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
@@ -304,7 +309,7 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-# Nova Análise de Fluxo (Entradas x Saídas por dia)
+# Análise de Fluxo (Entradas x Saídas calculadas por diferença de saldo)
 with col_inf:
     st.markdown("<div class='section-title'>ANÁLISE ENTRADAS x SAÍDAS (ÚLTIMOS 7 DIAS)</div>", unsafe_allow_html=True)
     if fig_barras:
