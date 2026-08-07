@@ -111,49 +111,67 @@ def carregar_dados():
         hoje = datetime.now().date()
         
         # =========================================================
-        # LÓGICA DE CONSOLIDAÇÃO CORRIGIDA
+        # LÓGICA DE CONSOLIDAÇÃO CORRIGIDA (SOMA DIRETA)
         # =========================================================
-        # Para cada dia, pegamos apenas o último registro de cada banco
-        df_consolidado = df_historico.sort_values(by=[col_data, col_conta]).drop_duplicates(
-            subset=[col_data, col_conta], keep='last'
-        )
         
-        # Pega os dados de hoje
-        df_hoje = df_consolidado[df_consolidado[col_data].dt.date == hoje]
+        # 1. Somatório Simples por Data (Aqui se resolve o problema do número gigante)
+        #    Isso pega o valor de cada banco daquele dia e soma, sem se importar com o que veio antes.
+        df_grouped = df_historico.groupby('Data').agg({
+            'Saldo Final': 'sum',
+            'Entrada': 'sum',
+            'Saída': 'sum',
+            'Conta Garantida': 'sum',
+            'Disponível': 'sum',
+            'Saldo Inicial': 'sum'
+        }).reset_index().sort_values('Data')
+        
+        # 2. Pega os dados de HOJE (ou última data disponível)
+        df_hoje = df_historico[df_historico[col_data].dt.date == hoje]
         if df_hoje.empty:
-            ultima_data = df_consolidado[col_data].max()
-            df_hoje = df_consolidado[df_consolidado[col_data] == ultima_data]
+            ultima_data = df_historico[col_data].max()
+            df_hoje = df_historico[df_historico[col_data] == ultima_data]
             
         df_hoje = df_hoje.sort_values(by=col_conta)
 
-        return df_consolidado, df_hoje, col_conta
+        return df_grouped, df_hoje, col_conta
         
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame(), pd.DataFrame(), ""
 
-df_consolidado, df_hoje, col_conta = carregar_dados()
-if df_consolidado.empty: st.stop()
+df_grouped, df_hoje, col_conta = carregar_dados()
+if df_grouped.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs (AGORA CORRETOS)
+# 3. CÁLCULOS DOS KPIs (Baseado no Somatório do Dia)
 # ==============================================================================
+# IMPORTANTE: Pegamos o somatório do dia de hoje que já veio do df_grouped
+linha_hoje = df_grouped[df_grouped['Data'].dt.date == datetime.now().date()]
+if linha_hoje.empty:
+    linha_hoje = df_grouped.tail(1)
+
+# Garante que os saldos batam com o print
+saldo_total = linha_hoje['Saldo Final'].values[0]
+saldo_inicial_total = linha_hoje['Saldo Inicial'].values[0]
+entradas_dia = linha_hoje['Entrada'].values[0]
+saidas_dia = linha_hoje['Saída'].values[0]
+limites = linha_hoje['Conta Garantida'].values[0]
+saldo_disponivel = linha_hoje['Disponível'].values[0]
+
+# Cálculos de Aplicado x Disponível baseado na lista de bancos de hoje
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
-saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
-saldo_total = saldo_aplicado + saldo_disponivel
-limites = df_hoje['Conta Garantida'].sum()
-saldo_com_limites = saldo_total + limites
-entradas_dia = df_hoje['Entrada'].sum()
-saidas_dia = df_hoje['Saída'].sum()
+saldo_disponivel_detalhado = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
+
 resultado_liquido = entradas_dia + saidas_dia
+saldo_com_limites = saldo_total + limites
 pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. GERAÇÃO DOS GRÁFICOS
+# 4. GERAÇÃO DOS GRÁFICOS (Agora usando df_grouped correto)
 # ==============================================================================
 # Gráfico 1: Distribuição do Caixa (Donut)
 fig_donut = go.Figure(data=[go.Pie(
-    values=[saldo_aplicado, saldo_disponivel], 
+    values=[saldo_aplicado, saldo_disponivel_detalhado], 
     labels=['Aplicado', 'Disponível'], 
     hole=0.6, 
     marker=dict(colors=['#4e73df', '#1cc88a']),
@@ -169,20 +187,11 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Preparação para Gráfico 2 e 3 (Agrupamento por Data CONSOLIDADO)
-# Agora usamos o df_consolidado que já tem apenas 1 linha por banco por dia
-df_grouped = df_consolidado.groupby('Data').agg({
-    'Saldo Final': 'sum',
-    'Entrada': 'sum',
-    'Saída': 'sum'
-}).reset_index().sort_values('Data')
+# Gráfico 2: Evolução Diária (Linha) - Pega os últimos 7 dias (ou todos os disponíveis)
+df_plot_linha = df_grouped.tail(8).copy()
+df_plot_linha['Data_Label'] = df_plot_linha['Data'].dt.strftime('%d/%m')
 
-# Pega os últimos 8 dias
-df_plot = df_grouped.tail(8).copy()
-df_plot['Data_Label'] = df_plot['Data'].dt.strftime('%d/%m')
-
-# Gráfico 2: Evolução Diária (Linha)
-fig_linha = px.line(df_plot, x='Data_Label', y='Saldo Final', markers=True)
+fig_linha = px.line(df_plot_linha, x='Data_Label', y='Saldo Final', markers=True)
 fig_linha.update_traces(line_color='#4e73df', marker=dict(size=6, color='#4e73df'))
 fig_linha.update_layout(
     margin=dict(t=10, b=10, l=5, r=5), height=120, 
@@ -191,15 +200,17 @@ fig_linha.update_layout(
     showlegend=False
 )
 
-# Gráfico 3: Análise Entradas x Saídas (Barras por Diff)
-if len(df_plot) > 1:
-    # O cálculo é feito com base na diferença (diff) do Saldo Final CONSOLIDADO
-    df_plot['Diferença'] = df_plot['Saldo Final'].diff().fillna(0)
-    df_plot['Entrada_Calc'] = df_plot['Diferença'].apply(lambda x: x if x > 0 else 0)
-    df_plot['Saída_Calc'] = df_plot['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
+# Gráfico 3: Análise Entradas x Saídas (Barras por Diff do saldo consolidado)
+df_plot_barras = df_grouped.tail(8).copy()
+if len(df_plot_barras) > 1:
+    # O cálculo é feito com base na diferença (diff) do Saldo Final CONSOLIDADO do dia
+    df_plot_barras['Diferença'] = df_plot_barras['Saldo Final'].diff().fillna(0)
+    df_plot_barras['Entrada_Calc'] = df_plot_barras['Diferença'].apply(lambda x: x if x > 0 else 0)
+    df_plot_barras['Saída_Calc'] = df_plot_barras['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
+    df_plot_barras['Data_Label'] = df_plot_barras['Data'].dt.strftime('%d/%m')
     
     # Remove o primeiro dia e filtra apenas os últimos 7
-    df_barras = df_plot[df_plot['Diferença'] != 0].tail(7)
+    df_barras = df_plot_barras[df_plot_barras['Diferença'] != 0].tail(7)
     
     if not df_barras.empty:
         fig_barras = go.Figure()
