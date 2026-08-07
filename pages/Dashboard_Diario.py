@@ -70,8 +70,7 @@ def carregar_dados():
         # Limpeza de nomes de colunas (remove espaços extras)
         df_bancos.columns = [c.strip() for c in df_bancos.columns]
         
-        # --- CORREÇÃO 1: MAPEAMENTO CORRETO DAS COLUNAS ---
-        # Na sua planilha a coluna do nome é "Contas Bancárias" (plural e com acento)
+        # --- MAPEAMENTO DAS COLUNAS ---
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_bancos.columns else 'Conta Bancária'
         col_entrada = 'Entrada'
         col_saida = 'Saída'
@@ -82,7 +81,6 @@ def carregar_dados():
         col_pendencias = 'Pendentes de aprovação'
         col_data = 'Data'
 
-        # Verifica se as colunas essenciais existem
         if col_conta not in df_bancos.columns:
             st.error(f"Coluna '{col_conta}' não encontrada na planilha. Verifique o nome exato.")
             return pd.DataFrame(), pd.DataFrame()
@@ -94,12 +92,11 @@ def carregar_dados():
             else:
                 df_bancos[col] = 0.0
 
-        # Normaliza sinais (Entrada positiva, Saída negativa)
+        # Normaliza sinais
         df_bancos[col_saida] = df_bancos[col_saida].apply(lambda x: -abs(x) if x != 0 else 0)
         df_bancos[col_entrada] = df_bancos[col_entrada].apply(lambda x: abs(x))
 
-        # --- CORREÇÃO 2: CRIAR A COLUNA 'TIPO' DINAMICAMENTE ---
-        # Como não existe na planilha, definimos com base no nome do banco
+        # Cria Tipo dinamicamente
         def definir_tipo(nome_banco):
             nome = str(nome_banco).lower()
             if 'aplicação' in nome or 'investimentos' in nome:
@@ -108,17 +105,12 @@ def carregar_dados():
         
         df_bancos['Tipo'] = df_bancos[col_conta].apply(definir_tipo)
 
-        # --- CORREÇÃO 3: FILTRAR PELO DIA DE HOJE PARA MOVIMENTAÇÃO ---
-        # Converte a coluna Data para datetime
+        # Filtra pelo dia de hoje
         df_bancos[col_data] = pd.to_datetime(df_bancos[col_data], format='%d/%m/%Y', errors='coerce')
-        
         hoje = datetime.now().date()
-        # Pega apenas as movimentações de hoje
         df_hoje = df_bancos[df_bancos[col_data].dt.date == hoje]
         
-        # Se não tiver nada cadastrado para hoje, usa o último registro de cada banco para o saldo
         if df_hoje.empty:
-            # Pega a última data disponível
             ultima_data = df_bancos[col_data].max()
             df_hoje = df_bancos[df_bancos[col_data] == ultima_data]
 
@@ -147,9 +139,8 @@ if df_bancos.empty:
     st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs (AGORA USANDO df_hoje)
+# 3. CÁLCULOS DOS KPIs
 # ==============================================================================
-# Para saldos totais, usamos os dados do dia de hoje (ou último registro)
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_aplicado + saldo_disponivel
@@ -157,7 +148,6 @@ saldo_total = saldo_aplicado + saldo_disponivel
 limites = df_hoje['Conta Garantida'].sum()
 saldo_com_limites = saldo_total + limites
 
-# Para entradas, saídas e resultado, usamos EXATAMENTE as movimentações do dia de hoje (df_hoje)
 entradas_dia = df_hoje['Entrada'].sum()
 saidas_dia = df_hoje['Saída'].sum() 
 resultado_liquido = entradas_dia + saidas_dia
@@ -165,22 +155,20 @@ resultado_liquido = entradas_dia + saidas_dia
 pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. HEADER E KPIs
+# 4. HEADER (REFORMULADO E MAIS ENXUTO)
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
-col_data, col_title, col_transf_in, col_transf_out = st.columns([1, 2, 1, 1])
 
-with col_data:
-    st.markdown(f"**📅 {data_hoje}**<br><span style='color:gray; font-size:12px;'>Data de referência</span>", unsafe_allow_html=True)
-with col_title:
-    st.markdown("<h2 style='text-align: center; color: #1a2035; margin:0;'>PAINEL FINANCEIRO DIÁRIO</h2><p style='text-align: center; color: gray; margin:0;'>Controle Consolidado de Bancos</p>", unsafe_allow_html=True)
-with col_transf_in:
-    st.success("Transf. Entrada\n\n**R$ 0,00**")
-with col_transf_out:
-    st.error("Transf. Saída\n\n**R$ 0,00**")
+# Linha única com a Data
+st.markdown(f"""
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div><span style="font-size: 24px; font-weight: bold;">📅 {data_hoje}</span><br><span style='color:gray; font-size:12px;'>Data de referência</span></div>
+</div>
+""", unsafe_allow_html=True)
 
-st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
-
+# ==============================================================================
+# 5. CARDS DE KPI (TOP ROW)
+# ==============================================================================
 kpis = st.columns(7)
 
 def draw_kpi(col, title, value, subtitle, color_class):
@@ -203,7 +191,7 @@ draw_kpi(kpis[6], "Pendências Aprovação", abs(pendencias_aprovacao), "Valores
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 5. CORPO DO DASHBOARD
+# 6. CORPO DO DASHBOARD
 # ==============================================================================
 col_grafico1, col_meio, col_dir = st.columns([1, 1.5, 1])
 
@@ -227,7 +215,7 @@ with col_grafico1:
     else:
         st.info("Sem saldo para exibir distribuição.")
 
-# --- MEIO: Movimentação ---
+# --- MEIO: Movimentação e Evolução ---
 with col_meio:
     st.markdown("<div class='section-title'>Movimentação do Dia</div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
@@ -236,7 +224,7 @@ with col_meio:
     m3.warning(f"RESULTADO LÍQUIDO\n\n**R$ {resultado_liquido:,.2f}**")
     
     st.markdown("<div class='section-title' style='margin-top:20px;'>Evolução Diária do Saldo Total</div>", unsafe_allow_html=True)
-    if not df_historico.empty and 'Data' in df_historico.columns and 'Saldo' in df_historico.columns:
+    if not df_historico.empty and len(df_historico) > 0 and df_historico['Saldo'].sum() != 0:
         fig_linha = px.line(df_historico, x='Data', y='Saldo', markers=True)
         fig_linha.update_traces(line_color='#4e73df', marker=dict(size=8, color='#4e73df'))
         fig_linha.update_layout(margin=dict(t=10, b=0, l=0, r=0), xaxis_title=None, yaxis_title=None, height=200)
@@ -263,14 +251,13 @@ with col_dir:
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. TABELA E ALERTAS INFERIORES
+# 7. TABELA E ALERTAS INFERIORES (Tabela sem rolagem)
 # ==============================================================================
 col_tab, col_alertas = st.columns([2, 1])
 
 with col_tab:
     st.markdown("<div class='section-title'>Saldo de Todos os Bancos (Dia de Hoje)</div>", unsafe_allow_html=True)
     
-    # Cria uma cópia apenas dos dados do dia
     df_view = df_hoje.copy()
     colunas_exibir = ['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']
     
@@ -278,7 +265,8 @@ with col_tab:
     for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
         df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}" if x != 0 else "-")
     
-    st.dataframe(df_view[colunas_exibir], hide_index=True, use_container_width=True, height=350)
+    # ALTERAÇÃO AQUI: height=None faz a tabela mostrar todas as linhas sem barra de rolagem
+    st.dataframe(df_view[colunas_exibir], hide_index=True, use_container_width=True, height=None)
 
 with col_alertas:
     st.markdown("<div class='section-title'>Top 5 Bancos por Saldo Final</div>", unsafe_allow_html=True)
