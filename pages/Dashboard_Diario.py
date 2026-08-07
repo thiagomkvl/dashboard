@@ -70,21 +70,19 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS (APENAS HISTORICO_SALDOS)
+# 2. CARGA DE DADOS E LÓGICA CONSOLIDADA CORRETA
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame()
     try:
-        # Carrega APENAS a aba Historico_Saldos
         df_historico = conn.read(worksheet="Historico_Saldos", ttl=0)
         
         if df_historico.empty:
-            st.warning("A aba 'Historico_Saldos' está vazia ou não foi encontrada.")
+            st.warning("A aba 'Historico_Saldos' está vazia.")
             return pd.DataFrame()
         
-        # Limpeza das colunas
         df_historico.columns = [c.strip() for c in df_historico.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_historico.columns else 'Conta Bancária'
         col_data = 'Data'
@@ -102,36 +100,43 @@ def carregar_dados():
         if 'Entrada' in df_historico.columns:
             df_historico['Entrada'] = df_historico['Entrada'].apply(lambda x: abs(x))
         
-        # Cria Tipo dinamicamente (para gráficos)
+        # Cria Tipo dinamicamente
         def definir_tipo(nome): 
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df_historico['Tipo'] = df_historico[col_conta].apply(definir_tipo)
 
-        # Converte Data e filtra
+        # Converte Data
         df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
         
-        # Filtra pelos dados de HOJE
         hoje = datetime.now().date()
-        df_hoje = df_historico[df_historico[col_data].dt.date == hoje]
         
-        # Se não tiver dado de hoje, pega a data mais recente disponível
+        # =========================================================
+        # LÓGICA DE CONSOLIDAÇÃO CORRIGIDA
+        # =========================================================
+        # Para cada dia, pegamos apenas o último registro de cada banco
+        df_consolidado = df_historico.sort_values(by=[col_data, col_conta]).drop_duplicates(
+            subset=[col_data, col_conta], keep='last'
+        )
+        
+        # Pega os dados de hoje
+        df_hoje = df_consolidado[df_consolidado[col_data].dt.date == hoje]
         if df_hoje.empty:
-            ultima_data = df_historico[col_data].max()
-            df_hoje = df_historico[df_historico[col_data] == ultima_data]
+            ultima_data = df_consolidado[col_data].max()
+            df_hoje = df_consolidado[df_consolidado[col_data] == ultima_data]
             
         df_hoje = df_hoje.sort_values(by=col_conta)
 
-        return df_historico, df_hoje, col_conta
+        return df_consolidado, df_hoje, col_conta
         
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame(), pd.DataFrame(), ""
 
-df_historico, df_hoje, col_conta = carregar_dados()
-if df_historico.empty: st.stop()
+df_consolidado, df_hoje, col_conta = carregar_dados()
+if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs E ANÁLISE
+# 3. CÁLCULOS DOS KPIs (AGORA CORRETOS)
 # ==============================================================================
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -144,9 +149,9 @@ resultado_liquido = entradas_dia + saidas_dia
 pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. GERAÇÃO DOS GRÁFICOS (PLOTLY)
+# 4. GERAÇÃO DOS GRÁFICOS
 # ==============================================================================
-# Gráfico 1: Distribuição do Caixa (Donut) - Hoje
+# Gráfico 1: Distribuição do Caixa (Donut)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -164,14 +169,15 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Preparação para Gráfico 2 e 3 (Agrupamento por Data)
-df_grouped = df_historico.groupby('Data').agg({
+# Preparação para Gráfico 2 e 3 (Agrupamento por Data CONSOLIDADO)
+# Agora usamos o df_consolidado que já tem apenas 1 linha por banco por dia
+df_grouped = df_consolidado.groupby('Data').agg({
     'Saldo Final': 'sum',
     'Entrada': 'sum',
     'Saída': 'sum'
 }).reset_index().sort_values('Data')
 
-# Pega os últimos 8 dias para os gráficos de linha e barras
+# Pega os últimos 8 dias
 df_plot = df_grouped.tail(8).copy()
 df_plot['Data_Label'] = df_plot['Data'].dt.strftime('%d/%m')
 
@@ -185,14 +191,14 @@ fig_linha.update_layout(
     showlegend=False
 )
 
-# Gráfico 3: Análise Entradas x Saídas (Barras)
+# Gráfico 3: Análise Entradas x Saídas (Barras por Diff)
 if len(df_plot) > 1:
-    # O cálculo é feito com base na diferença (diff) do Saldo Final
+    # O cálculo é feito com base na diferença (diff) do Saldo Final CONSOLIDADO
     df_plot['Diferença'] = df_plot['Saldo Final'].diff().fillna(0)
     df_plot['Entrada_Calc'] = df_plot['Diferença'].apply(lambda x: x if x > 0 else 0)
     df_plot['Saída_Calc'] = df_plot['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
     
-    # Remove o primeiro dia (não tem dia anterior para comparar) e filtra apenas os últimos 7
+    # Remove o primeiro dia e filtra apenas os últimos 7
     df_barras = df_plot[df_plot['Diferença'] != 0].tail(7)
     
     if not df_barras.empty:
@@ -213,11 +219,10 @@ else:
     fig_barras = None
 
 # ==============================================================================
-# 5. MONTAGEM DO PAINEL HTML
+# 5. MONTAGEM DO PAINEL
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
 
-# Cabeçalho
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; margin-bottom: 5px; border-bottom: 1px solid #e3e6f0;">
     <div><b style="font-size:18px;">📅 {data_hoje}</b><br><span style="font-size:10px; color:gray;">Data de referência</span></div>
@@ -229,7 +234,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPIs
 kpi_row = st.columns(7)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", ""),
@@ -245,7 +249,6 @@ for col, icon, title, val, color in kp_data:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Corpo Principal (3 Colunas)
 c1, c2, c3 = st.columns([1.1, 1.3, 1.1])
 
 with c1:
@@ -277,10 +280,8 @@ with c3:
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-# Parte Inferior (Tabela e Análise de Fluxo)
 col_tab, col_inf = st.columns([1.4, 1])
 
-# Tabela Completa
 with col_tab:
     st.markdown("<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     df_view = df_hoje[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
@@ -294,7 +295,6 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-# Análise de Fluxo
 with col_inf:
     st.markdown("<div class='section-title'>ANÁLISE ENTRADAS x SAÍDAS (ÚLTIMOS 7 DIAS)</div>", unsafe_allow_html=True)
     if fig_barras:
