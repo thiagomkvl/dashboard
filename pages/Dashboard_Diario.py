@@ -4,8 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import re
-import base64
-import io
 
 # Tente importar a conexão
 try:
@@ -18,11 +16,15 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Diário", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (ESTILO COMPACTO) ---
+# --- CUSTOM CSS (ESTILO COMPACTO E CONTROLE DE GRÁFICOS) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
     div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
+    
+    /* Força os gráficos a não ficarem gigantes */
+    .stPlotlyChart { background-color: transparent !important; }
+    .js-plotly-plot, .plot-container { margin: 0 auto; }
     
     .box-card { background: white; border: 1px solid #e3e6f0; border-radius: 6px; padding: 10px 15px; height: 100%; }
     .kpi-card { background: white; border-radius: 6px; border-top: 4px solid #4e73df; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 10px; text-align: center; }
@@ -45,10 +47,6 @@ st.markdown("""
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; }
     
-    /* Gráficos HTML */
-    .chart-img-container { width: 100%; display: flex; justify-content: center; align-items: center; }
-    .chart-img-container img { max-width: 100%; height: auto; }
-
     /* Alertas */
     .alert-red { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 8px 12px; border-radius: 4px; font-weight: bold; font-size: 12px; }
     .mov-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; border-bottom: 1px solid #f1f1f1; }
@@ -75,11 +73,6 @@ def limpa_moeda_br(valor_str):
 def formatar_moeda(valor):
     if valor == 0: return "-"
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-
-def fig_to_base64(fig):
-    """Converte figura do plotly para base64 para exibição estática perfeita"""
-    img_bytes = fig.to_image(format="png", engine="kaleido")
-    return base64.b64encode(img_bytes).decode("utf-8")
 
 # ==============================================================================
 # 2. CARGA DE DADOS
@@ -151,7 +144,7 @@ resultado_liquido = entradas_dia + saidas_dia
 pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. GERAÇÃO DOS GRÁFICOS ESTÁTICOS (PLOTLY -> BASE64)
+# 4. GERAÇÃO DOS GRÁFICOS (PLOTLY - NATIVO STREAMLIT)
 # ==============================================================================
 # Gráfico 1: Distribuição do Caixa (Donut) - Usado na Esquerda
 fig_donut = go.Figure(data=[go.Pie(
@@ -166,37 +159,34 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, 
     legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=5, b=5, l=5, r=5), 
-    height=180,
+    margin=dict(t=10, b=20, l=10, r=10), 
+    height=220,
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
-img_donut = fig_to_base64(fig_donut)
 
 # Gráfico 2: Evolução Diária (Linha) - Meio
 fig_linha = px.line(df_historico, x='Data', y='Saldo', markers=True)
 fig_linha.update_traces(line_color='#4e73df', marker=dict(size=6, color='#4e73df'))
 fig_linha.update_layout(
-    margin=dict(t=5, b=5, l=5, r=5), height=120, 
+    margin=dict(t=10, b=10, l=5, r=5), height=130, 
     xaxis=dict(tickfont=dict(size=9), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     showlegend=False
 )
-img_linha = fig_to_base64(fig_linha)
 
 # Gráfico 3: Top 5 Bancos (Barras) - Inferior Direita
 top5 = df_hoje.nlargest(5, 'Saldo Final')[[col_conta, 'Saldo Final']]
 if not top5.empty and top5['Saldo Final'].sum() > 0:
     fig_bar = px.bar(top5, x='Saldo Final', y=col_conta, orientation='h')
-    fig_bar.update_traces(marker_color='#4e73df', width=0.5)
+    fig_bar.update_traces(marker_color='#4e73df', width=0.6)
     fig_bar.update_layout(
-        margin=dict(t=5, b=5, l=5, r=5), height=180, 
+        margin=dict(t=10, b=10, l=5, r=5), height=210, 
         xaxis=dict(showticklabels=False, showgrid=False), 
         yaxis=dict(tickfont=dict(size=10), showgrid=False), 
         showlegend=False
     )
-    img_bar = fig_to_base64(fig_bar)
 else:
-    img_bar = None
+    fig_bar = None
 
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL HTML
@@ -218,7 +208,7 @@ st.markdown(f"""
 # KPIs
 kpi_row = st.columns(7)
 kp_data = [
-    (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "green"),
+    (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", ""),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "green"),
     (kpi_row[2], "📊", "SALDO APLICADO", f"R$ {saldo_aplicado:,.2f}", "purple"),
     (kpi_row[3], "🛡️", "SALDO + LIMITES", f"R$ {saldo_com_limites:,.2f}", "cyan"),
@@ -236,7 +226,7 @@ c1, c2, c3 = st.columns([1.1, 1.2, 1.1])
 
 with c1:
     st.markdown("<div class='section-title'>DISTRIBUIÇÃO DO CAIXA</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='box-card' style='padding:5px;'><div class='chart-img-container'><img src='data:image/png;base64,{img_donut}'/></div></div>", unsafe_allow_html=True)
+    st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
     st.markdown("<div class='section-title'>MOVIMENTAÇÃO DO DIA</div>", unsafe_allow_html=True)
@@ -246,7 +236,7 @@ with c2:
     m3.markdown(f"<div style='background:#fff3cd; border-radius:4px; padding:6px; text-align:center;'><span class='section-title-inline'>RESULTADO LÍQUIDO</span><br><b>R$ {resultado_liquido:,.2f}</b></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='box-card' style='padding:5px;'><div class='chart-img-container'><img src='data:image/png;base64,{img_linha}'/></div></div>", unsafe_allow_html=True)
+    st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
     st.markdown("<div class='section-title'>LIQUIDEZ BANCÁRIA</div>", unsafe_allow_html=True)
@@ -282,13 +272,12 @@ with col_tab:
 
 # Inferior Direita (TOP 5 e ALERTAS)
 with col_inf:
-    # Dividimos a coluna direita em duas para TOP 5 e ALERTAS
     g1, g2 = st.columns([1.2, 1])
     
     with g1:
         st.markdown("<div class='section-title'>TOP 5 BANCOS POR SALDO FINAL</div>", unsafe_allow_html=True)
-        if img_bar:
-            st.markdown(f"<div class='box-card' style='padding:5px;'><div class='chart-img-container'><img src='data:image/png;base64,{img_bar}'/></div></div>", unsafe_allow_html=True)
+        if fig_bar:
+            st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
         else:
             st.markdown("<div class='box-card' style='text-align:center; padding:20px; color:gray;'>Sem dados para rankear.</div>", unsafe_allow_html=True)
 
