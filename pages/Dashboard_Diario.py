@@ -235,8 +235,6 @@ with col_meio:
     
     st.markdown("<div class='section-title' style='margin-top:20px;'>Evolução Diária do Saldo Total</div>", unsafe_allow_html=True)
     
-    # --- CORREÇÃO DO ERRO AQUI ---
-    # Verifica se o dataframe não está vazio, se a coluna 'Saldo' realmente existe, e se a soma é diferente de 0.
     if not df_historico.empty and 'Saldo' in df_historico.columns and df_historico['Saldo'].sum() != 0:
         fig_linha = px.line(df_historico, x='Data', y='Saldo', markers=True)
         fig_linha.update_traces(line_color='#4e73df', marker=dict(size=8, color='#4e73df'))
@@ -278,8 +276,9 @@ with col_tab:
     for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
         df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}" if x != 0 else "-")
     
-    # ALTERAÇÃO AQUI: height=None faz a tabela mostrar todas as linhas sem barra de rolagem
-    st.dataframe(df_view[colunas_exibir], hide_index=True, use_container_width=True, height=None)
+    # CORREÇÃO DO ERRO DE ALTURA AQUI:
+    # Usamos height="auto" para mostrar todas as linhas sem barra de rolagem
+    st.dataframe(df_view[colunas_exibir], hide_index=True, use_container_width=True, height="auto")
 
 with col_alertas:
     st.markdown("<div class='section-title'>Top 5 Bancos por Saldo Final</div>", unsafe_allow_html=True)
