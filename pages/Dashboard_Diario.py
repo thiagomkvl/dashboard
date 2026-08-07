@@ -57,7 +57,7 @@ st.markdown("""
 # 1. FUNÇÕES AUXILIARES
 # ==============================================================================
 def limpa_moeda_br(valor_str):
-    if pd.isna(valor_str): return 0.0
+    if pd.isna(valor_str) or str(valor_str).strip() == "": return 0.0
     valor_str = str(valor_str).strip()
     if valor_str in ["", "-", ".", ","]: return 0.0
     valor_str = re.sub(r'[R$\s]', '', valor_str)
@@ -70,114 +70,68 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS E TRATAMENTO DE HISTÓRICO
+# 2. CARGA DE DADOS (APENAS HISTORICO_SALDOS)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame()
+    if conn is None: return pd.DataFrame()
     try:
-        # Carrega as abas
-        df_bancos = conn.read(worksheet="Saldos_Bancos", ttl=0)
+        # Carrega APENAS a aba Historico_Saldos
         df_historico = conn.read(worksheet="Historico_Saldos", ttl=0)
         
-        if df_bancos.empty: return pd.DataFrame(), pd.DataFrame()
+        if df_historico.empty:
+            st.warning("A aba 'Historico_Saldos' está vazia ou não foi encontrada.")
+            return pd.DataFrame()
         
         # Limpeza das colunas
-        df_bancos.columns = [c.strip() for c in df_bancos.columns]
-        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_bancos.columns else 'Conta Bancária'
+        df_historico.columns = [c.strip() for c in df_historico.columns]
+        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_historico.columns else 'Conta Bancária'
         col_data = 'Data'
         
+        # Converte valores monetários para float
         for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível', 'Pendentes de aprovação']:
-            if col in df_bancos.columns: df_bancos[col] = df_bancos[col].apply(limpa_moeda_br)
-            else: df_bancos[col] = 0.0
+            if col in df_historico.columns: 
+                df_historico[col] = df_historico[col].apply(limpa_moeda_br)
+            else: 
+                df_historico[col] = 0.0
 
-        df_bancos['Saída'] = df_bancos['Saída'].apply(lambda x: -abs(x) if x != 0 else 0)
-        df_bancos['Entrada'] = df_bancos['Entrada'].apply(lambda x: abs(x))
+        # Normaliza sinais
+        if 'Saída' in df_historico.columns:
+            df_historico['Saída'] = df_historico['Saída'].apply(lambda x: -abs(x) if x != 0 else 0)
+        if 'Entrada' in df_historico.columns:
+            df_historico['Entrada'] = df_historico['Entrada'].apply(lambda x: abs(x))
         
-        def definir_tipo(nome): return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
-        df_bancos['Tipo'] = df_bancos[col_conta].apply(definir_tipo)
+        # Cria Tipo dinamicamente (para gráficos)
+        def definir_tipo(nome): 
+            return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
+        df_historico['Tipo'] = df_historico[col_conta].apply(definir_tipo)
 
+        # Converte Data e filtra
+        df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
+        
         # Filtra pelos dados de HOJE
-        df_bancos[col_data] = pd.to_datetime(df_bancos[col_data], format='%d/%m/%Y', errors='coerce')
         hoje = datetime.now().date()
-        df_hoje = df_bancos[df_bancos[col_data].dt.date == hoje]
+        df_hoje = df_historico[df_historico[col_data].dt.date == hoje]
+        
+        # Se não tiver dado de hoje, pega a data mais recente disponível
         if df_hoje.empty:
-            ultima_data = df_bancos[col_data].max()
-            df_hoje = df_bancos[df_bancos[col_data] == ultima_data]
+            ultima_data = df_historico[col_data].max()
+            df_hoje = df_historico[df_historico[col_data] == ultima_data]
+            
         df_hoje = df_hoje.sort_values(by=col_conta)
 
-        # =========================================================
-        # TRATAMENTO DO HISTÓRICO E ANÁLISE
-        # =========================================================
-        df_saldo_linha = pd.DataFrame()
-        df_analise = pd.DataFrame()
-        
-        if not df_historico.empty:
-            df_historico.columns = [c.strip() for c in df_historico.columns]
-            
-            # Tenta achar a coluna de saldo no histórico
-            col_saldo_hist = None
-            for col in df_historico.columns:
-                if 'saldo' in col.lower():
-                    col_saldo_hist = col
-                    break
-            
-            if col_saldo_hist:
-                # Converte Data e Saldo para tipos corretos
-                df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
-                df_historico[col_saldo_hist] = df_historico[col_saldo_hist].apply(limpa_moeda_br)
-                
-                # Pega os últimos 8 dias para análise
-                datas_unicas = sorted(df_historico[col_data].unique(), reverse=True)[:8]
-                df_analise_raw = pd.DataFrame()
-                
-                for data in datas_unicas:
-                    df_dia = df_historico[df_historico[col_data] == data]
-                    saldo_total_dia = df_dia[col_saldo_hist].sum()
-                    df_analise_raw = pd.concat([df_analise_raw, pd.DataFrame({'Data': [data], 'Saldo': [saldo_total_dia]})])
-                
-                df_analise_raw = df_analise_raw.sort_values('Data')
-                
-                # Cálculo de Entrada e Saída baseado na diferença de saldo (diff)
-                df_analise_raw['Diferença'] = df_analise_raw['Saldo'].diff().fillna(0)
-                df_analise_raw['Entrada'] = df_analise_raw['Diferença'].apply(lambda x: x if x > 0 else 0)
-                df_analise_raw['Saída'] = df_analise_raw['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
-                
-                # Remove o primeiro dia, pois não tem diferença com o anterior
-                if len(df_analise_raw) > 1:
-                    df_analise = df_analise_raw[df_analise_raw['Data'] != df_analise_raw['Data'].min()].copy()
-                    
-                    # Formata as datas para o gráfico (ex: "05/08", "06/08")
-                    df_analise['Data_Label'] = df_analise['Data'].dt.strftime('%d/%m')
-                    df_analise = df_analise[['Data_Label', 'Entrada', 'Saída']]
-                    df_analise = df_analise.rename(columns={'Data_Label': 'Data'})
-                else:
-                    df_analise = pd.DataFrame(columns=['Data', 'Entrada', 'Saída'])
-
-                # Cria o DataFrame para o gráfico de Linha (também formatando a data)
-                df_saldo_linha = df_analise_raw[['Data', 'Saldo']].copy()
-                df_saldo_linha['Data_Label'] = df_saldo_linha['Data'].dt.strftime('%d/%m')
-                
-            else:
-                # Caso não tenha coluna de saldo, gera mock vazio
-                hoje = datetime.now()
-                dias = [(hoje - timedelta(days=i)) for i in range(7, -1, -1)]
-                df_saldo_linha = pd.DataFrame({'Data': dias, 'Saldo': [0]*8})
-                df_saldo_linha['Data_Label'] = df_saldo_linha['Data'].dt.strftime('%d/%m')
-                df_analise = pd.DataFrame(columns=['Data', 'Entrada', 'Saída'])
-
-        return df_bancos, df_saldo_linha, df_analise, df_hoje, col_conta
+        return df_historico, df_hoje, col_conta
         
     except Exception as e:
-        st.error(f"Erro: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+        st.error(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame(), pd.DataFrame(), ""
 
-df_bancos, df_saldo_linha, df_analise, df_hoje, col_conta = carregar_dados()
-if df_bancos.empty: st.stop()
+df_historico, df_hoje, col_conta = carregar_dados()
+if df_historico.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs
+# 3. CÁLCULOS DOS KPIs E ANÁLISE
 # ==============================================================================
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -192,7 +146,7 @@ pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 # ==============================================================================
 # 4. GERAÇÃO DOS GRÁFICOS (PLOTLY)
 # ==============================================================================
-# Gráfico 1: Distribuição do Caixa (Donut) - Ajustado para evitar corte
+# Gráfico 1: Distribuição do Caixa (Donut) - Hoje
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -206,12 +160,23 @@ fig_donut.update_layout(
     showlegend=True, 
     legend=dict(orientation="h", yanchor="bottom", y=0, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=0, b=0, l=0, r=0), 
-    height=230, # Aumentei para evitar corte inferior
+    height=230,
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico 2: Evolução Diária (Linha) - Utilizando rótulos de data limpos
-fig_linha = px.line(df_saldo_linha, x='Data_Label', y='Saldo', markers=True)
+# Preparação para Gráfico 2 e 3 (Agrupamento por Data)
+df_grouped = df_historico.groupby('Data').agg({
+    'Saldo Final': 'sum',
+    'Entrada': 'sum',
+    'Saída': 'sum'
+}).reset_index().sort_values('Data')
+
+# Pega os últimos 8 dias para os gráficos de linha e barras
+df_plot = df_grouped.tail(8).copy()
+df_plot['Data_Label'] = df_plot['Data'].dt.strftime('%d/%m')
+
+# Gráfico 2: Evolução Diária (Linha)
+fig_linha = px.line(df_plot, x='Data_Label', y='Saldo Final', markers=True)
 fig_linha.update_traces(line_color='#4e73df', marker=dict(size=6, color='#4e73df'))
 fig_linha.update_layout(
     margin=dict(t=10, b=10, l=5, r=5), height=120, 
@@ -220,19 +185,30 @@ fig_linha.update_layout(
     showlegend=False
 )
 
-# Gráfico 3: Análise de Entrada/Saída (Barras - Agora utilizando dados reais)
-if not df_analise.empty:
-    fig_barras = go.Figure()
-    fig_barras.add_trace(go.Bar(x=df_analise['Data'], y=df_analise['Entrada'], name='Entradas', marker_color='#1cc88a'))
-    fig_barras.add_trace(go.Bar(x=df_analise['Data'], y=df_analise['Saída'], name='Saídas', marker_color='#e74a3b'))
+# Gráfico 3: Análise Entradas x Saídas (Barras)
+if len(df_plot) > 1:
+    # O cálculo é feito com base na diferença (diff) do Saldo Final
+    df_plot['Diferença'] = df_plot['Saldo Final'].diff().fillna(0)
+    df_plot['Entrada_Calc'] = df_plot['Diferença'].apply(lambda x: x if x > 0 else 0)
+    df_plot['Saída_Calc'] = df_plot['Diferença'].apply(lambda x: abs(x) if x < 0 else 0)
     
-    fig_barras.update_layout(
-        barmode='group',
-        margin=dict(t=10, b=10, l=5, r=5), height=220,
-        xaxis=dict(tickfont=dict(size=9), showgrid=False), 
-        yaxis=dict(showticklabels=False, showgrid=False),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
-    )
+    # Remove o primeiro dia (não tem dia anterior para comparar) e filtra apenas os últimos 7
+    df_barras = df_plot[df_plot['Diferença'] != 0].tail(7)
+    
+    if not df_barras.empty:
+        fig_barras = go.Figure()
+        fig_barras.add_trace(go.Bar(x=df_barras['Data_Label'], y=df_barras['Entrada_Calc'], name='Entradas', marker_color='#1cc88a'))
+        fig_barras.add_trace(go.Bar(x=df_barras['Data_Label'], y=df_barras['Saída_Calc'], name='Saídas', marker_color='#e74a3b'))
+        
+        fig_barras.update_layout(
+            barmode='group',
+            margin=dict(t=10, b=10, l=5, r=5), height=220,
+            xaxis=dict(tickfont=dict(size=9), showgrid=False), 
+            yaxis=dict(showticklabels=False, showgrid=False),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
+        )
+    else:
+        fig_barras = None
 else:
     fig_barras = None
 
