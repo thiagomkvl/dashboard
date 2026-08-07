@@ -114,11 +114,21 @@ def carregar_dados():
             ultima_data = df_bancos[col_data].max()
             df_hoje = df_bancos[df_bancos[col_data] == ultima_data]
 
-        # --- TRATAMENTO DO HISTÓRICO ---
+        # --- TRATAMENTO DO HISTÓRICO (COM PROTEÇÃO CONTRA KEYERROR) ---
         if not df_historico.empty:
             df_historico.columns = [c.strip() for c in df_historico.columns]
-            if 'Saldo' in df_historico.columns:
+            
+            # Renomeia qualquer variação do nome da coluna 'Saldo' para um padrão seguro
+            col_saldo_historico = None
+            for col in df_historico.columns:
+                if 'saldo' in col.lower():
+                    col_saldo_historico = col
+                    break
+            
+            if col_saldo_historico:
+                df_historico.rename(columns={col_saldo_historico: 'Saldo'}, inplace=True)
                 df_historico['Saldo'] = df_historico['Saldo'].apply(limpa_moeda_br)
+            
             if 'Data' in df_historico.columns:
                 df_historico = df_historico.sort_values('Data')
         else:
@@ -224,7 +234,10 @@ with col_meio:
     m3.warning(f"RESULTADO LÍQUIDO\n\n**R$ {resultado_liquido:,.2f}**")
     
     st.markdown("<div class='section-title' style='margin-top:20px;'>Evolução Diária do Saldo Total</div>", unsafe_allow_html=True)
-    if not df_historico.empty and len(df_historico) > 0 and df_historico['Saldo'].sum() != 0:
+    
+    # --- CORREÇÃO DO ERRO AQUI ---
+    # Verifica se o dataframe não está vazio, se a coluna 'Saldo' realmente existe, e se a soma é diferente de 0.
+    if not df_historico.empty and 'Saldo' in df_historico.columns and df_historico['Saldo'].sum() != 0:
         fig_linha = px.line(df_historico, x='Data', y='Saldo', markers=True)
         fig_linha.update_traces(line_color='#4e73df', marker=dict(size=8, color='#4e73df'))
         fig_linha.update_layout(margin=dict(t=10, b=0, l=0, r=0), xaxis_title=None, yaxis_title=None, height=200)
@@ -251,7 +264,7 @@ with col_dir:
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA E ALERTAS INFERIORES (Tabela sem rolagem)
+# 7. TABELA E ALERTAS INFERIORES
 # ==============================================================================
 col_tab, col_alertas = st.columns([2, 1])
 
