@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import numpy as np
 
 # Tente importar a conexão
 try:
@@ -16,7 +15,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Diário", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (NOVAS CORES E ALINHAMENTO) ---
+# --- CUSTOM CSS (FONTE MAIOR E NEGRITO NA TABELA) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -31,25 +30,25 @@ st.markdown("""
     .kpi-card.cyan { border-top-color: #36b9cc; }
     .kpi-card.red { border-top-color: #e74a3b; }
     .kpi-card.orange { border-top-color: #f6c23e; }
-    .kpi-title { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
+    .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; }
     .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
     
     .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela com cores e alinhamentos melhorados */
-    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 11px; width: 100%; }
+    /* Tabela com Fonte Maior e Destacada */
+    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 13px; width: 100%; }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
-    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e6f0; }
-    .tabela-financeira td { padding: 5px 8px; border-bottom: 1px solid #f6f6f6; }
+    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e6f0; }
+    .tabela-financeira td { padding: 8px 10px; border-bottom: 1px solid #f6f6f6; font-weight: 500; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     
-    /* Colunas de valores alinhadas à direita */
-    .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; }
-    /* Coluna do Saldo Final com destaque em azul claro */
-    .tabela-financeira .col-destaque { background-color: #eef2ff; font-weight: bold; color: #2c3e50; }
+    /* Colunas de valores alinhadas à direita e em negrito */
+    .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; }
+    /* Coluna do Saldo Final com destaque em azul escuro */
+    .tabela-financeira .col-destaque { background-color: #eef2ff; color: #1a3b7c; font-weight: 900; }
     
-    .ind-item { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+    .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     .box-total-blue { background: #f8f9fc; border: 1px solid #4e73df; border-radius: 4px; padding: 6px; text-align: center; margin: 4px 0; }
     .box-total-grey { background: #e2e6ea; border: 1px solid #d1d3e2; border-radius: 4px; padding: 6px; text-align: center; margin: 4px 0; }
     </style>
@@ -71,7 +70,7 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS (COM LEITURA DE LIMITE GETNET)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -111,24 +110,17 @@ def carregar_dados():
         df_hoje = df_hoje.sort_values(by=col_conta)
 
         # =========================================
-        # GERAÇÃO DE MOCK PARA OS GRÁFICOS
+        # GERAÇÃO DE MOCK PARA O GRÁFICO DE LINHA
         # =========================================
         saldo_total_hoje = df_hoje['Saldo Final'].sum()
         
         dados_graficos = []
         for i in range(7, -1, -1):
             data = ultima_data - timedelta(days=i)
-            variacao = saldo_total_hoje * 0.01 * (i - 3) 
+            # Cria uma variação fictícia para os últimos 7 dias
+            variacao = saldo_total_hoje * 0.005 * (i - 3) 
             saldo_mock = saldo_total_hoje + variacao
-            entrada_mock = max(0, (saldo_mock - (saldo_total_hoje - 50000)) * 0.5)
-            saida_mock = max(0, ((saldo_total_hoje - 50000) - saldo_mock) * 0.5)
-            
-            dados_graficos.append({
-                'Data': data, 
-                'Saldo': saldo_mock, 
-                'Entrada': abs(entrada_mock), 
-                'Saída': abs(saida_mock)
-            })
+            dados_graficos.append({'Data': data, 'Saldo': saldo_mock})
         
         df_graficos = pd.DataFrame(dados_graficos)
         df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
@@ -143,16 +135,18 @@ df_hoje, df_graficos, col_conta = carregar_dados()
 if df_hoje.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs
+# 3. CÁLCULOS DOS KPIs (NOVA ORDEM E MATEMÁTICA)
 # ==============================================================================
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
-saldo_total = saldo_aplicado + saldo_disponivel
 
 # Cálculo dos Limites Totais (GetNet + Contas Garantidas)
 limite_getnet = df_hoje[df_hoje['Tipo'] == 'Limite']['Disponível'].sum()
 limites_garantidos = df_hoje['Conta Garantida'].sum()
 limites_totais = limite_getnet + limites_garantidos
+
+# Sua regra: Saldo Total = Saldo Disponível + Limites + Aplicações
+saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 
 saldo_com_limites = saldo_total + limites_totais
 entradas_dia = df_hoje['Entrada'].sum()
@@ -180,54 +174,27 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico 2: Evolução do Saldo (Linha com %)
+# Gráfico 2: Evolução do Saldo (Linha com % MAIS PRECISA)
 fig_linha = go.Figure()
+# Adiciona a linha
 fig_linha.add_trace(go.Scatter(
     x=df_graficos['Data_Label'], 
     y=df_graficos['Saldo'], 
     mode='lines+markers+text',
     line=dict(color='#4e73df', width=2),
     marker=dict(size=8, color='#4e73df'),
-    text=[f"{((df_graficos['Saldo'].iloc[i] - df_graficos['Saldo'].iloc[i-1])/df_graficos['Saldo'].iloc[i-1])*100:.1f}%" if i > 0 else "" for i in range(len(df_graficos))],
+    # Texto com 2 casas decimais (0.85%) e um pequeno ajuste para não estourar
+    text=[f"{((df_graficos['Saldo'].iloc[i] - df_graficos['Saldo'].iloc[i-1])/df_graficos['Saldo'].iloc[i-1])*100:.2f}%" if i > 0 else "" for i in range(len(df_graficos))],
     textposition="top center",
     textfont=dict(size=10, color="#333"),
     showlegend=False
 ))
+# Aumenta a margem superior para o texto não ser cortado
 fig_linha.update_layout(
-    margin=dict(t=20, b=10, l=5, r=5), height=130, 
+    margin=dict(t=30, b=10, l=5, r=5), height=130, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False)
 )
-
-# Gráfico 3: Análise de Saídas
-if len(df_graficos) > 1:
-    df_saidas = df_graficos[['Data_Label', 'Saída']].tail(7).copy()
-    fig_saidas = px.bar(df_saidas, x='Data_Label', y='Saída')
-    fig_saidas.update_traces(marker_color='#e74a3b', width=0.6)
-    fig_saidas.update_layout(
-        margin=dict(t=10, b=10, l=5, r=5), height=100,
-        xaxis=dict(tickfont=dict(size=9), showgrid=False), 
-        yaxis=dict(showticklabels=False, showgrid=False),
-        showlegend=False,
-        title=dict(text="<b>Saídas</b>", font=dict(size=11, color="#e74a3b"), x=0.5)
-    )
-else:
-    fig_saidas = None
-
-# Gráfico 4: Análise de Entradas
-if len(df_graficos) > 1:
-    df_entradas = df_graficos[['Data_Label', 'Entrada']].tail(7).copy()
-    fig_entradas = px.bar(df_entradas, x='Data_Label', y='Entrada')
-    fig_entradas.update_traces(marker_color='#1cc88a', width=0.6)
-    fig_entradas.update_layout(
-        margin=dict(t=10, b=10, l=5, r=5), height=100,
-        xaxis=dict(tickfont=dict(size=9), showgrid=False), 
-        yaxis=dict(showticklabels=False, showgrid=False),
-        showlegend=False,
-        title=dict(text="<b>Entradas</b>", font=dict(size=11, color="#1cc88a"), x=0.5)
-    )
-else:
-    fig_entradas = None
 
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL
@@ -245,16 +212,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPI's (7 Colunas - Substituindo Pendências por Limites)
-kpi_row = st.columns(7)
+# KPI's REFORMULADOS (5 Blocos: Total, Disponível, Limites, Aplicações, Saldo+Limites)
+kpi_row = st.columns(5)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", ""),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "green"),
-    (kpi_row[2], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "cyan"), # NOVO KPI
-    (kpi_row[3], "📊", "SALDO APLICADO", f"R$ {saldo_aplicado:,.2f}", "purple"),
-    (kpi_row[4], "⬇️", "ENTRADAS DO DIA", f"R$ {entradas_dia:,.2f}", "green"),
-    (kpi_row[5], "⬆️", "SAÍDAS DO DIA", f"R$ {abs(saidas_dia):,.2f}", "red"),
-    (kpi_row[6], "💎", "SALDO + LIMITES", f"R$ {saldo_com_limites:,.2f}", "orange")
+    (kpi_row[2], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "cyan"),
+    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "purple"),
+    (kpi_row[4], "💎", "SALDO + LIMITES", f"R$ {saldo_com_limites:,.2f}", "orange")
 ]
 for col, icon, title, val, color in kp_data:
     col.markdown(f"<div class='kpi-card {color}'><div style='font-size:12px;'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
@@ -301,8 +266,7 @@ with col_tab:
     
     html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        # Adiciona a classe col-destaque na célula do Saldo Final
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:10px;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
@@ -310,16 +274,6 @@ with col_tab:
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
 with col_inf:
-    st.markdown("<div class='section-title'>ANÁLISE DE SAÍDAS</div>", unsafe_allow_html=True)
-    if fig_saidas:
-        st.plotly_chart(fig_saidas, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.markdown("<div class='box-card' style='text-align:center; padding:10px; color:gray; font-size:11px;'>Sem dados suficientes.</div>", unsafe_allow_html=True)
-        
-    st.markdown("<div class='section-title'>ANÁLISE DE ENTRADAS</div>", unsafe_allow_html=True)
-    if fig_entradas:
-        st.plotly_chart(fig_entradas, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.markdown("<div class='box-card' style='text-align:center; padding:10px; color:gray; font-size:11px;'>Sem dados suficientes.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='box-card' style='text-align:center; padding:40px; color:gray; font-size:13px; border: 1px dashed #ccc;'>Espaço reservado para futuras análises <br> (Gráficos de Saída/Entrada removidos)</div>", unsafe_allow_html=True)
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
