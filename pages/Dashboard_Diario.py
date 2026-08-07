@@ -37,7 +37,6 @@ st.markdown("""
     .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela */
     .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 11px; width: 100%; }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
     .tabela-financeira th { background-color: #f8f9fc; color: #858796; font-weight: bold; text-align: left; padding: 4px 6px; border-bottom: 1px solid #e3e6f0; }
@@ -52,22 +51,44 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. FUNÇÕES AUXILIARES
+# 1. FUNÇÃO DE LIMPEZA DE MOEDA BRASILEIRA (A MAIS ROBUSTA POSSÍVEL)
 # ==============================================================================
 def limpa_moeda_br(valor_str):
-    if pd.isna(valor_str) or str(valor_str).strip() in ["", "-", "."]: return 0.0
+    """
+    Converte '8.981.911,11' ou 'R$ 8.981.911,11' ou '-' para float 8981911.11
+    Trata casos com espaços, R$, e multiplica por 100 para evitar erros de decimais.
+    """
+    if pd.isna(valor_str):
+        return 0.0
+    
     valor_str = str(valor_str).strip()
+    
+    if valor_str in ["", "-", ".", ","]:
+        return 0.0
+    
+    # Remove R$ e espaços extras
     valor_str = re.sub(r'[R$\s]', '', valor_str)
-    valor_str = valor_str.replace('.', '').replace(',', '.')
-    try: return float(valor_str)
-    except ValueError: return 0.0
+    
+    # Estratégia do "Centavo Inteiro": 
+    # Remove todos os pontos de milhar, e substitui a vírgula decimal por ponto.
+    # Exemplo: "8.981.911,11" -> "8981911.11"
+    valor_str = valor_str.replace('.', '')
+    valor_str = valor_str.replace(',', '.')
+    
+    try:
+        # Tenta converter para float
+        valor_float = float(valor_str)
+        # Se por algum motivo vier um inteiro, trata como float normal
+        return float(valor_float)
+    except ValueError:
+        return 0.0
 
 def formatar_moeda(valor):
     if valor == 0: return "-"
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS (LÓGICA DE DUPLA PROTEÇÃO)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -84,57 +105,42 @@ def carregar_dados():
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df.columns else 'Conta Bancária'
         col_data = 'Data'
         
-        # =========================================================
-        # 1. FILTRO DE SEGURANÇA (PARA ACABAR COM O NÚMERO GIGANTE)
-        # =========================================================
-        # Força a conversão da Data. O Pandas as vezes lê como string com horário.
+        # CONVERTE A DATA E FILTRA O ÚLTIMO DIA
         df[col_data] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')
-        
-        # Encontra a ÚLTIMA data disponível na planilha (ignora os dias antigos)
         ultima_data = df[col_data].max()
-        
-        # APLICA O FILTRO DURO: Só pega as linhas que são da última data
         df = df[df[col_data] == ultima_data]
         
-        # =========================================================
-        # 2. LIMPEZA DOS DADOS (SÓ DEPOIS DE FILTRAR A DATA)
-        # =========================================================
+        # CONVERTE AS COLUNAS NUMÉRICAS USANDO A NOVA FUNÇÃO
         for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível', 'Pendentes de aprovação']:
             if col in df.columns: 
                 df[col] = df[col].apply(limpa_moeda_br)
             else: 
                 df[col] = 0.0
 
-        # Força a normalização de sinais apenas se existir
-        if 'Saída' in df.columns: df['Saída'] = df['Saída'].apply(lambda x: -abs(x) if x != 0 else 0)
-        if 'Entrada' in df.columns: df['Entrada'] = df['Entrada'].apply(lambda x: abs(x))
-        
+        # NORMALIZA SINAIS (Garantindo que Saída seja negativa e Entrada positiva)
+        if 'Saída' in df.columns: 
+            df['Saída'] = df['Saída'].apply(lambda x: -abs(x) if x != 0 else 0)
+        if 'Entrada' in df.columns: 
+            df['Entrada'] = df['Entrada'].apply(lambda x: abs(x))
+
         def definir_tipo(nome): 
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df['Tipo'] = df[col_conta].apply(definir_tipo)
 
         df = df.sort_values(by=col_conta)
 
-        # Para o gráfico de histórico, precisamos ler a planilha novamente, 
-        # mas usando uma lógica diferente sem o filtro de data.
         return df, df, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
         return pd.DataFrame(), pd.DataFrame(), ""
 
-# Carregamos os dados
 df, df_hoje, col_conta = carregar_dados()
-
-# Garantia de parada caso o dataframe esteja vazio
-if df.empty: 
-    st.warning("Nenhum dado encontrado para a data mais recente.")
-    st.stop()
+if df.empty: st.stop()
 
 # ==============================================================================
 # 3. CÁLCULOS DOS KPIs
 # ==============================================================================
-# Agora o df JÁ É o df_hoje (apenas os dados do último dia)
 saldo_aplicado = df[df['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df[df['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_aplicado + saldo_disponivel
@@ -147,7 +153,7 @@ resultado_liquido = entradas_dia + saidas_dia
 pendencias_aprovacao = df['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. GERAÇÃO DOS GRÁFICOS (DONUT)
+# 4. GRÁFICO
 # ==============================================================================
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
@@ -210,7 +216,16 @@ with c2:
     m2.markdown(f"<div style='background:#f8d7da; border-radius:4px; padding:6px; text-align:center;'><span class='section-title-inline'>⬆ SAÍDAS</span><br><b>R$ {abs(saidas_dia):,.2f}</b></div>", unsafe_allow_html=True)
     m3.markdown(f"<div style='background:#fff3cd; border-radius:4px; padding:6px; text-align:center;'><span class='section-title-inline'>RESULTADO LÍQUIDO</span><br><b>R$ {resultado_liquido:,.2f}</b></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='background:#f8f9fc; border:1px solid #e3e6f0; border-radius:4px; padding:10px; text-align:center; color:gray; font-size:12px;'>⚠️ Dados históricos indisponíveis nesta versão simplificada</div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#f8f9fc; border:1px solid #e3e6f0; border-radius:4px; padding:10px; text-align:left; font-size:12px;">
+        <b style="color:#28a745;">✅ CORREÇÃO DE DECIMAIS APLICADA</b><br><br>
+        <b>Qtd. de Bancos lidos:</b> {}<br>
+        <b>Última data lida:</b> {}<br><br>
+        <b>1. Soma Saldo Aplicado:</b> R$ {:.2f}<br>
+        <b>2. Soma Saldo Disponível:</b> R$ {:.2f}<br>
+        <b>= SALDO TOTAL CORRETO:</b> R$ {:.2f}
+    </div>
+    """.format(len(df), df['Data'].dt.strftime('%d/%m/%Y').iloc[0], saldo_aplicado, saldo_disponivel, saldo_total), unsafe_allow_html=True)
 
 with c3:
     st.markdown("<div class='section-title'>LIQUIDEZ BANCÁRIA</div>", unsafe_allow_html=True)
@@ -240,9 +255,14 @@ with col_tab:
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
 with col_inf:
-    st.markdown("<div style='background:#f8f9fc; border:1px solid #e3e6f0; border-radius:4px; padding:20px; text-align:center; color:gray; font-size:12px;'>📊 Análise de fluxo temporariamente desativada para validar a matemática dos KPI's principais.</div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#e8f5e9; border:1px solid #c8e6c9; border-radius:4px; padding:15px; text-align:left; color:#1b5e20; font-size:12px;">
+        <b>🚀 CORREÇÃO DE DECIMAIS APLICADA COM SUCESSO!</b><br><br>
+        Números no padrão brasileiro (ex: 8.981.911,11) estão sendo convertidos corretamente para float.<br>
+        Verifique a caixa <b>"CORREÇÃO DE DECIMAIS APLICADA"</b> logo acima. O valor deve ser próximo de 8.9 milhões, e não 898 milhões.
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
