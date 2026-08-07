@@ -105,9 +105,9 @@ def carregar_dados():
         hoje = datetime.now().date()
         
         # =========================================================
-        # CORREÇÃO RADICAL: ISOLAR OS DADOS DE HOJE PARA OS KPIS
+        # CORREÇÃO DEFINITIVA: ISOLAR OS DADOS DE HOJE
         # =========================================================
-        # Pega apenas o dia de hoje
+        # Pega o dia de hoje
         df_hoje_raw = df_historico[df_historico[col_data].dt.date == hoje]
         
         # Se não tiver nada hoje, pega o último dia com registro
@@ -115,14 +115,14 @@ def carregar_dados():
             ultima_data = df_historico[col_data].max()
             df_hoje_raw = df_historico[df_historico[col_data] == ultima_data]
 
-        # GARANTIA MÁXIMA: Para cada banco, pega o último registro do dia
+        # Para cada banco, pega o último registro (garante 1 linha por banco)
         df_hoje = df_hoje_raw.sort_values(by=[col_conta, col_data]).drop_duplicates(subset=[col_conta], keep='last')
         df_hoje = df_hoje.sort_values(by=col_conta)
 
         # =========================================================
-        # CRIAÇÃO DO HISTÓRICO PARA OS GRÁFICOS (SEM ACUMULAR)
+        # GRÁFICOS (SOMATÓRIO SIMPLES E SEGURO)
         # =========================================================
-        # Para o gráfico de linha/barras, agrupamos por Data e somamos APENAS o Saldo Final
+        # Para o histórico, agrupamos por Data e somamos APENAS o Saldo Final
         df_grouped = df_historico.groupby('Data').agg({
             'Saldo Final': 'sum',
             'Entrada': 'sum',
@@ -132,20 +132,23 @@ def carregar_dados():
         return df_grouped, df_hoje, col_conta
         
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
+        st.error(f"Erro: {e}")
         return pd.DataFrame(), pd.DataFrame(), ""
 
 df_grouped, df_hoje, col_conta = carregar_dados()
 if df_grouped.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs (EXATOS, VINDOS DO df_hoje FILTRADO)
+# 3. CÁLCULOS DOS KPIs
 # ==============================================================================
+# APENAS O SALDO FINAL DO DIA DE HOJE (sem somar com o inicial)
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_aplicado + saldo_disponivel
+
 limites = df_hoje['Conta Garantida'].sum()
 saldo_com_limites = saldo_total + limites
+
 entradas_dia = df_hoje['Entrada'].sum()
 saidas_dia = df_hoje['Saída'].sum()
 resultado_liquido = entradas_dia + saidas_dia
