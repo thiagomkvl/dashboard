@@ -1,16 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import re
 
-# Tente importar a conexão, mas dê uma tratativa caso não exista ainda
+# Tente importar a conexão
 try:
     from database import conectar_sheets
 except ImportError:
     def conectar_sheets():
-        st.error("Arquivo 'database.py' não encontrado ou função 'conectar_sheets' não existe.")
+        st.error("Arquivo 'database.py' não encontrado.")
         return None
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -33,19 +32,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. FUNÇÃO SEGURA DE LIMPEZA DE MOEDA
+# 1. FUNÇÕES AUXILIARES
 # ==============================================================================
 def limpa_moeda_br(valor_str):
-    """Converte 'R$ 1.234,56' ou '-R$ 1.234,56' para float 1234.56"""
+    """Converte 'R$ 1.234,56' ou '-' para float 1234.56"""
     if pd.isna(valor_str):
         return 0.0
     valor_str = str(valor_str).strip()
-    if valor_str == "" or valor_str == "-":
+    if valor_str in ["", "-", ".", ","]:
         return 0.0
     
-    # Remove R$, espaços, e pontos de milhar, troca vírgula por ponto
-    valor_str = re.sub(r'[R$\s]', '', valor_str) # Remove R$ e espaços
-    valor_str = valor_str.replace('.', '').replace(',', '.') # Troca vírgula por ponto
+    valor_str = re.sub(r'[R$\s]', '', valor_str)
+    valor_str = valor_str.replace('.', '').replace(',', '.')
     
     try:
         return float(valor_str)
@@ -62,40 +60,71 @@ def carregar_dados():
         return pd.DataFrame(), pd.DataFrame()
         
     try:
-        # 1. Carrega as abas (AJUSTE AQUI O NOME DA ABA SE NECESSÁRIO)
+        # Carrega as abas
         df_bancos = conn.read(worksheet="Saldos_Bancos", ttl=0)
         df_historico = conn.read(worksheet="Historico_Saldos", ttl=0)
         
-        # 2. Validação e limpeza do df_bancos
         if df_bancos.empty:
             return pd.DataFrame(), pd.DataFrame()
 
-        # Renomeia colunas para um padrão seguro (removendo acentos e espaços extras)
+        # Limpeza de nomes de colunas (remove espaços extras)
         df_bancos.columns = [c.strip() for c in df_bancos.columns]
         
-        # Mapeamento das colunas essenciais
-        colunas_necessarias = ['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível', 'Pendentes de aprovação']
+        # --- CORREÇÃO 1: MAPEAMENTO CORRETO DAS COLUNAS ---
+        # Na sua planilha a coluna do nome é "Contas Bancárias" (plural e com acento)
+        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_bancos.columns else 'Conta Bancária'
+        col_entrada = 'Entrada'
+        col_saida = 'Saída'
+        col_inicial = 'Saldo Inicial'
+        col_final = 'Saldo Final'
+        col_garantida = 'Conta Garantida'
+        col_disponivel = 'Disponível'
+        col_pendencias = 'Pendentes de aprovação'
+        col_data = 'Data'
+
+        # Verifica se as colunas essenciais existem
+        if col_conta not in df_bancos.columns:
+            st.error(f"Coluna '{col_conta}' não encontrada na planilha. Verifique o nome exato.")
+            return pd.DataFrame(), pd.DataFrame()
+
+        # Converte colunas financeiras para float
+        for col in [col_inicial, col_entrada, col_saida, col_final, col_garantida, col_disponivel, col_pendencias]:
+            if col in df_bancos.columns:
+                df_bancos[col] = df_bancos[col].apply(limpa_moeda_br)
+            else:
+                df_bancos[col] = 0.0
+
+        # Normaliza sinais (Entrada positiva, Saída negativa)
+        df_bancos[col_saida] = df_bancos[col_saida].apply(lambda x: -abs(x) if x != 0 else 0)
+        df_bancos[col_entrada] = df_bancos[col_entrada].apply(lambda x: abs(x))
+
+        # --- CORREÇÃO 2: CRIAR A COLUNA 'TIPO' DINAMICAMENTE ---
+        # Como não existe na planilha, definimos com base no nome do banco
+        def definir_tipo(nome_banco):
+            nome = str(nome_banco).lower()
+            if 'aplicação' in nome or 'investimentos' in nome:
+                return 'Aplicação'
+            return 'Disponível'
         
-        # Cria colunas que não existem para não quebrar o código
-        for col in colunas_necessarias:
-            if col not in df_bancos.columns:
-                df_bancos[col] = '0'
+        df_bancos['Tipo'] = df_bancos[col_conta].apply(definir_tipo)
 
-        # Aplica a limpeza monetária robusta
-        for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível', 'Pendentes de aprovação']:
-            df_bancos[col] = df_bancos[col].apply(limpa_moeda_br)
+        # --- CORREÇÃO 3: FILTRAR PELO DIA DE HOJE PARA MOVIMENTAÇÃO ---
+        # Converte a coluna Data para datetime
+        df_bancos[col_data] = pd.to_datetime(df_bancos[col_data], format='%d/%m/%Y', errors='coerce')
+        
+        hoje = datetime.now().date()
+        # Pega apenas as movimentações de hoje
+        df_hoje = df_bancos[df_bancos[col_data].dt.date == hoje]
+        
+        # Se não tiver nada cadastrado para hoje, usa o último registro de cada banco para o saldo
+        if df_hoje.empty:
+            # Pega a última data disponível
+            ultima_data = df_bancos[col_data].max()
+            df_hoje = df_bancos[df_bancos[col_data] == ultima_data]
 
-        # CORREÇÃO 1: GARANTIR QUE SAÍDA SEJA NEGATIVA E ENTRADA POSITIVA
-        # Se o usuário colocou saída como -500, mantém. Se colocou 500, transforma em -500
-        df_bancos['Saída'] = df_bancos['Saída'].apply(lambda x: -abs(x) if x != 0 else 0)
-        df_bancos['Entrada'] = df_bancos['Entrada'].apply(lambda x: abs(x))
-
-        # Recalcula saldo final e disponível para garantir integridade
-        df_bancos['Saldo Final'] = df_bancos['Saldo Inicial'] + df_bancos['Entrada'] + df_bancos['Saída']
-        df_bancos['Disponível'] = df_bancos['Saldo Final'] + df_bancos['Conta Garantida']
-
-        # 3. Tratamento do Histórico
+        # --- TRATAMENTO DO HISTÓRICO ---
         if not df_historico.empty:
+            df_historico.columns = [c.strip() for c in df_historico.columns]
             if 'Saldo' in df_historico.columns:
                 df_historico['Saldo'] = df_historico['Saldo'].apply(limpa_moeda_br)
             if 'Data' in df_historico.columns:
@@ -105,36 +134,35 @@ def carregar_dados():
             dias = [(hoje - timedelta(days=i)).strftime('%d/%m') for i in range(6, -1, -1)]
             df_historico = pd.DataFrame({'Data': dias, 'Saldo': [0]*7})
 
-        return df_bancos, df_historico
+        return df_bancos, df_historico, df_hoje, col_conta
         
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
-df_bancos, df_historico = carregar_dados()
+df_bancos, df_historico, df_hoje, col_conta = carregar_dados()
 
 if df_bancos.empty:
-    st.warning("Nenhum dado foi encontrado na aba 'Saldos_Bancos' do Google Sheets.")
+    st.warning("Nenhum dado foi encontrado na aba 'Saldos_Bancos'.")
     st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs (TRATANDO TIPOS VAZIOS)
+# 3. CÁLCULOS DOS KPIs (AGORA USANDO df_hoje)
 # ==============================================================================
-# Preenche NaN em 'Tipo' para evitar erros
-df_bancos['Tipo'] = df_bancos['Tipo'].fillna('Disponível')
-
-saldo_aplicado = df_bancos[df_bancos['Tipo'].str.contains('Aplicação', case=False, na=False)]['Saldo Final'].sum()
-saldo_disponivel = df_bancos[df_bancos['Tipo'].str.contains('Disponível', case=False, na=False)]['Saldo Final'].sum()
+# Para saldos totais, usamos os dados do dia de hoje (ou último registro)
+saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
+saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_aplicado + saldo_disponivel
 
-limites = df_bancos['Conta Garantida'].sum()
+limites = df_hoje['Conta Garantida'].sum()
 saldo_com_limites = saldo_total + limites
 
-entradas_dia = df_bancos['Entrada'].sum()
-saidas_dia = df_bancos['Saída'].sum() # Já está tratada como negativa
+# Para entradas, saídas e resultado, usamos EXATAMENTE as movimentações do dia de hoje (df_hoje)
+entradas_dia = df_hoje['Entrada'].sum()
+saidas_dia = df_hoje['Saída'].sum() 
 resultado_liquido = entradas_dia + saidas_dia
 
-pendencias_aprovacao = df_bancos['Pendentes de aprovação'].sum()
+pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
 # 4. HEADER E KPIs
@@ -193,7 +221,7 @@ with col_grafico1:
             showlegend=True, 
             legend=dict(orientation="v", yanchor="top", y=0.5, xanchor="left", x=1),
             margin=dict(t=0, b=0, l=0, r=0),
-            annotations=[dict(text=f"<b>R$ {saldo_total/1000000:.2f} Mi</b><br>Saldo Total", x=0.5, y=0.5, font_size=16, showarrow=False)]
+            annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.5, font_size=16, showarrow=False)]
         )
         st.plotly_chart(fig_donut1, use_container_width=True)
     else:
@@ -225,12 +253,12 @@ with col_dir:
     st.markdown(f"<h4 style='text-align:center; color:#4e73df;'>LIQUIDEZ TOTAL<br>R$ {saldo_com_limites:,.2f}</h4>", unsafe_allow_html=True)
     
     st.markdown("<div class='section-title' style='margin-top:20px;'>Indicadores de Tesouraria</div>", unsafe_allow_html=True)
-    st.markdown(f"Bancos monitorados: <span style='float:right; font-weight:bold;'>{len(df_bancos)}</span>", unsafe_allow_html=True)
-    st.markdown(f"Bancos com Aplicação: <span style='float:right; font-weight:bold;'>{len(df_bancos[df_bancos['Tipo'].str.contains('Aplicação', na=False)])}</span>", unsafe_allow_html=True)
-    st.markdown(f"Bancos com Limite: <span style='float:right; font-weight:bold;'>{len(df_bancos[df_bancos['Conta Garantida']>0])}</span>", unsafe_allow_html=True)
+    st.markdown(f"Bancos monitorados: <span style='float:right; font-weight:bold;'>{len(df_hoje)}</span>", unsafe_allow_html=True)
+    st.markdown(f"Bancos com Aplicação: <span style='float:right; font-weight:bold;'>{len(df_hoje[df_hoje['Tipo'] == 'Aplicação'])}</span>", unsafe_allow_html=True)
+    st.markdown(f"Bancos com Limite: <span style='float:right; font-weight:bold;'>{len(df_hoje[df_hoje['Conta Garantida']>0])}</span>", unsafe_allow_html=True)
     
-    pendencias_qtd = len(df_bancos[df_bancos['Saída'] < 0]) # CORREÇÃO 1 aplicada (Agora procura negativos corretamente)
-    st.markdown(f"<span style='color:red;'>Linhas com Saída:</span> <span style='float:right; font-weight:bold; color:red;'>{pendencias_qtd}</span>", unsafe_allow_html=True)
+    pendencias_qtd = len(df_hoje[df_hoje['Saída'] != 0])
+    st.markdown(f"<span style='color:red;'>Bancos c/ Mov. Saída:</span> <span style='float:right; font-weight:bold; color:red;'>{pendencias_qtd}</span>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -240,11 +268,13 @@ st.markdown("<hr>", unsafe_allow_html=True)
 col_tab, col_alertas = st.columns([2, 1])
 
 with col_tab:
-    st.markdown("<div class='section-title'>Saldo de Todos os Bancos</div>", unsafe_allow_html=True)
-    df_view = df_bancos.copy()
-    colunas_exibir = ['Tipo', 'Conta Bancária', 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']
+    st.markdown("<div class='section-title'>Saldo de Todos os Bancos (Dia de Hoje)</div>", unsafe_allow_html=True)
     
-    # Formatação segura para exibição
+    # Cria uma cópia apenas dos dados do dia
+    df_view = df_hoje.copy()
+    colunas_exibir = ['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']
+    
+    # Formatação para visualização
     for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
         df_view[col] = df_view[col].apply(lambda x: f"R$ {x:,.2f}" if x != 0 else "-")
     
@@ -252,9 +282,9 @@ with col_tab:
 
 with col_alertas:
     st.markdown("<div class='section-title'>Top 5 Bancos por Saldo Final</div>", unsafe_allow_html=True)
-    top5 = df_bancos.nlargest(5, 'Saldo Final')[['Conta Bancária', 'Saldo Final']]
+    top5 = df_hoje.nlargest(5, 'Saldo Final')[[col_conta, 'Saldo Final']]
     if not top5.empty and top5['Saldo Final'].sum() > 0:
-        fig_bar = px.bar(top5, x='Saldo Final', y='Conta Bancária', orientation='h')
+        fig_bar = px.bar(top5, x='Saldo Final', y=col_conta, orientation='h')
         fig_bar.update_traces(marker_color='#4e73df')
         fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), xaxis_title=None, yaxis_title=None, height=150, yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -264,10 +294,8 @@ with col_alertas:
     st.markdown("<div class='section-title' style='margin-top:10px;'>Alertas e Observações</div>", unsafe_allow_html=True)
     st.error(f"⚠ PENDÊNCIAS DE APROVAÇÃO\n\n**R$ {abs(pendencias_aprovacao):,.2f}**")
     
-    # CORREÇÃO FINAL: Não verifica "menor que 0" mas sim "diferente de 0", porque as saídas agora são tratadas como números negativos.
-    mov_neg = df_bancos[df_bancos['Saída'] != 0][['Conta Bancária', 'Saída']]
+    mov_neg = df_hoje[df_hoje['Saída'] != 0][[col_conta, 'Saída']]
     if not mov_neg.empty:
         st.markdown("**Movimentações de Saída do Dia**")
         for idx, row in mov_neg.iterrows():
-            # Formata com o sinal de negativo para mostrar que é saída
-            st.markdown(f"• {row['Conta Bancária']}: <span style='float:right; color:red;'>R$ {row['Saída']:,.2f}</span>", unsafe_allow_html=True)
+            st.markdown(f"• {row[col_conta]}: <span style='float:right; color:red;'>R$ {row['Saída']:,.2f}</span>", unsafe_allow_html=True)
