@@ -16,13 +16,12 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Diário", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (ESTILO COMPACTO E CONTROLE DE GRÁFICOS) ---
+# --- CUSTOM CSS (ESTILO COMPACTO) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
     div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
     
-    /* Força os gráficos a não ficarem gigantes */
     .stPlotlyChart { background-color: transparent !important; }
     .js-plotly-plot, .plot-container { margin: 0 auto; }
     
@@ -46,10 +45,6 @@ st.markdown("""
     .tabela-financeira td { padding: 4px 6px; border-bottom: 1px solid #f6f6f6; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; }
-    
-    /* Alertas */
-    .alert-red { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 8px 12px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-    .mov-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; border-bottom: 1px solid #f1f1f1; }
     
     /* Caixas de Indicadores */
     .ind-item { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
@@ -75,17 +70,20 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS E TRATAMENTO DE HISTÓRICO
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame(), pd.DataFrame()
     try:
+        # Carrega as abas
         df_bancos = conn.read(worksheet="Saldos_Bancos", ttl=0)
         df_historico = conn.read(worksheet="Historico_Saldos", ttl=0)
+        
         if df_bancos.empty: return pd.DataFrame(), pd.DataFrame()
         
+        # Limpeza das colunas
         df_bancos.columns = [c.strip() for c in df_bancos.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_bancos.columns else 'Conta Bancária'
         col_data = 'Data'
@@ -100,38 +98,69 @@ def carregar_dados():
         def definir_tipo(nome): return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df_bancos['Tipo'] = df_bancos[col_conta].apply(definir_tipo)
 
+        # Filtra pelos dados de HOJE
         df_bancos[col_data] = pd.to_datetime(df_bancos[col_data], format='%d/%m/%Y', errors='coerce')
         hoje = datetime.now().date()
         df_hoje = df_bancos[df_bancos[col_data].dt.date == hoje]
         if df_hoje.empty:
             ultima_data = df_bancos[col_data].max()
             df_hoje = df_bancos[df_bancos[col_data] == ultima_data]
-            
-        df_hoje = df_hoje.sort_values(by='Contas Bancárias')
+        df_hoje = df_hoje.sort_values(by=col_conta)
 
+        # =========================================================
+        # TRATAMENTO DO HISTÓRICO (CORREÇÃO DO GRÁFICO DE LINHA)
+        # =========================================================
+        df_analise = pd.DataFrame()
+        
         if not df_historico.empty:
             df_historico.columns = [c.strip() for c in df_historico.columns]
-            for col in df_historico.columns:
-                if 'saldo' in col.lower():
-                    df_historico.rename(columns={col: 'Saldo'}, inplace=True)
-                    df_historico['Saldo'] = df_historico['Saldo'].apply(limpa_moeda_br)
-                    break
-            if 'Data' in df_historico.columns:
-                df_historico = df_historico.sort_values('Data')
-        else:
-            dias = [(datetime.now() - timedelta(days=i)).strftime('%d/%m') for i in range(6, -1, -1)]
-            df_historico = pd.DataFrame({'Data': dias, 'Saldo': [0]*7})
+            df_historico[col_data] = pd.to_datetime(df_historico[col_data], format='%d/%m/%Y', errors='coerce')
+            
+            # Se tiver colunas de Entrada e Saída, usamos para análise
+            if 'Entrada' in df_historico.columns and 'Saída' in df_historico.columns:
+                df_historico['Entrada'] = df_historico['Entrada'].apply(limpa_moeda_br).apply(lambda x: abs(x))
+                df_historico['Saída'] = df_historico['Saída'].apply(limpa_moeda_br).apply(lambda x: -abs(x) if x != 0 else 0)
+                
+                # Agrupa por data para criar análise de Fluxo
+                df_analise = df_historico.groupby(col_data).agg({
+                    'Entrada': 'sum',
+                    'Saída': 'sum'
+                }).reset_index().sort_values(col_data)
 
-        return df_bancos, df_historico, df_hoje, col_conta
+            # Cálculo do Saldo Diário para o gráfico de Linha
+            # Pega os últimos 7 dias para o gráfico
+            datas_unicas = sorted(df_historico[col_data].unique(), reverse=True)[:7]
+            df_saldo_linha = pd.DataFrame()
+            
+            for data in datas_unicas:
+                # Pega os dados daquele dia
+                df_dia = df_historico[df_historico[col_data] == data]
+                # Soma o Saldo Final de todos os bancos naquele dia
+                if 'Saldo Final' in df_dia.columns:
+                    saldo_dia = df_dia['Saldo Final'].apply(limpa_moeda_br).sum()
+                    df_saldo_linha = pd.concat([df_saldo_linha, pd.DataFrame({'Data': [data], 'Saldo': [saldo_dia]})])
+            
+            # Ordena do mais antigo para o mais novo
+            df_saldo_linha = df_saldo_linha.sort_values('Data')
+            
+        else:
+            # Dados Mock caso esteja vazio (apenas para não quebrar o gráfico)
+            hoje = datetime.now()
+            dias = [(hoje - timedelta(days=i)) for i in range(7, -1, -1)]
+            df_saldo_linha = pd.DataFrame({'Data': dias, 'Saldo': [0]*8})
+            df_analise = pd.DataFrame({'Data': dias, 'Entrada': [0]*8, 'Saída': [0]*8})
+
+        return df_bancos, df_saldo_linha, df_analise, df_hoje, col_conta
+        
     except Exception as e:
         st.error(f"Erro: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
-df_bancos, df_historico, df_hoje, col_conta = carregar_dados()
+df_bancos, df_saldo_linha, df_analise, df_hoje, col_conta = carregar_dados()
 if df_bancos.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs & DADOS
+# 3. CÁLCULOS DOS KPIs
 # ==============================================================================
 saldo_aplicado = df_hoje[df_hoje['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_hoje[df_hoje['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -144,9 +173,9 @@ resultado_liquido = entradas_dia + saidas_dia
 pendencias_aprovacao = df_hoje['Pendentes de aprovação'].sum()
 
 # ==============================================================================
-# 4. GERAÇÃO DOS GRÁFICOS (PLOTLY - NATIVO STREAMLIT)
+# 4. GERAÇÃO DOS GRÁFICOS (PLOTLY)
 # ==============================================================================
-# Gráfico 1: Distribuição do Caixa (Donut) - Usado na Esquerda
+# Gráfico 1: Distribuição do Caixa (Donut)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -160,12 +189,12 @@ fig_donut.update_layout(
     showlegend=True, 
     legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=20, l=10, r=10), 
-    height=220,
+    height=280, # Aumentei a altura para evitar corte
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico 2: Evolução Diária (Linha) - Meio
-fig_linha = px.line(df_historico, x='Data', y='Saldo', markers=True)
+# Gráfico 2: Evolução Diária (Linha) - Correção de lógica
+fig_linha = px.line(df_saldo_linha, x='Data', y='Saldo', markers=True)
 fig_linha.update_traces(line_color='#4e73df', marker=dict(size=6, color='#4e73df'))
 fig_linha.update_layout(
     margin=dict(t=10, b=10, l=5, r=5), height=130, 
@@ -174,19 +203,24 @@ fig_linha.update_layout(
     showlegend=False
 )
 
-# Gráfico 3: Top 5 Bancos (Barras) - Inferior Direita
-top5 = df_hoje.nlargest(5, 'Saldo Final')[[col_conta, 'Saldo Final']]
-if not top5.empty and top5['Saldo Final'].sum() > 0:
-    fig_bar = px.bar(top5, x='Saldo Final', y=col_conta, orientation='h')
-    fig_bar.update_traces(marker_color='#4e73df', width=0.6)
-    fig_bar.update_layout(
-        margin=dict(t=10, b=10, l=5, r=5), height=210, 
-        xaxis=dict(showticklabels=False, showgrid=False), 
-        yaxis=dict(tickfont=dict(size=10), showgrid=False), 
-        showlegend=False
+# Gráfico 3: Análise de Fluxo (Barras Agrupadas Entrada/Saída) - Substitui Top 5
+if not df_analise.empty:
+    # Pega os últimos 7 dias
+    df_analise_plot = df_analise.tail(7)
+    
+    fig_barras = go.Figure()
+    fig_barras.add_trace(go.Bar(x=df_analise_plot['Data'], y=df_analise_plot['Entrada'], name='Entradas', marker_color='#1cc88a'))
+    fig_barras.add_trace(go.Bar(x=df_analise_plot['Data'], y=df_analise_plot['Saída'].apply(abs), name='Saídas', marker_color='#e74a3b'))
+    
+    fig_barras.update_layout(
+        barmode='group',
+        margin=dict(t=10, b=10, l=5, r=5), height=210,
+        xaxis=dict(tickfont=dict(size=9), showgrid=False), 
+        yaxis=dict(showticklabels=False, showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
     )
 else:
-    fig_bar = None
+    fig_barras = None
 
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL HTML
@@ -222,7 +256,7 @@ for col, icon, title, val, color in kp_data:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Corpo Principal (3 Colunas)
-c1, c2, c3 = st.columns([1.1, 1.2, 1.1])
+c1, c2, c3 = st.columns([1.1, 1.3, 1.1])
 
 with c1:
     st.markdown("<div class='section-title'>DISTRIBUIÇÃO DO CAIXA</div>", unsafe_allow_html=True)
@@ -248,13 +282,13 @@ with c3:
     st.markdown(f"<div class='ind-item'><span>Bancos monitorados</span> <b>{len(df_hoje)}</b></div>", unsafe_allow_html=True)
     st.markdown(f"<div class='ind-item'><span>Bancos com Aplicação</span> <b>{len(df_hoje[df_hoje['Tipo'] == 'Aplicação'])}</b></div>", unsafe_allow_html=True)
     st.markdown(f"<div class='ind-item'><span>Bancos com Limite</span> <b>{len(df_hoje[df_hoje['Conta Garantida']>0])}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Pendências</span> <b>{len(df_hoje[df_hoje['Saída'] != 0])}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='ind-item'><span style='color:#e74a3b;'>Pendências</span> <b style='color:#e74a3b;'>{len(df_hoje[df_hoje['Saída'] != 0])}</b></div>", unsafe_allow_html=True)
     st.markdown(f"<div class='box-total-grey'><b>SALDO CONSOLIDADO</b><br><span style='font-size:14px;'>R$ {saldo_total:,.2f}</span></div>", unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-# Parte Inferior (Tabela e Alertas)
-col_tab, col_inf = st.columns([1.5, 1])
+# Parte Inferior (Tabela e Análise de Fluxo)
+col_tab, col_inf = st.columns([1.4, 1])
 
 # Tabela Completa
 with col_tab:
@@ -270,35 +304,12 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-# Inferior Direita (TOP 5 e ALERTAS)
+# Nova Análise de Fluxo (Entradas x Saídas por dia)
 with col_inf:
-    g1, g2 = st.columns([1.2, 1])
-    
-    with g1:
-        st.markdown("<div class='section-title'>TOP 5 BANCOS POR SALDO FINAL</div>", unsafe_allow_html=True)
-        if fig_bar:
-            st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-        else:
-            st.markdown("<div class='box-card' style='text-align:center; padding:20px; color:gray;'>Sem dados para rankear.</div>", unsafe_allow_html=True)
-
-    with g2:
-        st.markdown("<div class='section-title'>ALERTAS E OBSERVAÇÕES</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="alert-red" style="margin-bottom:8px;">
-            <div style="display:flex; gap:8px; align-items:center;">
-                <span style="font-size:16px;">🚨</span>
-                <div><span style="font-size:11px; font-weight:normal;">PENDÊNCIAS DE APROVAÇÃO</span><br><span style="font-size:14px;">R$ {abs(pendencias_aprovacao):,.2f}</span></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        mov_neg = df_hoje[df_hoje['Saída'] != 0][[col_conta, 'Saída']]
-        if not mov_neg.empty:
-            st.markdown("<div style='background:white; border:1px solid #e3e6f0; border-radius:4px; padding:6px;'>")
-            st.markdown("<div style='display:flex; gap:5px; align-items:center; color:#721c24; font-weight:bold; font-size:11px; border-bottom:1px dashed #e3e6f0; padding-bottom:4px; margin-bottom:4px;'>⚠️ MOVIMENTAÇÕES NEGATIVAS</div>")
-            for idx, row in mov_neg.iterrows():
-                nome = row[col_conta][:15] + "..." if len(row[col_conta]) > 15 else row[col_conta]
-                st.markdown(f"<div class='mov-row'><span>• {nome}</span> <span style='color:#e74a3b;'>R$ {row['Saída']:,.2f}</span></div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>ANÁLISE ENTRADAS x SAÍDAS (ÚLTIMOS 7 DIAS)</div>", unsafe_allow_html=True)
+    if fig_barras:
+        st.plotly_chart(fig_barras, use_container_width=True, config={'displayModeBar': False})
+    else:
+        st.markdown("<div class='box-card' style='text-align:center; padding:20px; color:gray;'>Aguardando dados de histórico para análise de fluxo.</div>", unsafe_allow_html=True)
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
