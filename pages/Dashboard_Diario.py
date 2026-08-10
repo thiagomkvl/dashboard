@@ -232,8 +232,8 @@ st.markdown("""
         padding: 0 0 5px;
         border-bottom: 1px solid var(--border);
         color: var(--text);
-        font-size: 10px;
-        line-height: 1;
+        font-size: 12px;
+        line-height: 1.15;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.75px;
@@ -290,11 +290,11 @@ st.markdown("""
     .tabela-financeira th {
         background: #f7f9fc;
         color: #596274;
-        font-size: 9px;
+        font-size: 11px;
         font-weight: 800;
         text-align: left;
         white-space: nowrap;
-        padding: 9px 10px;
+        padding: 11px 12px;
         border-bottom: 1px solid var(--border);
         text-transform: uppercase;
         letter-spacing: 0.35px;
@@ -309,10 +309,10 @@ st.markdown("""
     }
 
     .tabela-financeira td {
-        padding: 8px 10px;
+        padding: 10px 12px;
         border-bottom: 1px solid #f0f2f6;
-        font-size: 11px;
-        font-weight: 500;
+        font-size: 14px;
+        font-weight: 550;
         color: #273043;
         white-space: nowrap;
     }
@@ -324,6 +324,17 @@ st.markdown("""
     .tabela-financeira tbody tr:last-child td {
         border-bottom: none;
     }
+    
+    /* =========================================================
+       TABELA EXECUTIVA — SALDO DE TODOS OS BANCOS
+       Mantém somente esta tabela alinhada à esquerda.
+       ========================================================= */
+    .tabela-bancos .tabela-financeira th,
+    .tabela-bancos .tabela-financeira td,
+    .tabela-bancos .tabela-financeira .valores {
+        text-align: left;
+    }
+
 
     .tabela-financeira .linha-total {
         background: #eef2f7;
@@ -332,13 +343,15 @@ st.markdown("""
 
     .tabela-financeira .linha-total td {
         color: #172033;
+        font-size: 14px;
         font-weight: 800;
     }
 
     .tabela-financeira .valores {
         text-align: right;
-        font-weight: 700;
+        font-weight: 750;
         color: #273043;
+        font-size: 14px;
         font-variant-numeric: tabular-nums;
     }
 
@@ -775,13 +788,13 @@ with c1:
 with c2:
     st.markdown("<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS</div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
-    m1.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:16px; font-weight:bold;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:16px; font-weight:bold;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
     if resultado_liquido_mes >= 0:
-        m3.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#1cc88a;'>✅ RESULTADO LÍQUIDO</div><div style='font-size:16px; font-weight:bold; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>✅ RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
     else:
-        m3.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#e74a3b;'>🔻 RESULTADO LÍQUIDO</div><div style='font-size:16px; font-weight:bold; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>🔻 RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
@@ -832,9 +845,9 @@ with col_tab:
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']}
     
-    html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
+    html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:12px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:13px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     
@@ -847,12 +860,12 @@ with col_diario:
     df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Variação %']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    html_diario = '<div class="tabela-container" style="font-size:13px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
+    html_diario = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
     
     for _, row in df_diario_view.iterrows():
         variacao = row['Variação %']
         cor = "#1cc88a" if variacao >= 0 else "#e74a3b"
-        html_diario += f'<tr><td style="font-weight:bold; color:#333;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao:.2f}%</td></tr>'
+        html_diario += f'<tr><td style="font-size:14px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="font-size:15px;">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="font-size:14px; color:{cor}; font-weight:800;">{variacao:.2f}%</td></tr>'
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
