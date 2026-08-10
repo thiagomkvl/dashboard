@@ -47,7 +47,7 @@ st.markdown("""
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     
-    /* Estilo do Resumo de Rendimentos (Sem bordas duplas) */
+    /* Estilo do Resumo de Rendimentos */
     .rend-box { background: white; padding: 0 0 10px 0; font-size: 14px; }
     .rend-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; }
     .rend-item:last-child { border-bottom: none; }
@@ -122,9 +122,8 @@ def carregar_dados():
         df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
 
         # =========================================================
-        # Gráfico de Linha + Barras e Tabela Diarizada
+        # Agrupamento para Gráfico e Tabela Diária
         # =========================================================
-        # Agrupa por dia para obter o Saldo Total
         df_graficos = df_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
             'Entrada': 'sum',
@@ -228,47 +227,38 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico Combinado (Barras de Entrada/Saída + Linha de Saldo)
+# Gráfico de Barras + Linha de Tendência (SALDO TOTAL)
 fig_combinado = go.Figure()
 
-# Barras de Entradas (Verde)
+# Barras do Saldo Total (Azul claro)
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
-    y=df_graficos['Entrada'],
-    name='Entradas',
-    marker_color='#1cc88a',
-    opacity=0.8
+    y=df_graficos['Saldo Final'],
+    name='Saldo Total',
+    marker_color='#4e73df',
+    opacity=0.85,
+    width=0.5
 ))
 
-# Barras de Saídas (Vermelho)
-fig_combinado.add_trace(go.Bar(
-    x=df_graficos['Data_Label'],
-    y=df_graficos['Saída'],
-    name='Saídas',
-    marker_color='#e74a3b',
-    opacity=0.8
-))
-
-# Linha de Tendência do Saldo (Azul)
+# Linha de Tendência (Azul escuro)
 fig_combinado.add_trace(go.Scatter(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
-    name='Saldo Final',
+    name='Tendência',
     mode='lines+markers',
-    line=dict(color='#4e73df', width=2),
-    marker=dict(size=6, color='#4e73df'),
-    yaxis='y2'
+    line=dict(color='#1a3b7c', width=2.5),
+    marker=dict(size=7, color='#1a3b7c', line=dict(width=2, color='white')),
 ))
 
-# Layout do Gráfico Combinado
+# Layout do Gráfico
 fig_combinado.update_layout(
-    barmode='group',
     margin=dict(t=10, b=15, l=5, r=5), height=160, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
-    yaxis2=dict(showticklabels=False, showgrid=False, overlaying='y', side='right'),
-    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(size=10)),
-    plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9'
+    barmode='group',
+    legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(size=10)),
+    plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9',
+    hovermode='x unified'
 )
 
 # ==============================================================================
@@ -374,7 +364,6 @@ with col_tab:
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    # Cria a tabela diária com base no df_graficos (já agrupado e calculado)
     df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Variação %']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
