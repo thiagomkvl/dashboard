@@ -47,7 +47,7 @@ st.markdown("""
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     
-    /* Estilo do Resumo de Rendimentos (Substituindo Indicadores) */
+    /* Estilo do Resumo de Rendimentos */
     .rend-box { background: white; border: 1px solid #e3e6f0; border-radius: 6px; padding: 15px; margin-bottom: 6px; font-size: 14px; }
     .rend-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
     .rend-item:last-child { border-bottom: none; }
@@ -71,13 +71,14 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS E LÓGICA MENSAL
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
     try:
+        # 1. Carrega Histórico de Saldos
         df = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
@@ -123,7 +124,7 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # CÁLCULO DE RENDIMENTOS (Apenas para o Resumo Lateral)
+        # 2. Carrega a aba RENDIMENTOS (APENAS BANCOS DA PLANILHA)
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         try:
@@ -132,19 +133,16 @@ def carregar_dados():
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 df_rend[col_data] = pd.to_datetime(df_rend[col_data], format='%d/%m/%Y', errors='coerce')
                 df_rend['Valor Líquido'] = df_rend['Valor Líquido'].apply(limpa_valor_bruto)
+                
+                # Filtra apenas os dados do mês de referência
                 df_rend = df_rend[(df_rend[col_data] >= mes_referencia) & (df_rend[col_data] < proximo_mes)]
                 
                 if not df_rend.empty:
-                    # Agrupa os rendimentos por banco
+                    # Agrupa por banco e soma os rendimentos
                     df_rend_resumo = df_rend.groupby(col_conta)['Valor Líquido'].sum().reset_index()
-        except:
+        except Exception as e:
+            # Se a aba não existir, mantém vazio
             pass
-
-        # Se não tiver dados na aba Rendimentos, calcula automático baseado na diferença do saldo
-        if df_rend_resumo.empty:
-            df_rend_resumo = df_fim_mes[['Contas Bancárias', 'Saldo Inicial', 'Saldo Final']].copy()
-            df_rend_resumo['Valor Líquido'] = df_rend_resumo['Saldo Final'] - df_rend_resumo['Saldo Inicial']
-            df_rend_resumo = df_rend_resumo[['Contas Bancárias', 'Valor Líquido']]
 
         return df_fim_mes, df_graficos, df_rend_resumo, col_conta
         
@@ -160,7 +158,7 @@ if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS (Apenas os 4 principais)
+# 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -257,7 +255,7 @@ with c2:
     st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# LADO DIREITO: NOVO RESUMO DE RENDIMENTOS (SUBSTITUINDO INDICADORES)
+# LADO DIREITO: RESUMO DE RENDIMENTOS (APENAS BANCOS DA PLANILHA)
 # ==============================================================================
 with c3:
     st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
@@ -287,7 +285,7 @@ with c3:
         st.markdown("</div>", unsafe_allow_html=True)
         
     else:
-        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado ou calculado para este mês.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado na aba 'Rendimentos' para este mês.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
