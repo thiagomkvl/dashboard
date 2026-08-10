@@ -15,7 +15,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Diário", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (FONTE MAIOR E MAIS ESCURA NAS TABELAS) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -36,14 +36,14 @@ st.markdown("""
     .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela Padrão (Ajustada) */
-    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 12px; width: 100%; margin-bottom: 10px; }
+    /* Tabela Padrão (FONTE MAIOR: 14px) */
+    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 14px; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
-    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e6f0; }
-    .tabela-financeira td { padding: 5px 8px; border-bottom: 1px solid #f6f6f6; font-weight: 500; }
+    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e3e6f0; }
+    .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     
-    .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; }
+    .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; color: #2d3748; }
     .tabela-financeira .col-destaque { background-color: #eef2ff; color: #1a3b7c; font-weight: 900; }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
@@ -106,19 +106,15 @@ def carregar_dados():
         df_hoje['Tipo'] = df_hoje[col_conta].apply(definir_tipo)
         df_hoje = df_hoje.sort_values(by=col_conta)
 
-        # Dados Históricos Consolidados (para a nova tabela)
+        # Dados Históricos Consolidados
         df_historico_consolidado = df.groupby(col_data)['Saldo Final'].sum().reset_index().sort_values(col_data)
-        
-        # Calcula a variação percentual dia a dia
         df_historico_consolidado['Variação %'] = df_historico_consolidado['Saldo Final'].pct_change() * 100
         df_historico_consolidado['Variação %'] = df_historico_consolidado['Variação %'].fillna(0)
         
-        # Formata colunas para exibição
         df_historico_consolidado['Data'] = df_historico_consolidado[col_data].dt.strftime('%d/%m/%Y')
         df_historico_consolidado['Saldo Final'] = df_historico_consolidado['Saldo Final'].apply(formatar_moeda)
         df_historico_consolidado['Variação %'] = df_historico_consolidado['Variação %'].apply(formatar_porcentagem)
         
-        # Inverte para mostrar o mais recente no topo, e pega os últimos 10
         df_historico_consolidado = df_historico_consolidado.sort_values(by=col_data, ascending=False).head(10)
 
         return df_hoje, df_historico_consolidado, col_conta
@@ -158,18 +154,18 @@ fig_donut = go.Figure(data=[go.Pie(
     texttemplate='%{percent:.1%}',
     hoverinfo='label+percent'
 )])
+# Aumentei a altura e adicionei b=40 (margem inferior) para garantir que a legenda nunca seja cortada
 fig_donut.update_layout(
     showlegend=True, 
-    legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=0, b=0, l=0, r=0), # ZERADAS para evitar corte
-    height=300, # Altura fixa
+    legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
+    margin=dict(t=10, b=40, l=0, r=0), 
+    height=320,
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
 # ==============================================================================
 # 5. GRÁFICO DE LINHA (Evolução)
 # ==============================================================================
-# Precisamos dos dados brutos novamente para o gráfico de linha
 conn = conectar_sheets()
 df_full = conn.read(worksheet="Historico_Saldos", ttl=0)
 df_full.columns = [c.strip() for c in df_full.columns]
@@ -266,7 +262,7 @@ with col_tab:
     
     html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:12px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     st.markdown(html_tabela, unsafe_allow_html=True)
@@ -275,12 +271,11 @@ with col_tab:
 with col_hist:
     st.markdown("<div class='section-title'>HISTÓRICO CONSOLIDADO</div>", unsafe_allow_html=True)
     if not df_historico_consolidado.empty:
-        html_hist = '<div class="tabela-container" style="font-size:12px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
+        html_hist = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
         for _, row in df_historico_consolidado.iterrows():
             variacao = row['Variação %']
-            # Define a cor da variação (Verde para positivo, Vermelho para negativo)
             cor = "#1cc88a" if float(variacao.replace('%', '').replace(',', '.')) >= 0 else "#e74a3b"
-            html_hist += f'<tr><td>{row["Data"]}</td><td class="valores col-destaque">{row["Saldo Final"]}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao}</td></tr>'
+            html_hist += f'<tr><td style="font-weight:bold; color:#333;">{row["Data"]}</td><td class="valores col-destaque">{row["Saldo Final"]}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao}</td></tr>'
         html_hist += '</tbody></table></div>'
         st.markdown(html_hist, unsafe_allow_html=True)
         st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>Últimos 10 registros disponíveis.</div>", unsafe_allow_html=True)
