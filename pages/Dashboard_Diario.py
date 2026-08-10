@@ -193,23 +193,44 @@ fig_donut.update_layout(
 )
 
 # ==============================================================================
-# 5. GRÁFICO DE LINHA (Evolução Mensal)
-# ==============================================================================
+# Gráfico 2: Evolução do Saldo (Barra + Linha de Tendência)
 fig_linha = go.Figure()
-fig_linha.add_trace(go.Scatter(
-    x=df_graficos['Data_Label'], 
-    y=df_graficos['Saldo Final'], 
-    mode='lines+markers',
-    line=dict(color='#4e73df', width=3),
-    marker=dict(size=8, color='#4e73df'),
-    showlegend=False
-))
+
+if not df_graficos.empty:
+    # 1. Gráfico de Barras (Fundo)
+    fig_linha.add_trace(go.Bar(
+        x=df_graficos['Data_Label'], 
+        y=df_graficos['Saldo Final'], 
+        marker_color='#dbe4ff', # Azul bem clarinho para dar volume sem ofuscar a linha
+        name='Saldo Final',
+        hoverinfo='y'
+    ))
+    
+    # 2. Gráfico de Linha (Tendência por cima com os percentuais)
+    fig_linha.add_trace(go.Scatter(
+        x=df_graficos['Data_Label'], 
+        y=df_graficos['Saldo Final'], 
+        mode='lines+markers+text',
+        line=dict(color='#4e73df', width=3),
+        marker=dict(size=8, color='#4e73df'),
+        # Cálculo da % real baseado na coluna de Saldo Final do dia anterior
+        text=[f"{((df_graficos['Saldo Final'].iloc[i] - df_graficos['Saldo Final'].iloc[i-1])/df_graficos['Saldo Final'].iloc[i-1])*100:.2f}%" if i > 0 and df_graficos['Saldo Final'].iloc[i-1] != 0 else "" for i in range(len(df_graficos))],
+        textposition="top center",
+        textfont=dict(size=11, color="#333", weight="bold"),
+        showlegend=False,
+        name='Tendência'
+    ))
+
+# Fundo leve, sem bordas e ALTURA AUMENTADA para alinhar com a coluna da direita
 fig_linha.update_layout(
-    margin=dict(t=10, b=15, l=5, r=5), height=140, 
-    xaxis=dict(tickfont=dict(size=10), showgrid=False), 
-    yaxis=dict(showticklabels=False, showgrid=False, range=[0, df_graficos['Saldo Final'].max() * 1.1]),
-    plot_bgcolor='#f1f5f9', 
-    paper_bgcolor='#f1f5f9'
+    margin=dict(t=35, b=10, l=5, r=5), 
+    height=280, # <--- Altura esticada para emparelhar com o bloco "Saldo Consolidado"
+    xaxis=dict(tickfont=dict(size=11), showgrid=False), 
+    yaxis=dict(showticklabels=False, showgrid=False),
+    plot_bgcolor='#f8f9fc', 
+    paper_bgcolor='#f8f9fc',
+    barmode='overlay', # Coloca a linha exatamente em cima da barra
+    showlegend=False
 )
 
 # ==============================================================================
