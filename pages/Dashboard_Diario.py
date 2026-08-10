@@ -112,7 +112,7 @@ def carregar_dados():
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
 
-        # DEFINIR O TIPO NO df_mes (CORREÇÃO DO ERRO FATAL)
+        # DEFINIR O TIPO NO df_mes
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
@@ -148,6 +148,9 @@ def carregar_dados():
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
+        rendimento_unicred = 0.0
+        saldo_aplicado_unicred = 0.0
+        
         try:
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             
@@ -186,34 +189,46 @@ def carregar_dados():
                             col_rendimento: 'Valor Líquido'
                         }, inplace=True)
                         rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
+                        
+                        # Pega o rendimento específico da Unicred
+                        unicred_row = df_rend_resumo[df_rend_resumo[col_conta].str.contains('Unicred', case=False)]
+                        if not unicred_row.empty:
+                            rendimento_unicred = unicred_row['Valor Líquido'].iloc[0]
 
         except Exception:
             pass
 
         # =========================================================
-        # 3. CÁLCULO DO CUSTO DE OPORTUNIDADE (DINHEIRO PARADO)
+        # 3. CÁLCULO DO CUSTO DE OPORTUNIDADE (BASEADO NA UNICRED)
         # =========================================================
-        # Taxa diária = Rendimento total do mês / Quantidade de dias do mês
-        dias_no_mes = len(df_graficos)
-        if dias_no_mes > 0 and rendimento_total_mes > 0:
-            taxa_diaria_media = rendimento_total_mes / dias_no_mes
-        else:
-            taxa_diaria_media = 0.0
-
         custo_oportunidade_total = 0.0
         
-        for _, row in df_graficos.iterrows():
-            # Pega o saldo de cada banco naquele dia
-            data_dia = row[col_data]
-            df_dia = df_mes[df_mes[col_data] == data_dia]
+        # Pega o saldo médio aplicado na Unicred durante o mês
+        df_unicred = df_mes[df_mes[col_conta].str.contains('Unicred.*Aplicação', case=False, na=False)]
+        if not df_unicred.empty:
+            saldo_aplicado_unicred = df_unicred['Saldo Final'].mean() # Média do saldo
+        else:
+            saldo_aplicado_unicred = 0.0
+
+        # Se tiver rendimento e saldo aplicado, calcula a taxa proporcional
+        if saldo_aplicado_unicred > 0 and rendimento_unicred > 0:
+            # Taxa de rendimento do Unicred sobre o saldo aplicado
+            taxa_rendimento = rendimento_unicred / saldo_aplicado_unicred
             
-            # Calcula o que estava aplicado e o que estava disponível
-            saldo_aplicado_dia = df_dia[df_dia['Tipo'] == 'Aplicação']['Saldo Final'].sum()
-            # O "dinheiro parado" é a diferença entre o total e o que estava aplicado
-            dinheiro_parado_dia = row['Saldo Final'] - saldo_aplicado_dia
-            
-            # Soma o custo de oportunidade diário
-            custo_oportunidade_total += dinheiro_parado_dia * taxa_diaria_media
+            # Para cada dia, calcula o custo de oportunidade
+            for _, row in df_graficos.iterrows():
+                # Pega o dinheiro não aplicado (seu cálculo)
+                data_dia = row[col_data]
+                df_dia = df_mes[df_mes[col_data] == data_dia]
+                
+                saldo_total_dia = row['Saldo Final']
+                saldo_aplicado_dia = df_dia[df_dia['Tipo'] == 'Aplicação']['Saldo Final'].sum()
+                
+                # Dinheiro que poderia estar rendendo
+                dinheiro_nao_aplicado_dia = saldo_total_dia - saldo_aplicado_dia
+                
+                # Custo de oportunidade diário = Dinheiro não aplicado * taxa do Unicred
+                custo_oportunidade_total += dinheiro_nao_aplicado_dia * taxa_rendimento
 
         return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
         
@@ -266,7 +281,7 @@ fig_donut.update_layout(
 # Gráfico de Barras + Linha de Tendência (SALDO TOTAL)
 fig_combinado = go.Figure()
 
-# Barras do Saldo Total (Azul claro)
+# Barras do Saldo Total
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
@@ -276,7 +291,7 @@ fig_combinado.add_trace(go.Bar(
     width=0.5
 ))
 
-# Linha de Tendência (Azul escuro)
+# Linha de Tendência
 fig_combinado.add_trace(go.Scatter(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
@@ -363,7 +378,7 @@ with c3:
             </div>
             """, unsafe_allow_html=True)
 
-        # Total de Rendimentos (Sutil e alinhado)
+        # Total de Rendimentos
         st.markdown(f"""
         <div class='rend-total'>
             <span>💰 TOTAL RENDIMENTOS</span>
