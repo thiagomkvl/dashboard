@@ -47,9 +47,9 @@ st.markdown("""
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     
-    /* Estilo do Resumo de Rendimentos */
-    .rend-box { background: white; border: 1px solid #e3e6f0; border-radius: 6px; padding: 15px; margin-bottom: 6px; font-size: 14px; }
-    .rend-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    /* Estilo do Resumo de Rendimentos (Sem bordas duplas) */
+    .rend-box { background: white; padding: 0 0 10px 0; font-size: 14px; }
+    .rend-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; }
     .rend-item:last-child { border-bottom: none; }
     .rend-total { background: #f8f9fc; border: 1px solid #f6c23e; border-radius: 4px; padding: 8px; text-align: center; margin-top: 10px; }
     </style>
@@ -76,7 +76,7 @@ def formatar_moeda(valor):
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
     try:
         # =========================================================
         # 1. Carrega Histórico de Saldos (ABA 1)
@@ -84,7 +84,7 @@ def carregar_dados():
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
         
         df_saldos.columns = [c.strip() for c in df_saldos.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_saldos.columns else 'Conta Bancária'
@@ -103,7 +103,7 @@ def carregar_dados():
 
         if df_mes.empty:
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
         # Cálculo de Entrada/Saída para a Tabela
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
@@ -121,12 +121,22 @@ def carregar_dados():
         df_fim_mes['Entrada'] = df_fim_mes['Variação'].apply(lambda x: x if x > 0 else 0)
         df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
 
-        # Gráfico de Linha
-        df_graficos = df_mes.groupby(col_data)['Saldo Final'].sum().reset_index().sort_values(col_data)
+        # =========================================================
+        # Gráfico de Linha + Barras e Tabela Diarizada
+        # =========================================================
+        # Agrupa por dia para obter o Saldo Total
+        df_graficos = df_mes.groupby(col_data).agg({
+            'Saldo Final': 'sum',
+            'Entrada': 'sum',
+            'Saída': 'sum'
+        }).reset_index().sort_values(col_data)
+        
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
+        df_graficos['Variação %'] = df_graficos['Saldo Final'].pct_change() * 100
+        df_graficos['Variação %'] = df_graficos['Variação %'].fillna(0)
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (COM CORREÇÃO DE DATA)
+        # 2. Carrega a aba RENDIMENTOS 
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         try:
@@ -135,7 +145,6 @@ def carregar_dados():
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 
-                # 1. Detectar colunas
                 col_conta_rend = None
                 col_data_mov = None
                 col_data_ini = None
@@ -153,18 +162,12 @@ def carregar_dados():
                         col_rendimento = c
                 
                 if col_conta_rend and col_rendimento:
-                    # Define qual coluna de data usar
                     col_data_usar = col_data_mov if col_data_mov else col_data_ini
                     
                     if col_data_usar:
                         df_rend[col_data_usar] = pd.to_datetime(df_rend[col_data_usar], format='%d/%m/%Y', errors='coerce')
-                        # Filtra pelo mês
                         df_rend = df_rend[(df_rend[col_data_usar] >= mes_referencia) & (df_rend[col_data_usar] < proximo_mes)]
-                    else:
-                        # Se não tiver data nenhuma, pega todas as linhas (último recurso)
-                        pass
                     
-                    # Converte o valor e agrupa
                     df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
                     
                     if not df_rend.empty:
@@ -174,19 +177,19 @@ def carregar_dados():
                             col_rendimento: 'Valor Líquido'
                         }, inplace=True)
 
-        except Exception as e:
+        except Exception:
             pass
 
-        return df_fim_mes, df_graficos, df_rend_resumo, col_conta
+        return df_fim_mes, df_graficos, df_rend_resumo, df_mes, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
 # ==============================================================================
 # CHAMADA PRINCIPAL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, col_conta = carregar_dados()
+df_consolidado, df_graficos, df_rend_resumo, df_mes_raw, col_conta = carregar_dados()
 if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
@@ -225,16 +228,46 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Linha
-fig_linha = go.Figure()
-fig_linha.add_trace(go.Scatter(
-    x=df_graficos['Data_Label'], y=df_graficos['Saldo Final'], 
-    mode='lines+markers', line=dict(color='#4e73df', width=3), marker=dict(size=8, color='#4e73df'), showlegend=False
+# Gráfico Combinado (Barras de Entrada/Saída + Linha de Saldo)
+fig_combinado = go.Figure()
+
+# Barras de Entradas (Verde)
+fig_combinado.add_trace(go.Bar(
+    x=df_graficos['Data_Label'],
+    y=df_graficos['Entrada'],
+    name='Entradas',
+    marker_color='#1cc88a',
+    opacity=0.8
 ))
-fig_linha.update_layout(
-    margin=dict(t=10, b=15, l=5, r=5), height=140, 
+
+# Barras de Saídas (Vermelho)
+fig_combinado.add_trace(go.Bar(
+    x=df_graficos['Data_Label'],
+    y=df_graficos['Saída'],
+    name='Saídas',
+    marker_color='#e74a3b',
+    opacity=0.8
+))
+
+# Linha de Tendência do Saldo (Azul)
+fig_combinado.add_trace(go.Scatter(
+    x=df_graficos['Data_Label'],
+    y=df_graficos['Saldo Final'],
+    name='Saldo Final',
+    mode='lines+markers',
+    line=dict(color='#4e73df', width=2),
+    marker=dict(size=6, color='#4e73df'),
+    yaxis='y2'
+))
+
+# Layout do Gráfico Combinado
+fig_combinado.update_layout(
+    barmode='group',
+    margin=dict(t=10, b=15, l=5, r=5), height=160, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
-    yaxis=dict(showticklabels=False, showgrid=False, range=[0, df_graficos['Saldo Final'].max() * 1.1]),
+    yaxis=dict(showticklabels=False, showgrid=False),
+    yaxis2=dict(showticklabels=False, showgrid=False, overlaying='y', side='right'),
+    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(size=10)),
     plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9'
 )
 
@@ -254,7 +287,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPIs (4 Blocos Originais)
+# KPIs
 kpi_row = st.columns(4)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
@@ -285,11 +318,8 @@ with c2:
         m3.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#e74a3b;'>🔻 RESULTADO LÍQUIDO</div><div style='font-size:16px; font-weight:bold; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
-    st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
-# ==============================================================================
-# LADO DIREITO: RESUMO DE RENDIMENTOS (APENAS COLUNA RENDIMENTOS)
-# ==============================================================================
 with c3:
     st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
     
@@ -319,15 +349,14 @@ with c3:
         
     else:
         st.markdown("""
-        <div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>
-            <b>Nenhum dado de rendimento encontrado.</b><br><br>
-            Verifique se a coluna <b>"Rendimentos"</b> possui dados para o mês atual.
+        <div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px;'>
+            Nenhum dado de rendimento encontrado para este mês.
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-col_tab, col_vazio = st.columns([1.6, 1])
+col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
@@ -342,7 +371,22 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-with col_vazio:
-    st.markdown("") # Espaço vazio para manter o grid alinhado
+with col_diario:
+    st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
+    
+    # Cria a tabela diária com base no df_graficos (já agrupado e calculado)
+    df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Variação %']].copy()
+    df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
+    
+    html_diario = '<div class="tabela-container" style="font-size:13px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
+    
+    for _, row in df_diario_view.iterrows():
+        variacao = row['Variação %']
+        cor = "#1cc88a" if variacao >= 0 else "#e74a3b"
+        
+        html_diario += f'<tr><td style="font-weight:bold; color:#333;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao:.2f}%</td></tr>'
+    html_diario += '</tbody></table></div>'
+    
+    st.markdown(html_diario, unsafe_allow_html=True)
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
