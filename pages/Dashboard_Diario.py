@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import re
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
@@ -57,19 +58,24 @@ st.markdown("""
     .rend-total span { font-weight: bold; }
 
     /* Fundo sutil para o custo de oportunidade */
-    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #4e73df; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
-    .custo-oportunidade span { font-weight: bold; }
+    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #e74a3b; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
+    .custo-oportunidade span { font-weight: bold; color: #e74a3b; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. FUNÇÃO DE LEITURA E LIMPEZA
+# 1. FUNÇÃO DE LEITURA E LIMPEZA AVANÇADA
 # ==============================================================================
 def limpa_valor_bruto(valor):
     if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip() == "-":
         return 0.0
     try:
-        return float(str(valor).strip())
+        v_str = str(valor).strip()
+        # Tratamento para parênteses (negativos contábeis)
+        v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
+        # Remove R$ e converte padrão BR para float
+        v_str = v_str.replace('R$', '').replace('.', '').replace(',', '.').strip()
+        return float(v_str)
     except ValueError:
         return 0.0
 
@@ -78,7 +84,7 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS E CÁLCULO DO CUSTO DE OPORTUNIDADE
+# 2. CARGA DE DADOS E CÁLCULOS MENSAIS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -86,7 +92,7 @@ def carregar_dados():
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
     try:
         # =========================================================
-        # 1. Carrega Histórico de Saldos (ABA 1)
+        # 1. Carrega Histórico de Saldos
         # =========================================================
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
@@ -102,7 +108,7 @@ def carregar_dados():
             if col in df_saldos.columns:
                 df_saldos[col] = df_saldos[col].apply(limpa_valor_bruto)
 
-        # Lógica Mensal
+        # Lógica Mensal (Filtra apenas o mês da última data encontrada)
         ultima_data = df_saldos[col_data].max()
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -112,26 +118,23 @@ def carregar_dados():
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
 
-        # DEFINIR O TIPO NO df_mes
+        # DEFINIR O TIPO
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df_mes['Tipo'] = df_mes[col_conta].apply(definir_tipo)
 
-        # Cálculo de Entrada/Saída para a Tabela
+        # Cálculo de Variação Mensal para a Tabela de Bancos
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
-        
         df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
-        df_inicio_mes = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
-        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes).fillna(0)
+        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
+        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
         df_fim_mes['Variação'] = df_fim_mes['Saldo Final'] - df_fim_mes['Saldo Inicial']
         df_fim_mes['Entrada'] = df_fim_mes['Variação'].apply(lambda x: x if x > 0 else 0)
         df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
 
-        # =========================================================
-        # Agrupamento para Gráfico e Tabela Diária
-        # =========================================================
+        # Agrupamento para Gráfico Diário
         df_graficos = df_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
             'Saldo Inicial': 'sum',
@@ -148,12 +151,9 @@ def carregar_dados():
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
-        rendimento_unicred = 0.0
-        saldo_aplicado_unicred = 0.0
         
         try:
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
-            
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 
@@ -164,18 +164,13 @@ def carregar_dados():
                 
                 for c in df_rend.columns:
                     c_low = c.lower()
-                    if 'contas' in c_low or 'conta' in c_low or 'bancária' in c_low:
-                        col_conta_rend = c
-                    if 'data movimentação' in c_low:
-                        col_data_mov = c
-                    if 'data início' in c_low:
-                        col_data_ini = c
-                    if 'rendimento' in c_low:
-                        col_rendimento = c
+                    if 'contas' in c_low or 'conta' in c_low or 'bancária' in c_low: col_conta_rend = c
+                    if 'data movimentação' in c_low: col_data_mov = c
+                    if 'data início' in c_low: col_data_ini = c
+                    if 'rendimento' in c_low: col_rendimento = c
                 
                 if col_conta_rend and col_rendimento:
                     col_data_usar = col_data_mov if col_data_mov else col_data_ini
-                    
                     if col_data_usar:
                         df_rend[col_data_usar] = pd.to_datetime(df_rend[col_data_usar], format='%d/%m/%Y', errors='coerce')
                         df_rend = df_rend[(df_rend[col_data_usar] >= mes_referencia) & (df_rend[col_data_usar] < proximo_mes)]
@@ -184,51 +179,29 @@ def carregar_dados():
                     
                     if not df_rend.empty:
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.rename(columns={
-                            col_conta_rend: col_conta, 
-                            col_rendimento: 'Valor Líquido'
-                        }, inplace=True)
+                        df_rend_resumo.rename(columns={col_conta_rend: col_conta, col_rendimento: 'Valor Líquido'}, inplace=True)
                         rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
-                        
-                        # Pega o rendimento específico da Unicred
-                        unicred_row = df_rend_resumo[df_rend_resumo[col_conta].str.contains('Unicred', case=False)]
-                        if not unicred_row.empty:
-                            rendimento_unicred = unicred_row['Valor Líquido'].iloc[0]
-
         except Exception:
             pass
 
         # =========================================================
-        # 3. CÁLCULO DO CUSTO DE OPORTUNIDADE (BASEADO NA UNICRED)
+        # 3. LER A NOVA ABA DE CUSTO DE OPORTUNIDADE
         # =========================================================
         custo_oportunidade_total = 0.0
-        
-        # Pega o saldo médio aplicado na Unicred durante o mês
-        df_unicred = df_mes[df_mes[col_conta].str.contains('Unicred.*Aplicação', case=False, na=False)]
-        if not df_unicred.empty:
-            saldo_aplicado_unicred = df_unicred['Saldo Final'].mean() # Média do saldo
-        else:
-            saldo_aplicado_unicred = 0.0
-
-        # Se tiver rendimento e saldo aplicado, calcula a taxa proporcional
-        if saldo_aplicado_unicred > 0 and rendimento_unicred > 0:
-            # Taxa de rendimento do Unicred sobre o saldo aplicado
-            taxa_rendimento = rendimento_unicred / saldo_aplicado_unicred
-            
-            # Para cada dia, calcula o custo de oportunidade
-            for _, row in df_graficos.iterrows():
-                # Pega o dinheiro não aplicado (seu cálculo)
-                data_dia = row[col_data]
-                df_dia = df_mes[df_mes[col_data] == data_dia]
+        try:
+            df_custos = conn.read(worksheet="Custo_Oportunidade", ttl=0)
+            if not df_custos.empty:
+                df_custos.columns = [c.strip() for c in df_custos.columns]
                 
-                saldo_total_dia = row['Saldo Final']
-                saldo_aplicado_dia = df_dia[df_dia['Tipo'] == 'Aplicação']['Saldo Final'].sum()
-                
-                # Dinheiro que poderia estar rendendo
-                dinheiro_nao_aplicado_dia = saldo_total_dia - saldo_aplicado_dia
-                
-                # Custo de oportunidade diário = Dinheiro não aplicado * taxa do Unicred
-                custo_oportunidade_total += dinheiro_nao_aplicado_dia * taxa_rendimento
+                if 'Data' in df_custos.columns and 'Custo de Oportunidade' in df_custos.columns:
+                    df_custos['Data'] = pd.to_datetime(df_custos['Data'], format='%d/%m/%Y', errors='coerce')
+                    # Filtra apenas as datas do mês atual
+                    df_custos = df_custos[(df_custos['Data'] >= mes_referencia) & (df_custos['Data'] < proximo_mes)]
+                    
+                    df_custos['Custo de Oportunidade'] = df_custos['Custo de Oportunidade'].apply(limpa_valor_bruto)
+                    custo_oportunidade_total = df_custos['Custo de Oportunidade'].sum()
+        except Exception:
+            pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
         
@@ -281,33 +254,33 @@ fig_donut.update_layout(
 # Gráfico de Barras + Linha de Tendência (SALDO TOTAL)
 fig_combinado = go.Figure()
 
-# Barras do Saldo Total
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#4e73df',
+    marker_color='#dbe4ff',
     opacity=0.85,
     width=0.5
 ))
 
-# Linha de Tendência
 fig_combinado.add_trace(go.Scatter(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Tendência',
-    mode='lines+markers',
+    mode='lines+markers+text',
     line=dict(color='#1a3b7c', width=2.5),
     marker=dict(size=7, color='#1a3b7c', line=dict(width=2, color='white')),
+    text=[f"{((df_graficos['Saldo Final'].iloc[i] - df_graficos['Saldo Final'].iloc[i-1])/df_graficos['Saldo Final'].iloc[i-1])*100:.2f}%" if i > 0 and df_graficos['Saldo Final'].iloc[i-1] != 0 else "" for i in range(len(df_graficos))],
+    textposition="top center",
+    textfont=dict(size=11, color="#333", weight="bold"),
 ))
 
-# Layout do Gráfico
 fig_combinado.update_layout(
-    margin=dict(t=10, b=15, l=5, r=5), height=160, 
+    margin=dict(t=35, b=15, l=5, r=5), height=190, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
-    barmode='group',
-    legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(size=10)),
+    barmode='overlay',
+    showlegend=False,
     plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9',
     hovermode='x unified'
 )
@@ -316,11 +289,11 @@ fig_combinado.update_layout(
 # 5. MONTAGEM DO PAINEL
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
-mes_referencia_nome = df_graficos['Data'].iloc[-1].strftime('%B/%Y')
+mes_referencia_nome = df_graficos['Data_Label'].iloc[-1] if not df_graficos.empty else ""
 
 st.markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; margin-bottom: 5px; border-bottom: 1px solid #e3e6f0;">
-    <div><b style="font-size:18px;">📅 {mes_referencia_nome}</b><br><span style="font-size:10px; color:gray;">Período de referência</span></div>
+    <div><b style="font-size:18px;">📅 Agosto/2026</b><br><span style="font-size:10px; color:gray;">Período de referência</span></div>
     <div style="text-align:center;"><h2 style="margin:0; color:#1a2035; font-size:22px;">PAINEL FINANCEIRO MENSAL</h2><p style="margin:0; font-size:11px; color:gray;">Controle Consolidado de Bancos</p></div>
     <div style="display:flex; gap:10px;">
         <div style="background:#d4edda; border-radius:12px; padding:1px 15px; text-align:center;"><span style="font-size:10px;">Atualização</span><br><b style="font-size:14px;">{data_hoje}</b></div>
@@ -385,17 +358,7 @@ with c3:
             <span>{formatar_moeda(rendimento_total_mes)}</span>
         </div>
         """, unsafe_allow_html=True)
-
-        # Custo de Oportunidade
-        st.markdown(f"""
-        <div class='custo-oportunidade'>
-            <span>⏳ CUSTO DE OPORTUNIDADE</span>
-            <span style='color:#4e73df;'>{formatar_moeda(custo_oportunidade_total)}</span>
-        </div>
-        """, unsafe_allow_html=True)
-        
         st.markdown("</div>", unsafe_allow_html=True)
-        
     else:
         st.markdown("""
         <div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px;'>
@@ -403,12 +366,20 @@ with c3:
         </div>
         """, unsafe_allow_html=True)
 
+    # Bloco do Custo de Oportunidade Puxando do Sheets
+    st.markdown(f"""
+    <div class='custo-oportunidade'>
+        <span>🔻 PERDA MENSAL (NÃO APLICADO)</span>
+        <span>- {formatar_moeda(custo_oportunidade_total)}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
 col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
-    st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']}
     
