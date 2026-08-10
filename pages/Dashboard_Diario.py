@@ -112,13 +112,14 @@ def carregar_dados():
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
 
-        # Cálculo de Entrada/Saída para a Tabela
-        df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
-        
+        # DEFINIR O TIPO NO df_mes (CORREÇÃO DO ERRO FATAL)
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
-        df_fim_mes['Tipo'] = df_fim_mes[col_conta].apply(definir_tipo)
+        df_mes['Tipo'] = df_mes[col_conta].apply(definir_tipo)
+
+        # Cálculo de Entrada/Saída para a Tabela
+        df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
         
         df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
         df_inicio_mes = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
@@ -133,7 +134,7 @@ def carregar_dados():
         # =========================================================
         df_graficos = df_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
-            'Saldo Inicial': 'sum', # Para cálculos diários
+            'Saldo Inicial': 'sum',
             'Entrada': 'sum',
             'Saída': 'sum'
         }).reset_index().sort_values(col_data)
@@ -209,7 +210,6 @@ def carregar_dados():
             # Calcula o que estava aplicado e o que estava disponível
             saldo_aplicado_dia = df_dia[df_dia['Tipo'] == 'Aplicação']['Saldo Final'].sum()
             # O "dinheiro parado" é a diferença entre o total e o que estava aplicado
-            # (Considerando que o que não está aplicado poderia estar rendendo)
             dinheiro_parado_dia = row['Saldo Final'] - saldo_aplicado_dia
             
             # Soma o custo de oportunidade diário
