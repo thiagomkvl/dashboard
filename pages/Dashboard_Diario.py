@@ -124,24 +124,57 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (APENAS BANCOS DA PLANILHA)
+        # 2. Carrega a aba RENDIMENTOS (COM BUSCA INTELIGENTE)
         # =========================================================
         df_rend_resumo = pd.DataFrame()
+        
         try:
+            # Tenta ler a aba "Rendimentos". Se tiver outro nome, mude aqui.
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
+            
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
-                df_rend[col_data] = pd.to_datetime(df_rend[col_data], format='%d/%m/%Y', errors='coerce')
-                df_rend['Valor Líquido'] = df_rend['Valor Líquido'].apply(limpa_valor_bruto)
                 
-                # Filtra apenas os dados do mês de referência
-                df_rend = df_rend[(df_rend[col_data] >= mes_referencia) & (df_rend[col_data] < proximo_mes)]
+                # --- BUSCA INTELIGENTE DE COLUNAS ---
+                # Procura a coluna de Data
+                col_data_rend = None
+                for c in df_rend.columns:
+                    if 'data' in c.lower():
+                        col_data_rend = c
+                        break
                 
-                if not df_rend.empty:
-                    # Agrupa por banco e soma os rendimentos
-                    df_rend_resumo = df_rend.groupby(col_conta)['Valor Líquido'].sum().reset_index()
+                # Procura a coluna de Valor Líquido (ignorando acentos)
+                col_valor_rend = None
+                for c in df_rend.columns:
+                    if 'liquido' in c.lower() or 'líquido' in c.lower():
+                        col_valor_rend = c
+                        break
+
+                # Procura a coluna do Banco
+                col_conta_rend = None
+                for c in df_rend.columns:
+                    if 'banco' in c.lower() or 'conta' in c.lower() or 'bancária' in c.lower():
+                        col_conta_rend = c
+                        break
+                
+                # Só processa se encontrou as 3 colunas
+                if col_data_rend and col_valor_rend and col_conta_rend:
+                    df_rend[col_data_rend] = pd.to_datetime(df_rend[col_data_rend], format='%d/%m/%Y', errors='coerce')
+                    df_rend[col_valor_rend] = df_rend[col_valor_rend].apply(limpa_valor_bruto)
+                    
+                    # Filtra o mês
+                    df_rend = df_rend[(df_rend[col_data_rend] >= mes_referencia) & (df_rend[col_data_rend] < proximo_mes)]
+                    
+                    if not df_rend.empty:
+                        # Agrupa e soma
+                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_valor_rend].sum().reset_index()
+                        df_rend_resumo.rename(columns={col_conta_rend: col_conta, col_valor_rend: 'Valor Líquido'}, inplace=True)
+                else:
+                    # Se não encontrou, gera um aviso silencioso (sem quebrar o painel)
+                    pass
+                    
         except Exception as e:
-            # Se a aba não existir, mantém vazio
+            # Se a aba não existir, ignora
             pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, col_conta
@@ -255,7 +288,7 @@ with c2:
     st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# LADO DIREITO: RESUMO DE RENDIMENTOS (APENAS BANCOS DA PLANILHA)
+# LADO DIREITO: RESUMO DE RENDIMENTOS
 # ==============================================================================
 with c3:
     st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
@@ -285,7 +318,14 @@ with c3:
         st.markdown("</div>", unsafe_allow_html=True)
         
     else:
-        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado na aba 'Rendimentos' para este mês.</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>
+            <b>Nenhum dado encontrado.</b><br><br>
+            Verifique se:<br>
+            1. A aba se chama exatamente <b>"Rendimentos"</b>.<br>
+            2. As colunas possuem os nomes <b>"Data"</b>, <b>"Contas Bancárias"</b> (ou Banco) e <b>"Valor Líquido"</b>.
+        </div>
+        """, unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
