@@ -16,7 +16,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (ALINHAMENTO À ESQUERDA E FONTE ROBUSTA) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -30,9 +30,6 @@ st.markdown("""
     .kpi-card.disponivel { border-top: 4px solid #1cc88a; background: #f4fdf6; }
     .kpi-card.limites { border-top: 4px solid #36b9cc; background: #f4fcfe; }
     .kpi-card.aplicacoes { border-top: 4px solid #6f42c1; background: #fbf8ff; }
-    .kpi-card.green { border-top: 4px solid #1cc88a; }
-    .kpi-card.red { border-top: 4px solid #e74a3b; }
-    .kpi-card.yellow { border-top: 4px solid #f6c23e; }
     
     .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; }
     .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
@@ -40,13 +37,14 @@ st.markdown("""
     .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela Padrão - Alinhada à esquerda */
+    /* Tabela Padrão - Alinhada à esquerda e colada na borda */
     .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 14px; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
     .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e3e6f0; }
     .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     
+    /* Força o alinhamento à esquerda em TODAS as células de valor */
     .tabela-financeira .valores { text-align: left; font-weight: bold; color: #2d3748; }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
@@ -76,13 +74,13 @@ def formatar_moeda(valor):
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame()
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), ""
     try:
         df = conn.read(worksheet="Historico_Saldos", ttl=0)
         
         if df.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), ""
         
         df.columns = [c.strip() for c in df.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df.columns else 'Conta Bancária'
@@ -106,7 +104,7 @@ def carregar_dados():
 
         if df_mes.empty:
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), ""
 
         # =========================================================
         # CÁLCULOS DE ENTRADA E SAÍDA POR DIFERENÇA DE SALDO
@@ -139,13 +137,21 @@ def carregar_dados():
         df_graficos = df_mes.groupby(col_data)['Saldo Final'].sum().reset_index().sort_values(col_data)
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
-        return df_fim_mes, df_graficos
+        return df_fim_mes, df_graficos, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), ""
 
-df_consolidado, df_graficos = carregar_dados()
+# ==============================================================================
+# CHAMADA PRINCIPAL E TRATAMENTO DE ERRO DE COLUNA
+# ==============================================================================
+df_consolidado, df_graficos, col_conta = carregar_dados()
+
+# Segurança extra: Se a variável col_conta não foi definida, define um padrão
+if not col_conta:
+    col_conta = 'Contas Bancárias'
+
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
