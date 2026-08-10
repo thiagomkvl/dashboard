@@ -71,7 +71,7 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS (LEITURA DE DUAS ABAS)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -126,60 +126,49 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (ABA 2 SEPARADA)
+        # 2. Carrega a aba RENDIMENTOS (FILTRANDO APENAS A COLUNA DE RENDIMENTO)
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         try:
-            # =====================================================
-            #  LEITURA DA ABA RENDIMENTOS
-            # =====================================================
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 
-                # 1. Detectar a coluna "Contas Bancárias"
+                # 1. Detectar colunas
                 col_conta_rend = None
-                for c in df_rend.columns:
-                    if 'contas' in c.lower() or 'conta' in c.lower() or 'bancária' in c.lower():
-                        col_conta_rend = c
-                        break
-                
-                # 2. Detectar a coluna "Data Movimentação"
                 col_data_rend = None
-                for c in df_rend.columns:
-                    if 'data' in c.lower() or 'movimentação' in c.lower():
-                        col_data_rend = c
-                        break
+                col_rendimento = None
                 
-                # 3. Detectar a coluna "Valor Líquido" (Com ou sem acento)
-                col_valor_rend = None
                 for c in df_rend.columns:
-                    # Busca por "líquido" ou "liquido" (sem acento)
-                    if 'liquido' in c.lower() or 'líquido' in c.lower():
-                        col_valor_rend = c
-                        break
+                    c_low = c.lower()
+                    if 'contas' in c_low or 'conta' in c_low or 'bancária' in c_low:
+                        col_conta_rend = c
+                    if 'data' in c_low or 'movimentação' in c_low:
+                        col_data_rend = c
+                    if 'rendimento' in c_low:
+                        col_rendimento = c
                 
                 # Se encontrou as 3 colunas
-                if col_data_rend and col_valor_rend and col_conta_rend:
-                    # Converte a data e o valor da aba Rendimentos
+                if col_data_rend and col_rendimento and col_conta_rend:
+                    # Converte a data
                     df_rend[col_data_rend] = pd.to_datetime(df_rend[col_data_rend], format='%d/%m/%Y', errors='coerce')
-                    df_rend[col_valor_rend] = df_rend[col_valor_rend].apply(limpa_valor_bruto)
+                    # Converte o valor da coluna Rendimentos
+                    df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
                     
-                    # Filtra apenas o mês de referência na aba Rendimentos
+                    # Filtra apenas o mês de referência
                     df_rend = df_rend[(df_rend[col_data_rend] >= mes_referencia) & (df_rend[col_data_rend] < proximo_mes)]
                     
                     if not df_rend.empty:
-                        # Agrupa por banco e soma os valores líquidos
-                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_valor_rend].sum().reset_index()
+                        # Agrupa por banco e soma APENAS os rendimentos
+                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
                         
-                        # Renomeia as colunas para o padrão do dashboard
+                        # Renomeia para o dashboard
                         df_rend_resumo.rename(columns={
                             col_conta_rend: col_conta, 
-                            col_valor_rend: 'Valor Líquido'
+                            col_rendimento: 'Valor Líquido'
                         }, inplace=True)
-        except Exception as e:
-            # Se a aba não existir, ignora silenciosamente
+        except Exception:
             pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, col_conta
@@ -293,7 +282,7 @@ with c2:
     st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# LADO DIREITO: RESUMO DE RENDIMENTOS
+# LADO DIREITO: RESUMO DE RENDIMENTOS (APENAS COLUNA RENDIMENTOS)
 # ==============================================================================
 with c3:
     st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
@@ -326,7 +315,7 @@ with c3:
         st.markdown("""
         <div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>
             <b>Nenhum dado de rendimento encontrado.</b><br><br>
-            Verifique se a aba <b>"Rendimentos"</b> possui dados para o mês atual.
+            Verifique se a coluna <b>"Rendimentos"</b> possui dados para o mês atual.
         </div>
         """, unsafe_allow_html=True)
 
