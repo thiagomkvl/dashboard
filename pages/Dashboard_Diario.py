@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta  # <--- ERRO CORRIGIDO AQUI
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 # Tente importar a conexão
@@ -30,7 +30,6 @@ st.markdown("""
     .kpi-card.disponivel { border-top: 4px solid #1cc88a; background: #f4fdf6; }
     .kpi-card.limites { border-top: 4px solid #36b9cc; background: #f4fcfe; }
     .kpi-card.aplicacoes { border-top: 4px solid #6f42c1; background: #fbf8ff; }
-    .kpi-card.yellow { border-top: 4px solid #f6c23e; background: #fffbeb; }
     
     .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; }
     .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
@@ -47,8 +46,12 @@ st.markdown("""
     .tabela-financeira .valores { text-align: left; font-weight: bold; color: #2d3748; }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
-    .box-total-blue { background: #f8f9fc; border: 1px solid #4e73df; border-radius: 4px; padding: 6px; text-align: center; margin: 4px 0; }
-    .box-total-grey { background: #e2e6ea; border: 1px solid #d1d3e2; border-radius: 4px; padding: 6px; text-align: center; margin: 4px 0; }
+    
+    /* Estilo do Resumo de Rendimentos (Substituindo Indicadores) */
+    .rend-box { background: white; border: 1px solid #e3e6f0; border-radius: 6px; padding: 15px; margin-bottom: 6px; font-size: 14px; }
+    .rend-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    .rend-item:last-child { border-bottom: none; }
+    .rend-total { background: #f8f9fc; border: 1px solid #f6c23e; border-radius: 4px; padding: 8px; text-align: center; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -99,7 +102,7 @@ def carregar_dados():
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
-        # Cálculo de Entrada/Saída
+        # Cálculo de Entrada/Saída para a Tabela
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
         
         def definir_tipo(nome): 
@@ -120,54 +123,30 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # LEITURA DE RENDIMENTOS E CÁLCULO DE TAXA
+        # CÁLCULO DE RENDIMENTOS (Apenas para o Resumo Lateral)
         # =========================================================
+        df_rend_resumo = pd.DataFrame()
         try:
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 df_rend[col_data] = pd.to_datetime(df_rend[col_data], format='%d/%m/%Y', errors='coerce')
                 df_rend['Valor Líquido'] = df_rend['Valor Líquido'].apply(limpa_valor_bruto)
-                
-                # Filtra apenas rendimentos do mês atual
                 df_rend = df_rend[(df_rend[col_data] >= mes_referencia) & (df_rend[col_data] < proximo_mes)]
                 
-                # Se não houver rendimentos registrados na aba, calcula pela diferença do saldo
-                if df_rend.empty:
-                    raise ValueError("Aba vazia, usando cálculo automático.")
-            else:
-                raise ValueError("Aba vazia, usando cálculo automático.")
+                if not df_rend.empty:
+                    # Agrupa os rendimentos por banco
+                    df_rend_resumo = df_rend.groupby(col_conta)['Valor Líquido'].sum().reset_index()
         except:
-            # Lógica de Fallback (Cálculo Automático para Unicred e similares)
-            df_rend = pd.DataFrame()
-            
-            # Para cada banco no mês, calculamos o rendimento do período e dividimos pelos dias
-            for banco in df_fim_mes[col_conta].unique():
-                df_banco = df_mes[df_mes[col_conta] == banco].sort_values(col_data)
-                if len(df_banco) > 1:
-                    saldo_inicial_banco = df_banco.iloc[0]['Saldo Final']
-                    saldo_final_banco = df_banco.iloc[-1]['Saldo Final']
-                    
-                    # Rendimento total do banco no mês
-                    rendimento_total = saldo_final_banco - saldo_inicial_banco
-                    
-                    # Número de dias no mês
-                    dias_no_mes = (df_banco.iloc[-1][col_data] - df_banco.iloc[0][col_data]).days
-                    if dias_no_mes == 0: dias_no_mes = 1
-                    
-                    # Rateia o rendimento por dia
-                    rendimento_diario = rendimento_total / dias_no_mes
-                    
-                    # Cria linhas diárias de rendimento
-                    for i in range(dias_no_mes + 1):
-                        data_dia = df_banco.iloc[0][col_data] + timedelta(days=i)
-                        df_rend = pd.concat([df_rend, pd.DataFrame({
-                            col_data: [data_dia],
-                            col_conta: [banco],
-                            'Valor Líquido': [rendimento_diario]
-                        })])
+            pass
 
-        return df_fim_mes, df_graficos, df_rend, col_conta
+        # Se não tiver dados na aba Rendimentos, calcula automático baseado na diferença do saldo
+        if df_rend_resumo.empty:
+            df_rend_resumo = df_fim_mes[['Contas Bancárias', 'Saldo Inicial', 'Saldo Final']].copy()
+            df_rend_resumo['Valor Líquido'] = df_rend_resumo['Saldo Final'] - df_rend_resumo['Saldo Inicial']
+            df_rend_resumo = df_rend_resumo[['Contas Bancárias', 'Valor Líquido']]
+
+        return df_fim_mes, df_graficos, df_rend_resumo, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
@@ -176,12 +155,12 @@ def carregar_dados():
 # ==============================================================================
 # CHAMADA PRINCIPAL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend, col_conta = carregar_dados()
+df_consolidado, df_graficos, df_rend_resumo, col_conta = carregar_dados()
 if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS
+# 3. CÁLCULOS DOS KPIs MENSAIS (Apenas os 4 principais)
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -191,17 +170,10 @@ limites_garantidos = df_consolidado['Conta Garantida'].sum()
 limites_totais = limite_getnet + limites_garantidos
 
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
-saldo_com_limites = saldo_total + limites_totais
 
 entradas_mes = df_consolidado['Entrada'].sum()
 saidas_mes = df_consolidado['Saída'].sum()
 resultado_liquido_mes = entradas_mes - saidas_mes
-
-# Rendimento Total do Mês
-if not df_rend.empty:
-    rendimento_total_mes = df_rend['Valor Líquido'].sum()
-else:
-    rendimento_total_mes = 0.0
 
 # ==============================================================================
 # 4. GRÁFICOS
@@ -235,30 +207,6 @@ fig_linha.update_layout(
     plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9'
 )
 
-# Gráfico de Rendimentos (Barras)
-if not df_rend.empty:
-    # Agrupa o rendimento por banco e soma
-    df_rend_grouped = df_rend.groupby(col_conta)['Valor Líquido'].sum().reset_index().sort_values('Valor Líquido', ascending=True)
-    
-    fig_rend = go.Figure()
-    fig_rend.add_trace(go.Bar(
-        x=df_rend_grouped['Valor Líquido'], 
-        y=df_rend_grouped[col_conta], 
-        orientation='h',
-        marker_color='#f6c23e',
-        text=df_rend_grouped['Valor Líquido'].apply(lambda x: f"R$ {x:,.2f}"),
-        textposition='outside'
-    ))
-    fig_rend.update_layout(
-        margin=dict(t=10, b=10, l=5, r=5), height=300,
-        xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(tickfont=dict(size=11), showgrid=False),
-        plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9',
-        showlegend=False
-    )
-else:
-    fig_rend = None
-
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL
 # ==============================================================================
@@ -275,14 +223,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPIs (5 Blocos - Adicionado Rendimentos)
-kpi_row = st.columns(5)
+# KPIs (4 Blocos Originais)
+kpi_row = st.columns(4)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "disponivel"),
     (kpi_row[2], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "limites"),
-    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes"),
-    (kpi_row[4], "💰", "RENDIMENTOS", f"R$ {rendimento_total_mes:,.2f}", "yellow")
+    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes")
 ]
 for col, icon, title, val, color in kp_data:
     col.markdown(f"<div class='kpi-card {color}'><div style='font-size:12px;'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
@@ -309,21 +256,42 @@ with c2:
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
+# ==============================================================================
+# LADO DIREITO: NOVO RESUMO DE RENDIMENTOS (SUBSTITUINDO INDICADORES)
+# ==============================================================================
 with c3:
-    st.markdown("<div class='section-title'>LIQUIDEZ BANCÁRIA</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Caixa Disponível:</span> <b>R$ {saldo_disponivel:,.2f}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Limites Bancários:</span> <b>R$ {limites_totais:,.2f}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='box-total-blue'><b>LIQUIDEZ TOTAL</b><br><span style='font-size:15px;'>R$ {saldo_com_limites:,.2f}</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
+    
+    if not df_rend_resumo.empty:
+        st.markdown("<div class='rend-box'>", unsafe_allow_html=True)
+        
+        rendimento_total = 0
+        for _, row in df_rend_resumo.iterrows():
+            valor = row['Valor Líquido']
+            rendimento_total += valor
+            cor = "#1cc88a" if valor >= 0 else "#e74a3b"
+            
+            st.markdown(f"""
+            <div class='rend-item'>
+                <span style='font-weight:500;'>{row[col_conta]}</span>
+                <span style='font-weight:bold; color:{cor};'>{formatar_moeda(valor)}</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-    st.markdown("<div class='section-title' style='margin-top:12px;'>INDICADORES DE TESOURARIA</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Bancos monitorados</span> <b>{len(df_consolidado)}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Bancos com Aplicação</span> <b>{len(df_consolidado[df_consolidado['Tipo'] == 'Aplicação'])}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ind-item'><span>Bancos com Limite</span> <b>{len(df_consolidado[df_consolidado['Conta Garantida']>0]) + (1 if limite_getnet > 0 else 0)}</b></div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='box-total-grey'><b>SALDO CONSOLIDADO</b><br><span style='font-size:14px;'>R$ {saldo_total:,.2f}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='rend-total'>
+            <span style='font-weight:bold; color:#f6c23e;'>💰 TOTAL RENDIMENTOS</span><br>
+            <span style='font-size:18px; font-weight:bold;'>{formatar_moeda(rendimento_total)}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    else:
+        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado ou calculado para este mês.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-col_tab, col_rend = st.columns([1.6, 1])
+col_tab, col_vazio = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
@@ -338,11 +306,7 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-with col_rend:
-    st.markdown("<div class='section-title'>RENDIMENTOS POR BANCO</div>", unsafe_allow_html=True)
-    if fig_rend:
-        st.plotly_chart(fig_rend, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado ou calculado para este mês.</div>", unsafe_allow_html=True)
+with col_vazio:
+    st.markdown("") # Espaço vazio para manter o grid alinhado
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
