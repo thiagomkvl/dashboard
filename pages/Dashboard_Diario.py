@@ -135,10 +135,18 @@ def carregar_dados():
                 col_ext_data = next((c for c in df_extratos.columns if 'data' in c.lower()), 'Data')
                 col_ext_credito = next((c for c in df_extratos.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vlr Crédito')
                 col_ext_debito = next((c for c in df_extratos.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vlr Débito')
+                col_ext_tipo = next((c for c in df_extratos.columns if 'tipo' in c.lower() or 'transa' in c.lower()), 'Tipo de Transação')
 
                 df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
                 df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
                 
+                # --- FILTRO DE TRANSFERÊNCIAS INTERNAS ---
+                if col_ext_tipo in df_extratos.columns:
+                    # Cria máscara para achar tudo que contém "Transferência Interna" e remove do dataframe
+                    mascara_internas = df_extratos[col_ext_tipo].astype(str).str.contains('Transferência Interna', case=False, na=False)
+                    df_extratos = df_extratos[~mascara_internas]
+                # -----------------------------------------
+
                 df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
                 df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
                 
@@ -158,7 +166,6 @@ def carregar_dados():
         # =========================================================
         # 4. TABELA FINAL DE BANCOS (Saldo Fim do Mês + Entradas/Saídas Acumuladas)
         # =========================================================
-        # Pega o último registro de cada banco no mês
         df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
         
         df_inicio_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
@@ -172,12 +179,10 @@ def carregar_dados():
                 col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_conta: col_conta})
             
-            # Mescla as somas acumuladas na tabela de fim de mês
             df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
             df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
             df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
         else:
-            # Se não tiver Extrato, mantém 0 (para não quebrar)
             df_fim_mes['Entrada'] = 0
             df_fim_mes['Saída'] = 0
 
@@ -189,7 +194,7 @@ def carregar_dados():
             'Saldo Inicial': 'sum',
         }).reset_index().sort_values(col_data)
         
-        # Adiciona Entrada e Saída diárias ao gráfico (para o gráfico de barras ficar legal)
+        # Adiciona Entrada e Saída diárias ao gráfico
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_diario = df_extratos.groupby([col_ext_data]).agg({
                 col_ext_credito: 'sum',
