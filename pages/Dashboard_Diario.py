@@ -94,7 +94,9 @@ def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
     try:
+        # =========================================================
         # 1. Carrega Histórico de Saldos
+        # =========================================================
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
@@ -117,40 +119,48 @@ def carregar_dados():
         proximo_mes = mes_referencia + relativedelta(months=1)
         
         # =========================================================
-        # 2. EXTRATOS (COM FILTRO BLINDADO DE TRANSFERÊNCIAS)
+        # 2. EXTRATOS (COM FILTRO BLINDADO EXATO)
         # =========================================================
         df_extratos = None
         try:
             df_extratos = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_extratos.empty:
+                # Remove espaços em branco dos cabeçalhos para evitar erros
                 df_extratos.columns = [str(c).strip() for c in df_extratos.columns]
                 
-                col_ext_conta = next((c for c in df_extratos.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
-                col_ext_data = next((c for c in df_extratos.columns if 'data' in c.lower()), 'Data')
-                col_ext_credito = next((c for c in df_extratos.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vlr Crédito')
-                col_ext_debito = next((c for c in df_extratos.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vlr Débito')
-                col_ext_tipo = next((c for c in df_extratos.columns if 'tipo' in c.lower() or 'transa' in c.lower()), 'Tipo de Transação')
+                # Mapeamento EXATO baseado na sua imagem
+                col_ext_conta = 'Banco'
+                col_ext_data = 'Data'
+                col_ext_credito = 'Vl Crédito'
+                col_ext_debito = 'Vl Débito'
+                col_ext_tipo = 'Tipo de Transação'
 
+                # Converte a data e filtra o mês
                 df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
                 df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
                 
-                # --- FILTRO ANTI-FALHAS PARA TRANSFERÊNCIAS INTERNAS ---
+                # --- FILTRO CIRÚRGICO PARA TRANSFERÊNCIAS INTERNAS ---
                 if col_ext_tipo in df_extratos.columns:
-                    # Função para arrancar acentos e jogar pra minúsculo
                     def normalizar_texto(txt):
+                        if pd.isna(txt): return ""
+                        # Remove acentos, cedilhas e joga para minúsculo
                         return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
                     
+                    # Aplica a limpeza apenas na coluna Tipo de Transação
                     serie_tipo = df_extratos[col_ext_tipo].apply(normalizar_texto)
                     
-                    # Cria a máscara caçando as palavras chave, independentemente do que o usuário digitou
+                    # Procura "transferencia" e "interna"
                     mascara_internas = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
                     
-                    # Salva apenas o que NÃO caiu na máscara (ou seja, apenas o operacional real)
+                    # Salva apenas o que NÃO é transferência interna
                     df_extratos = df_extratos[~mascara_internas]
-                # -------------------------------------------------------
+                # -----------------------------------------------------
 
-                df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
-                df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
+                # Limpa os valores de dinheiro
+                if col_ext_credito in df_extratos.columns:
+                    df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
+                if col_ext_debito in df_extratos.columns:
+                    df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
                 
         except Exception as e:
             print(f"Aviso ao ler extratos: {e}")
@@ -175,13 +185,11 @@ def carregar_dados():
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
         if df_extratos is not None and not df_extratos.empty:
-            # Agrupa as transações reais (já expurgadas)
             df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
                 col_ext_credito: 'sum',
                 col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_conta: col_conta})
             
-            # Limpa espaços invisíveis dos nomes dos bancos para garantir o MATCH perfeito
             df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
             df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
             
@@ -285,7 +293,6 @@ limites_totais = limite_getnet + limites_garantidos
 
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 
-# Movimentação do Mês (Soma total operacional)
 entradas_mes = df_graficos['Entrada'].sum()
 saidas_mes = df_graficos['Saída'].sum()
 resultado_liquido_mes = entradas_mes - saidas_mes
