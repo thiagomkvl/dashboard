@@ -97,7 +97,6 @@ def carregar_dados():
         # =========================================================
         # LÓGICA MENSAL: DEFINIR O MÊS DE REFERÊNCIA
         # =========================================================
-        # Pega o último mês com dados disponíveis
         ultima_data = df[col_data].max()
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -112,20 +111,27 @@ def carregar_dados():
         # =========================================================
         # CÁLCULOS DE ENTRADA E SAÍDA POR DIFERENÇA DE SALDO
         # =========================================================
-        # 1. Pega o último registro de cada banco no mês (Saldo Final)
-        df_ultimo_dia = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last')
+        # 1. Cria a coluna Tipo com base no nome do banco
+        def definir_tipo(nome): 
+            if 'getnet' in str(nome).lower():
+                return 'Limite'
+            return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
+
+        # 2. Pega o último registro de cada banco no mês (Saldo Final) e mantém o Tipo
+        df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
+        df_fim_mes['Tipo'] = df_fim_mes[col_conta].apply(definir_tipo)
         
-        # 2. Pega o primeiro registro de cada banco no mês (Saldo Inicial)
-        df_primeiro_dia = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first')
-        
-        # 3. Junta os dados para calcular a variação líquida do mês
-        df_consolidado = df_ultimo_dia.merge(df_primeiro_dia[['Contas Bancárias', 'Saldo Final']], on='Contas Bancárias', suffixes=('', '_inicio'))
-        
-        # Calcula Entrada e Saída baseado na diferença
-        df_consolidado['Entrada'] = df_consolidado['Saldo Final'] - df_consolidado['Saldo Final_inicio']
-        df_consolidado['Entrada'] = df_consolidado['Entrada'].apply(lambda x: x if x > 0 else 0)
-        df_consolidado['Saída'] = df_consolidado['Saldo Final'] - df_consolidado['Saldo Final_inicio']
-        df_consolidado['Saída'] = df_consolidado['Saída'].apply(lambda x: abs(x) if x < 0 else 0)
+        # 3. Pega o primeiro registro de cada banco no mês (Saldo Inicial)
+        df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
+        df_inicio_mes = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
+
+        # 4. Adiciona o Saldo Inicial no DataFrame de Fim de Mês
+        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes).fillna(0)
+
+        # 5. Calcula Entrada e Saída baseado na diferença entre Inicial e Final
+        df_fim_mes['Variação'] = df_fim_mes['Saldo Final'] - df_fim_mes['Saldo Inicial']
+        df_fim_mes['Entrada'] = df_fim_mes['Variação'].apply(lambda x: x if x > 0 else 0)
+        df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
 
         # =========================================================
         # DADOS PARA O GRÁFICO DE LINHA (Evolução Mensal)
@@ -133,7 +139,7 @@ def carregar_dados():
         df_graficos = df_mes.groupby(col_data)['Saldo Final'].sum().reset_index().sort_values(col_data)
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
-        return df_consolidado, df_graficos
+        return df_fim_mes, df_graficos
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
@@ -269,8 +275,7 @@ with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
     
     # Ajusta as colunas para exibição
-    df_view = df_consolidado[['Tipo', col_conta, 'Saldo Final_inicio', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
-    df_view.rename(columns={'Saldo Final_inicio': 'Saldo Inicial'}, inplace=True)
+    df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
     
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']}
     
