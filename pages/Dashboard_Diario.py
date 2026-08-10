@@ -71,33 +71,35 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS (LEITURA DE DUAS ABAS SEPARADAS)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
     try:
-        # 1. Carrega Histórico de Saldos
-        df = conn.read(worksheet="Historico_Saldos", ttl=0)
-        if df.empty:
+        # =========================================================
+        # 1. Carrega Histórico de Saldos (ABA 1)
+        # =========================================================
+        df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
+        if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
             return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
         
-        df.columns = [c.strip() for c in df.columns]
-        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df.columns else 'Conta Bancária'
+        df_saldos.columns = [c.strip() for c in df_saldos.columns]
+        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_saldos.columns else 'Conta Bancária'
         col_data = 'Data'
         
-        df[col_data] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')
+        df_saldos[col_data] = pd.to_datetime(df_saldos[col_data], format='%d/%m/%Y', errors='coerce')
         for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
-            if col in df.columns:
-                df[col] = df[col].apply(limpa_valor_bruto)
+            if col in df_saldos.columns:
+                df_saldos[col] = df_saldos[col].apply(limpa_valor_bruto)
 
-        # Lógica Mensal
-        ultima_data = df[col_data].max()
+        # Lógica Mensal (Calculada a partir da ABA 1)
+        ultima_data = df_saldos[col_data].max()
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
-        df_mes = df[(df[col_data] >= mes_referencia) & (df[col_data] < proximo_mes)].copy()
+        df_mes = df_saldos[(df_saldos[col_data] >= mes_referencia) & (df_saldos[col_data] < proximo_mes)].copy()
 
         if df_mes.empty:
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
@@ -124,57 +126,37 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (COM BUSCA INTELIGENTE)
+        # 2. Carrega a aba RENDIMENTOS (ABA 2 SEPARADA)
         # =========================================================
         df_rend_resumo = pd.DataFrame()
-        
         try:
-            # Tenta ler a aba "Rendimentos". Se tiver outro nome, mude aqui.
+            # =====================================================
+            # ATENÇÃO: Se sua aba não se chamar "Rendimentos", 
+            # altere o nome dentro das aspas abaixo.
+            # =====================================================
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             
             if not df_rend.empty:
                 df_rend.columns = [c.strip() for c in df_rend.columns]
                 
-                # --- BUSCA INTELIGENTE DE COLUNAS ---
-                # Procura a coluna de Data
-                col_data_rend = None
-                for c in df_rend.columns:
-                    if 'data' in c.lower():
-                        col_data_rend = c
-                        break
+                # Busca Inteligente de colunas na ABA 2
+                col_data_rend = next((c for c in df_rend.columns if 'data' in c.lower()), None)
+                col_valor_rend = next((c for c in df_rend.columns if 'liquido' in c.lower() or 'líquido' in c.lower()), None)
+                col_conta_rend = next((c for c in df_rend.columns if 'banco' in c.lower() or 'conta' in c.lower() or 'bancária' in c.lower()), None)
                 
-                # Procura a coluna de Valor Líquido (ignorando acentos)
-                col_valor_rend = None
-                for c in df_rend.columns:
-                    if 'liquido' in c.lower() or 'líquido' in c.lower():
-                        col_valor_rend = c
-                        break
-
-                # Procura a coluna do Banco
-                col_conta_rend = None
-                for c in df_rend.columns:
-                    if 'banco' in c.lower() or 'conta' in c.lower() or 'bancária' in c.lower():
-                        col_conta_rend = c
-                        break
-                
-                # Só processa se encontrou as 3 colunas
                 if col_data_rend and col_valor_rend and col_conta_rend:
                     df_rend[col_data_rend] = pd.to_datetime(df_rend[col_data_rend], format='%d/%m/%Y', errors='coerce')
                     df_rend[col_valor_rend] = df_rend[col_valor_rend].apply(limpa_valor_bruto)
                     
-                    # Filtra o mês
+                    # Filtra o mês usando a data da ABA 2
                     df_rend = df_rend[(df_rend[col_data_rend] >= mes_referencia) & (df_rend[col_data_rend] < proximo_mes)]
                     
                     if not df_rend.empty:
                         # Agrupa e soma
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_valor_rend].sum().reset_index()
                         df_rend_resumo.rename(columns={col_conta_rend: col_conta, col_valor_rend: 'Valor Líquido'}, inplace=True)
-                else:
-                    # Se não encontrou, gera um aviso silencioso (sem quebrar o painel)
-                    pass
-                    
-        except Exception as e:
-            # Se a aba não existir, ignora
+        except Exception:
+            # Se a aba não existir ou estiver vazia, ignora silenciosamente
             pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, col_conta
@@ -288,7 +270,7 @@ with c2:
     st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# LADO DIREITO: RESUMO DE RENDIMENTOS
+# LADO DIREITO: RESUMO DE RENDIMENTOS (A PARTIR DA ABA SEPARADA)
 # ==============================================================================
 with c3:
     st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
@@ -322,8 +304,8 @@ with c3:
         <div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>
             <b>Nenhum dado encontrado.</b><br><br>
             Verifique se:<br>
-            1. A aba se chama exatamente <b>"Rendimentos"</b>.<br>
-            2. As colunas possuem os nomes <b>"Data"</b>, <b>"Contas Bancárias"</b> (ou Banco) e <b>"Valor Líquido"</b>.
+            1. Existe uma aba separada chamada <b>"Rendimentos"</b>.<br>
+            2. Essa aba possui as colunas <b>"Data"</b>, <b>"Contas Bancárias"</b> e <b>"Valor Líquido"</b>.
         </div>
         """, unsafe_allow_html=True)
 
