@@ -91,7 +91,7 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS COM INTEGRAÇÃO DE EXTRATOS
+# 2. CARGA DE DADOS COM SEPARAÇÃO DE TABELA E EXTRATO
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -99,7 +99,7 @@ def carregar_dados():
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
     try:
         # =========================================================
-        # 1. Carrega Histórico de Saldos
+        # 1. Carrega Histórico de Saldos (Para saber os bancos e saldos)
         # =========================================================
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
@@ -121,83 +121,94 @@ def carregar_dados():
             
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
-        df_mes = df_saldos[(df_saldos[col_data] >= mes_referencia) & (df_saldos[col_data] < proximo_mes)].copy()
+        
+        # =========================================================
+        # 2. Lógica dos Extratos (Onde vêm as Entradas e Saídas REAIS)
+        # =========================================================
+        df_extratos = None
+        try:
+            df_extratos = conn.read(worksheet="Extratos_Bancos", ttl=0)
+            if not df_extratos.empty:
+                df_extratos.columns = [str(c).strip() for c in df_extratos.columns]
+                
+                col_ext_conta = next((c for c in df_extratos.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
+                col_ext_data = next((c for c in df_extratos.columns if 'data' in c.lower()), 'Data')
+                col_ext_credito = next((c for c in df_extratos.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vlr Crédito')
+                col_ext_debito = next((c for c in df_extratos.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vlr Débito')
 
-        # DEFINIR O TIPO
+                df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
+                df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
+                
+                df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
+                df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
+                
+        except Exception:
+            pass
+
+        # =========================================================
+        # 3. FILTRO DO MÊS E CRIAÇÃO DO TIPO
+        # =========================================================
+        df_saldos_mes = df_saldos[(df_saldos[col_data] >= mes_referencia) & (df_saldos[col_data] < proximo_mes)].copy()
+
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
-        df_mes['Tipo'] = df_mes[col_conta].apply(definir_tipo)
+        df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
         # =========================================================
-        # CORREÇÃO: INTEGRAÇÃO COM A ABA EXTRATOS
+        # 4. TABELA FINAL DE BANCOS (Saldo Fim do Mês + Entradas/Saídas Acumuladas)
         # =========================================================
-        # Verifica se as colunas Entrada e Saída estão zeradas na aba Historico
-        if df_mes['Entrada'].sum() == 0 and df_mes['Saída'].sum() == 0:
-            try:
-                # Tenta carregar os extratos
-                df_extratos = conn.read(worksheet="Extratos_Bancos", ttl=0)
-                if not df_extratos.empty:
-                    df_extratos.columns = [str(c).strip() for c in df_extratos.columns]
-                    
-                    # Mapeia colunas do Extrato (baseado na sua imagem)
-                    col_ext_conta = next((c for c in df_extratos.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
-                    col_ext_data = next((c for c in df_extratos.columns if 'data' in c.lower()), 'Data')
-                    col_ext_credito = next((c for c in df_extratos.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vlr Crédito')
-                    col_ext_debito = next((c for c in df_extratos.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vlr Débito')
-
-                    # Prepara o DataFrame de Extratos (Limpeza e Filtro de Mês)
-                    df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
-                    df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
-                    
-                    # Soma Crédito e Débito por Banco e Data
-                    df_extratos_grouped = df_extratos.groupby([col_ext_conta, col_ext_data]).agg({
-                        col_ext_credito: 'sum',
-                        col_ext_debito: 'sum'
-                    }).reset_index().rename(columns={
-                        col_ext_conta: col_conta,
-                        col_ext_data: col_data
-                    })
-                    
-                    # Converte para float
-                    df_extratos_grouped[col_ext_credito] = df_extratos_grouped[col_ext_credito].apply(limpa_valor_bruto)
-                    df_extratos_grouped[col_ext_debito] = df_extratos_grouped[col_ext_debito].apply(limpa_valor_bruto)
-
-                    # Mescla os dados de Extrato no df_mes (Atualiza Entrada e Saída)
-                    df_mes = df_mes.merge(df_extratos_grouped, on=[col_conta, col_data], how='left')
-                    df_mes['Entrada'] = df_mes[col_ext_credito].fillna(0)
-                    df_mes['Saída'] = df_mes[col_ext_debito].fillna(0)
-                    
-                    # Remove colunas extras do merge
-                    df_mes = df_mes.drop(columns=[col_ext_credito, col_ext_debito])
-                    
-            except Exception as e:
-                # Se falhar a leitura do Extrato, mantém os zeros e continua
-                pass
-
-        # Cálculo de Variação Mensal para a Tabela de Bancos
-        # Usa Entrada e Saída (que podem ter vindo do Extrato ou da própria aba)
-        df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
-        df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
+        # Pega o último registro de cada banco no mês
+        df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
+        
+        df_inicio_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
         df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
+        # Se tiver Extrato, calcula o Acumulado do Mês para cada banco
+        if df_extratos is not None and not df_extratos.empty:
+            df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
+                col_ext_credito: 'sum',
+                col_ext_debito: 'sum'
+            }).reset_index().rename(columns={col_ext_conta: col_conta})
+            
+            # Mescla as somas acumuladas na tabela de fim de mês
+            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
+            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
+            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
+        else:
+            # Se não tiver Extrato, mantém 0 (para não quebrar)
+            df_fim_mes['Entrada'] = 0
+            df_fim_mes['Saída'] = 0
+
         # =========================================================
-        # Agrupamento para Gráfico Diário
+        # 5. DADOS PARA O GRÁFICO DIÁRIO E MOVIMENTAÇÃO DO MÊS
         # =========================================================
-        df_graficos = df_mes.groupby(col_data).agg({
+        df_graficos = df_saldos_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
             'Saldo Inicial': 'sum',
-            'Entrada': 'sum',
-            'Saída': 'sum'
         }).reset_index().sort_values(col_data)
+        
+        # Adiciona Entrada e Saída diárias ao gráfico (para o gráfico de barras ficar legal)
+        if df_extratos is not None and not df_extratos.empty:
+            df_extratos_diario = df_extratos.groupby([col_ext_data]).agg({
+                col_ext_credito: 'sum',
+                col_ext_debito: 'sum'
+            }).reset_index().rename(columns={col_ext_data: col_data})
+            
+            df_graficos = df_graficos.merge(df_extratos_diario, on=col_data, how='left')
+            df_graficos['Entrada'] = df_graficos[col_ext_credito].fillna(0)
+            df_graficos['Saída'] = df_graficos[col_ext_debito].fillna(0)
+        else:
+            df_graficos['Entrada'] = 0
+            df_graficos['Saída'] = 0
         
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
         df_graficos['Variação %'] = df_graficos['Saldo Final'].pct_change() * 100
         df_graficos['Variação %'] = df_graficos['Variação %'].fillna(0)
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS
+        # 6. Carrega a aba RENDIMENTOS
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
@@ -225,7 +236,7 @@ def carregar_dados():
             pass
 
         # =========================================================
-        # 3. LER A ABA DE CUSTO DE OPORTUNIDADE
+        # 7. LER A ABA DE CUSTO DE OPORTUNIDADE
         # =========================================================
         custo_oportunidade_total = 0.0
         try:
@@ -253,7 +264,7 @@ if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS
+# 3. CÁLCULOS DOS KPIs MENSAIS (Usando o TOTAL acumulado do gráfico)
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -264,8 +275,9 @@ limites_totais = limite_getnet + limites_garantidos
 
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 
-entradas_mes = df_consolidado['Entrada'].sum()
-saidas_mes = df_consolidado['Saída'].sum()
+# Movimentação do Mês (Soma total do Extrato, se disponível)
+entradas_mes = df_graficos['Entrada'].sum()
+saidas_mes = df_graficos['Saída'].sum()
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
