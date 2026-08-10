@@ -18,7 +18,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (FONTES AUMENTADAS) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -27,37 +27,37 @@ st.markdown("""
     .stPlotlyChart { background-color: transparent !important; }
     .js-plotly-plot, .plot-container { margin: 0 auto; }
     
-    .kpi-card { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 10px; text-align: center; }
+    .kpi-card { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 14px; text-align: center; }
     .kpi-card.total { border-top: 4px solid #4e73df; background: #f8faff; }
     .kpi-card.disponivel { border-top: 4px solid #1cc88a; background: #f4fdf6; }
     .kpi-card.limites { border-top: 4px solid #36b9cc; background: #f4fcfe; }
     .kpi-card.aplicacoes { border-top: 4px solid #6f42c1; background: #fbf8ff; }
     
-    .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; margin-bottom: 5px; }
-    .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
+    .kpi-title { font-size: 13px; font-weight: bold; color: #858796; text-transform: uppercase; margin-bottom: 5px; }
+    .kpi-value { font-size: 24px; font-weight: bold; color: #3a3b45; }
     
-    .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
-    .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
+    .section-title { font-size: 15px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 8px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+    .section-title-inline { font-size: 12px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela Padrão */
-    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 14px; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    /* Tabela Padrão (Fonte Maior) */
+    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 15px; width: 100%; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
-    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e3e6f0; }
-    .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
+    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 12px 14px; border-bottom: 1px solid #e3e6f0; font-size: 15px; }
+    .tabela-financeira td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; font-size: 15px; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     .tabela-financeira .valores { text-align: left; font-weight: bold; color: #2d3748; }
     
-    .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+    .ind-item { display: flex; justify-content: space-between; font-size: 14px; padding: 2px 0; }
     
     /* Estilo do Resumo de Rendimentos (Sutil) */
-    .rend-box { background: white; padding: 0 0 10px 0; font-size: 14px; }
-    .rend-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; }
+    .rend-box { background: white; padding: 0 0 10px 0; font-size: 15px; }
+    .rend-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 15px; }
     .rend-item:last-child { border-bottom: none; }
     
-    .rend-total { background: #fffbeb; border-left: 3px solid #f6c23e; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
+    .rend-total { background: #fffbeb; border-left: 3px solid #f6c23e; padding: 8px 12px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; }
     .rend-total span { font-weight: bold; }
 
-    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #e74a3b; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
+    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #e74a3b; padding: 8px 12px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; color: #e74a3b; }
     .custo-oportunidade span { font-weight: bold; color: #e74a3b; }
     </style>
 """, unsafe_allow_html=True)
