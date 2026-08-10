@@ -69,17 +69,14 @@ def limpa_valor_bruto(valor):
     if pd.isna(valor) or str(valor).strip() in ["", "-"]:
         return 0.0
     
-    # Se a biblioteca já reconheceu como número, preserva para não estourar a casa dos milhões
     if isinstance(valor, (int, float)):
         return float(valor)
         
     try:
         v_str = str(valor).strip()
-        # Converte negativo contábil (10,00) para -10,00
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
         
-        # Lida com padrão BR vs Padrão Americano
         if '.' in v_str and ',' in v_str:
             v_str = v_str.replace('.', '').replace(',', '.')
         elif ',' in v_str:
@@ -94,7 +91,7 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS COM INTEGRAÇÃO DE EXTRATOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -132,17 +129,62 @@ def carregar_dados():
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df_mes['Tipo'] = df_mes[col_conta].apply(definir_tipo)
 
+        # =========================================================
+        # CORREÇÃO: INTEGRAÇÃO COM A ABA EXTRATOS
+        # =========================================================
+        # Verifica se as colunas Entrada e Saída estão zeradas na aba Historico
+        if df_mes['Entrada'].sum() == 0 and df_mes['Saída'].sum() == 0:
+            try:
+                # Tenta carregar os extratos
+                df_extratos = conn.read(worksheet="Extratos_Bancos", ttl=0)
+                if not df_extratos.empty:
+                    df_extratos.columns = [str(c).strip() for c in df_extratos.columns]
+                    
+                    # Mapeia colunas do Extrato (baseado na sua imagem)
+                    col_ext_conta = next((c for c in df_extratos.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
+                    col_ext_data = next((c for c in df_extratos.columns if 'data' in c.lower()), 'Data')
+                    col_ext_credito = next((c for c in df_extratos.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vlr Crédito')
+                    col_ext_debito = next((c for c in df_extratos.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vlr Débito')
+
+                    # Prepara o DataFrame de Extratos (Limpeza e Filtro de Mês)
+                    df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
+                    df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
+                    
+                    # Soma Crédito e Débito por Banco e Data
+                    df_extratos_grouped = df_extratos.groupby([col_ext_conta, col_ext_data]).agg({
+                        col_ext_credito: 'sum',
+                        col_ext_debito: 'sum'
+                    }).reset_index().rename(columns={
+                        col_ext_conta: col_conta,
+                        col_ext_data: col_data
+                    })
+                    
+                    # Converte para float
+                    df_extratos_grouped[col_ext_credito] = df_extratos_grouped[col_ext_credito].apply(limpa_valor_bruto)
+                    df_extratos_grouped[col_ext_debito] = df_extratos_grouped[col_ext_debito].apply(limpa_valor_bruto)
+
+                    # Mescla os dados de Extrato no df_mes (Atualiza Entrada e Saída)
+                    df_mes = df_mes.merge(df_extratos_grouped, on=[col_conta, col_data], how='left')
+                    df_mes['Entrada'] = df_mes[col_ext_credito].fillna(0)
+                    df_mes['Saída'] = df_mes[col_ext_debito].fillna(0)
+                    
+                    # Remove colunas extras do merge
+                    df_mes = df_mes.drop(columns=[col_ext_credito, col_ext_debito])
+                    
+            except Exception as e:
+                # Se falhar a leitura do Extrato, mantém os zeros e continua
+                pass
+
         # Cálculo de Variação Mensal para a Tabela de Bancos
+        # Usa Entrada e Saída (que podem ter vindo do Extrato ou da própria aba)
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
         df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
         df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
-        df_fim_mes['Variação'] = df_fim_mes['Saldo Final'] - df_fim_mes['Saldo Inicial']
-        df_fim_mes['Entrada'] = df_fim_mes['Variação'].apply(lambda x: x if x > 0 else 0)
-        df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
-
+        # =========================================================
         # Agrupamento para Gráfico Diário
+        # =========================================================
         df_graficos = df_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
             'Saldo Inicial': 'sum',
@@ -155,7 +197,7 @@ def carregar_dados():
         df_graficos['Variação %'] = df_graficos['Variação %'].fillna(0)
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (Flexibilizado)
+        # 2. Carrega a aba RENDIMENTOS
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
@@ -165,7 +207,6 @@ def carregar_dados():
             if not df_rend.empty:
                 df_rend.columns = [str(c).strip() for c in df_rend.columns]
                 
-                # Procura colunas de conta e rendimento independente do nome exato
                 col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
                 col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
                 
@@ -176,31 +217,27 @@ def carregar_dados():
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
                         df_rend_resumo.rename(columns={col_conta_rend: col_conta, col_rendimento: 'Valor Líquido'}, inplace=True)
                     else:
-                        # Se copiou a tabela do Itaú sem a coluna de Banco, consolida tudo junto
                         rend_sum = df_rend[col_rendimento].sum()
                         df_rend_resumo = pd.DataFrame({col_conta: ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
 
                     rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
         except Exception as e:
-            print("Aviso: Erro ao ler aba de Rendimentos:", e)
+            pass
 
         # =========================================================
-        # 3. LER A NOVA ABA DE CUSTO DE OPORTUNIDADE
+        # 3. LER A ABA DE CUSTO DE OPORTUNIDADE
         # =========================================================
         custo_oportunidade_total = 0.0
         try:
             df_custos = conn.read(worksheet="Custo_Oportunidade", ttl=0)
             if not df_custos.empty:
                 df_custos.columns = [str(c).strip() for c in df_custos.columns]
-                
-                # Procura a coluna de custo
                 col_custo = next((c for c in df_custos.columns if 'custo' in c.lower()), None)
-                
                 if col_custo:
                     df_custos[col_custo] = df_custos[col_custo].apply(limpa_valor_bruto)
                     custo_oportunidade_total = df_custos[col_custo].sum()
         except Exception as e:
-            print("Aviso: Erro ao ler aba Custo_Oportunidade:", e)
+            pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
         
@@ -250,9 +287,8 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico de Barras + Linha de Tendência (SALDO TOTAL)
+# Gráfico de Barras + Linha de Tendência
 fig_combinado = go.Figure()
-
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
@@ -261,7 +297,6 @@ fig_combinado.add_trace(go.Bar(
     opacity=0.85,
     width=0.5
 ))
-
 fig_combinado.add_trace(go.Scatter(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
@@ -273,7 +308,6 @@ fig_combinado.add_trace(go.Scatter(
     textposition="top center",
     textfont=dict(size=11, color="#333", weight="bold"),
 ))
-
 fig_combinado.update_layout(
     margin=dict(t=35, b=15, l=5, r=5), height=190, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
