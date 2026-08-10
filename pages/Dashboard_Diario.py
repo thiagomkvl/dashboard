@@ -15,7 +15,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Diário", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (FONTE MAIOR E MAIS ESCURA NAS TABELAS) ---
+# --- CUSTOM CSS (FONTE MAIOR E ALINHAMENTO À ESQUERDA) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -43,8 +43,12 @@ st.markdown("""
     .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     
-    .tabela-financeira .valores { text-align: right; font-family: 'Arial', sans-serif; font-weight: bold; color: #2d3748; }
-    .tabela-financeira .col-destaque { background-color: #eef2ff; color: #1a3b7c; font-weight: 900; }
+    /* ALTERAÇÃO AQUI: Alinhamento à esquerda, sem destaque azul, fonte padrão */
+    .tabela-financeira .valores { 
+        text-align: left; 
+        font-weight: bold; 
+        color: #2d3748; 
+    }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     .box-total-blue { background: #f8f9fc; border: 1px solid #4e73df; border-radius: 4px; padding: 6px; text-align: center; margin: 4px 0; }
@@ -154,7 +158,6 @@ fig_donut = go.Figure(data=[go.Pie(
     texttemplate='%{percent:.1%}',
     hoverinfo='label+percent'
 )])
-# Aumentei a altura e adicionei b=40 (margem inferior) para garantir que a legenda nunca seja cortada
 fig_donut.update_layout(
     showlegend=True, 
     legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
@@ -262,8 +265,8 @@ with col_tab:
     
     html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:12px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
-    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores col-destaque">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:12px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
+    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
@@ -275,7 +278,7 @@ with col_hist:
         for _, row in df_historico_consolidado.iterrows():
             variacao = row['Variação %']
             cor = "#1cc88a" if float(variacao.replace('%', '').replace(',', '.')) >= 0 else "#e74a3b"
-            html_hist += f'<tr><td style="font-weight:bold; color:#333;">{row["Data"]}</td><td class="valores col-destaque">{row["Saldo Final"]}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao}</td></tr>'
+            html_hist += f'<tr><td style="font-weight:bold; color:#333;">{row["Data"]}</td><td class="valores">{row["Saldo Final"]}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao}</td></tr>'
         html_hist += '</tbody></table></div>'
         st.markdown(html_hist, unsafe_allow_html=True)
         st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>Últimos 10 registros disponíveis.</div>", unsafe_allow_html=True)
