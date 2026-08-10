@@ -21,44 +21,427 @@ st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_ic
 # --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
-    div[data-testid="stVerticalBlock"] > div { gap: 0.3rem !important; }
-    
-    .stPlotlyChart { background-color: transparent !important; }
-    .js-plotly-plot, .plot-container { margin: 0 auto; }
-    
-    .kpi-card { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 10px; text-align: center; }
-    .kpi-card.total { border-top: 4px solid #4e73df; background: #f8faff; }
-    .kpi-card.disponivel { border-top: 4px solid #1cc88a; background: #f4fdf6; }
-    .kpi-card.limites { border-top: 4px solid #36b9cc; background: #f4fcfe; }
-    .kpi-card.aplicacoes { border-top: 4px solid #6f42c1; background: #fbf8ff; }
-    
-    .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; margin-bottom: 5px; }
-    .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
-    
-    .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
-    .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
+    /* =========================================================
+       IDENTIDADE VISUAL — apenas apresentação
+       ========================================================= */
+    :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --border: #e7ebf2;
+        --text: #172033;
+        --muted: #6b7280;
+        --primary: #3157d5;
+        --primary-soft: #eef2ff;
+        --success: #159570;
+        --success-soft: #ecfdf5;
+        --danger: #d94a4a;
+        --danger-soft: #fff1f2;
+        --warning: #c58a16;
+        --warning-soft: #fffbeb;
+        --info: #2388a7;
+        --info-soft: #ecfeff;
+        --purple: #7654c8;
+        --purple-soft: #f5f3ff;
+        --shadow: 0 2px 10px rgba(24, 39, 75, 0.055);
+        --shadow-hover: 0 5px 18px rgba(24, 39, 75, 0.09);
+    }
 
-    /* Tabela Padrão */
-    .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 14px; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    .tabela-financeira { width: 100%; border-collapse: collapse; }
-    .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e3e6f0; }
-    .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
-    .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
-    .tabela-financeira .valores { text-align: left; font-weight: bold; color: #2d3748; }
-    
-    .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
-    
-    /* Estilo do Resumo de Rendimentos (Sutil) */
-    .rend-box { background: white; padding: 0 0 10px 0; font-size: 14px; }
-    .rend-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; }
-    .rend-item:last-child { border-bottom: none; }
-    
-    .rend-total { background: #fffbeb; border-left: 3px solid #f6c23e; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
-    .rend-total span { font-weight: bold; }
+    html, body, [class*="css"] {
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+    }
 
-    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #e74a3b; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
-    .custo-oportunidade span { font-weight: bold; color: #e74a3b; }
+    .main {
+        background: var(--bg);
+    }
+
+    .main .block-container {
+        padding-top: 0.8rem;
+        padding-bottom: 0.7rem;
+        max-width: 97%;
+    }
+
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.38rem !important;
+    }
+
+    .stPlotlyChart {
+        background: transparent !important;
+    }
+
+    .js-plotly-plot,
+    .plot-container {
+        margin: 0 auto;
+    }
+
+    /* =========================================================
+       CABEÇALHO
+       ========================================================= */
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        min-height: 64px;
+        padding: 8px 4px 10px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .header-period {
+        min-width: 170px;
+    }
+
+    .header-period .date {
+        font-size: 17px;
+        font-weight: 750;
+        color: var(--text);
+        letter-spacing: -0.25px;
+    }
+
+    .header-period .label {
+        margin-top: 2px;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+    }
+
+    .header-center {
+        text-align: center;
+    }
+
+    .header-center h1 {
+        margin: 0;
+        color: var(--text);
+        font-size: 21px;
+        line-height: 1.2;
+        font-weight: 800;
+        letter-spacing: 0.35px;
+    }
+
+    .header-center p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.3px;
+    }
+
+    .update-badge {
+        min-width: 105px;
+        padding: 6px 12px;
+        text-align: center;
+        border: 1px solid #ccebdc;
+        border-radius: 8px;
+        background: var(--success-soft);
+        color: #23795d;
+    }
+
+    .update-badge span {
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .update-badge b {
+        font-size: 12px;
+        font-weight: 750;
+    }
+
+    /* =========================================================
+       KPIs
+       ========================================================= */
+    .kpi-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 78px;
+        padding: 12px 15px 11px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        text-align: left;
+        transition: box-shadow .15s ease, transform .15s ease;
+    }
+
+    .kpi-card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: var(--primary);
+    }
+
+    .kpi-card.total::before { background: var(--primary); }
+    .kpi-card.disponivel::before { background: var(--success); }
+    .kpi-card.limites::before { background: var(--info); }
+    .kpi-card.aplicacoes::before { background: var(--purple); }
+
+    .kpi-card.total { background: linear-gradient(135deg, #fff, #f8faff); }
+    .kpi-card.disponivel { background: linear-gradient(135deg, #fff, #f7fdf9); }
+    .kpi-card.limites { background: linear-gradient(135deg, #fff, #f6fcfe); }
+    .kpi-card.aplicacoes { background: linear-gradient(135deg, #fff, #faf8ff); }
+
+    .kpi-icon {
+        width: 25px;
+        height: 25px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 5px;
+        border-radius: 7px;
+        background: var(--primary-soft);
+        font-size: 13px;
+    }
+
+    .kpi-card.disponivel .kpi-icon { background: var(--success-soft); }
+    .kpi-card.limites .kpi-icon { background: var(--info-soft); }
+    .kpi-card.aplicacoes .kpi-icon { background: var(--purple-soft); }
+
+    .kpi-title {
+        font-size: 9px;
+        line-height: 1;
+        font-weight: 750;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.65px;
+        margin-bottom: 5px;
+    }
+
+    .kpi-value {
+        font-size: 20px;
+        line-height: 1.15;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.35px;
+        white-space: nowrap;
+    }
+
+    /* =========================================================
+       SEÇÕES
+       ========================================================= */
+    .section-title {
+        display: flex;
+        align-items: center;
+        min-height: 25px;
+        margin-bottom: 5px;
+        padding: 0 0 5px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        font-size: 10px;
+        line-height: 1;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.75px;
+    }
+
+    .section-title::before {
+        content: "";
+        width: 3px;
+        height: 12px;
+        margin-right: 7px;
+        border-radius: 4px;
+        background: var(--primary);
+    }
+
+    .section-title-inline {
+        font-size: 9px;
+        line-height: 1.1;
+        font-weight: 750;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.45px;
+    }
+
+    /* =========================================================
+       MOVIMENTAÇÃO
+       ========================================================= */
+    .movement-card {
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface-soft);
+    }
+
+    /* =========================================================
+       TABELAS
+       ========================================================= */
+    .tabela-container {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        font-size: 12px;
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .tabela-financeira {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .tabela-financeira th {
+        background: #f7f9fc;
+        color: #596274;
+        font-size: 9px;
+        font-weight: 800;
+        text-align: left;
+        white-space: nowrap;
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--border);
+        text-transform: uppercase;
+        letter-spacing: 0.35px;
+    }
+
+    .tabela-financeira th:first-child {
+        border-top-left-radius: 8px;
+    }
+
+    .tabela-financeira th:last-child {
+        border-top-right-radius: 8px;
+    }
+
+    .tabela-financeira td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f0f2f6;
+        font-size: 11px;
+        font-weight: 500;
+        color: #273043;
+        white-space: nowrap;
+    }
+
+    .tabela-financeira tbody tr:hover td {
+        background: #fafbfe;
+    }
+
+    .tabela-financeira tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .tabela-financeira .linha-total {
+        background: #eef2f7;
+        border-top: 2px solid #d8dee8;
+    }
+
+    .tabela-financeira .linha-total td {
+        color: #172033;
+        font-weight: 800;
+    }
+
+    .tabela-financeira .valores {
+        text-align: right;
+        font-weight: 700;
+        color: #273043;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* =========================================================
+       RENDIMENTOS
+       ========================================================= */
+    .rend-box {
+        padding: 1px 0 7px;
+        font-size: 12px;
+    }
+
+    .rend-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 3px;
+        border-bottom: 1px solid #f0f2f6;
+    }
+
+    .rend-item:last-child {
+        border-bottom: none;
+    }
+
+    .rend-total {
+        background: var(--warning-soft);
+        border: 1px solid #f3e4b5;
+        border-left: 3px solid var(--warning);
+        padding: 8px 10px;
+        margin-top: 8px;
+        border-radius: 7px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rend-total span {
+        font-weight: 800;
+        color: #6e5514;
+    }
+
+    .custo-oportunidade {
+        background: var(--danger-soft);
+        border: 1px solid #f5d6da;
+        border-left: 3px solid var(--danger);
+        padding: 8px 10px;
+        margin-top: 8px;
+        border-radius: 7px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .custo-oportunidade span {
+        font-weight: 750;
+        color: var(--danger);
+    }
+
+    /* =========================================================
+       RODAPÉ / AJUSTES STREAMLIT
+       ========================================================= */
+    hr {
+        border: 0 !important;
+        border-top: 1px solid var(--border) !important;
+    }
+
+    [data-testid="stMarkdownContainer"] p {
+        margin-bottom: 0.15rem;
+    }
+
+    [data-testid="stDataFrame"] {
+        border-radius: 9px;
+    }
+
+    @media (max-width: 900px) {
+        .main .block-container {
+            max-width: 100%;
+            padding-left: 0.65rem;
+            padding-right: 0.65rem;
+        }
+
+        .dashboard-header {
+            min-height: auto;
+        }
+
+        .header-center h1 {
+            font-size: 17px;
+        }
+
+        .header-period .date {
+            font-size: 14px;
+        }
+
+        .kpi-value {
+            font-size: 17px;
+        }
+
+        .tabela-financeira td {
+            padding: 7px 8px;
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -354,11 +737,18 @@ data_hoje = datetime.now().strftime('%d/%m/%Y')
 mes_referencia_nome = df_graficos['Data_Label'].iloc[-1] if not df_graficos.empty else ""
 
 st.markdown(f"""
-<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; margin-bottom: 5px; border-bottom: 1px solid #e3e6f0;">
-    <div><b style="font-size:18px;">📅 Agosto/2026</b><br><span style="font-size:10px; color:gray;">Período de referência</span></div>
-    <div style="text-align:center;"><h2 style="margin:0; color:#1a2035; font-size:22px;">PAINEL FINANCEIRO MENSAL</h2><p style="margin:0; font-size:11px; color:gray;">Controle Consolidado de Bancos</p></div>
-    <div style="display:flex; gap:10px;">
-        <div style="background:#d4edda; border-radius:12px; padding:1px 15px; text-align:center;"><span style="font-size:10px;">Atualização</span><br><b style="font-size:14px;">{data_hoje}</b></div>
+<div class="dashboard-header">
+    <div class="header-period">
+        <div class="date">📅 Agosto/2026</div>
+        <div class="label">Período de referência</div>
+    </div>
+    <div class="header-center">
+        <h1>PAINEL FINANCEIRO MENSAL</h1>
+        <p>Controle Consolidado de Bancos</p>
+    </div>
+    <div class="update-badge">
+        <span>Atualização</span><br>
+        <b>{data_hoje}</b>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -372,7 +762,7 @@ kp_data = [
     (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes")
 ]
 for col, icon, title, val, color in kp_data:
-    col.markdown(f"<div class='kpi-card {color}'><div style='font-size:12px;'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
+    col.markdown(f"<div class='kpi-card {color}'><div class='kpi-icon'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
