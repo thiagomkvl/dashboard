@@ -47,11 +47,18 @@ st.markdown("""
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
     
-    /* Estilo do Resumo de Rendimentos */
+    /* Estilo do Resumo de Rendimentos (Sutil) */
     .rend-box { background: white; padding: 0 0 10px 0; font-size: 14px; }
     .rend-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #eee; }
     .rend-item:last-child { border-bottom: none; }
-    .rend-total { background: #f8f9fc; border: 1px solid #f6c23e; border-radius: 4px; padding: 8px; text-align: center; margin-top: 10px; }
+    
+    /* Fundo sutil para o total de rendimentos */
+    .rend-total { background: #fffbeb; border-left: 3px solid #f6c23e; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
+    .rend-total span { font-weight: bold; }
+
+    /* Fundo sutil para o custo de oportunidade */
+    .custo-oportunidade { background: #f0f5ff; border-left: 3px solid #4e73df; padding: 6px 10px; margin-top: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
+    .custo-oportunidade span { font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,12 +78,12 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS E CÁLCULO DO CUSTO DE OPORTUNIDADE
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
     try:
         # =========================================================
         # 1. Carrega Histórico de Saldos (ABA 1)
@@ -84,7 +91,7 @@ def carregar_dados():
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
         
         df_saldos.columns = [c.strip() for c in df_saldos.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_saldos.columns else 'Conta Bancária'
@@ -103,7 +110,7 @@ def carregar_dados():
 
         if df_mes.empty:
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
 
         # Cálculo de Entrada/Saída para a Tabela
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
@@ -126,6 +133,7 @@ def carregar_dados():
         # =========================================================
         df_graficos = df_mes.groupby(col_data).agg({
             'Saldo Final': 'sum',
+            'Saldo Inicial': 'sum', # Para cálculos diários
             'Entrada': 'sum',
             'Saída': 'sum'
         }).reset_index().sort_values(col_data)
@@ -138,6 +146,7 @@ def carregar_dados():
         # 2. Carrega a aba RENDIMENTOS 
         # =========================================================
         df_rend_resumo = pd.DataFrame()
+        rendimento_total_mes = 0.0
         try:
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             
@@ -175,20 +184,47 @@ def carregar_dados():
                             col_conta_rend: col_conta, 
                             col_rendimento: 'Valor Líquido'
                         }, inplace=True)
+                        rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
 
         except Exception:
             pass
 
-        return df_fim_mes, df_graficos, df_rend_resumo, df_mes, col_conta
+        # =========================================================
+        # 3. CÁLCULO DO CUSTO DE OPORTUNIDADE (DINHEIRO PARADO)
+        # =========================================================
+        # Taxa diária = Rendimento total do mês / Quantidade de dias do mês
+        dias_no_mes = len(df_graficos)
+        if dias_no_mes > 0 and rendimento_total_mes > 0:
+            taxa_diaria_media = rendimento_total_mes / dias_no_mes
+        else:
+            taxa_diaria_media = 0.0
+
+        custo_oportunidade_total = 0.0
+        
+        for _, row in df_graficos.iterrows():
+            # Pega o saldo de cada banco naquele dia
+            data_dia = row[col_data]
+            df_dia = df_mes[df_mes[col_data] == data_dia]
+            
+            # Calcula o que estava aplicado e o que estava disponível
+            saldo_aplicado_dia = df_dia[df_dia['Tipo'] == 'Aplicação']['Saldo Final'].sum()
+            # O "dinheiro parado" é a diferença entre o total e o que estava aplicado
+            # (Considerando que o que não está aplicado poderia estar rendendo)
+            dinheiro_parado_dia = row['Saldo Final'] - saldo_aplicado_dia
+            
+            # Soma o custo de oportunidade diário
+            custo_oportunidade_total += dinheiro_parado_dia * taxa_diaria_media
+
+        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
 
 # ==============================================================================
 # CHAMADA PRINCIPAL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, df_mes_raw, col_conta = carregar_dados()
+df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta = carregar_dados()
 if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
@@ -316,10 +352,8 @@ with c3:
     if not df_rend_resumo.empty:
         st.markdown("<div class='rend-box'>", unsafe_allow_html=True)
         
-        rendimento_total = 0
         for _, row in df_rend_resumo.iterrows():
             valor = row['Valor Líquido']
-            rendimento_total += valor
             cor = "#1cc88a" if valor >= 0 else "#e74a3b"
             
             st.markdown(f"""
@@ -329,12 +363,22 @@ with c3:
             </div>
             """, unsafe_allow_html=True)
 
+        # Total de Rendimentos (Sutil e alinhado)
         st.markdown(f"""
         <div class='rend-total'>
-            <span style='font-weight:bold; color:#f6c23e;'>💰 TOTAL RENDIMENTOS</span><br>
-            <span style='font-size:18px; font-weight:bold;'>{formatar_moeda(rendimento_total)}</span>
+            <span>💰 TOTAL RENDIMENTOS</span>
+            <span>{formatar_moeda(rendimento_total_mes)}</span>
         </div>
         """, unsafe_allow_html=True)
+
+        # Custo de Oportunidade
+        st.markdown(f"""
+        <div class='custo-oportunidade'>
+            <span>⏳ CUSTO DE OPORTUNIDADE</span>
+            <span style='color:#4e73df;'>{formatar_moeda(custo_oportunidade_total)}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
         st.markdown("</div>", unsafe_allow_html=True)
         
     else:
