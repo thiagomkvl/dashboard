@@ -126,7 +126,7 @@ def carregar_dados():
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
         # =========================================================
-        # 2. Carrega a aba RENDIMENTOS (FILTRANDO APENAS A COLUNA DE RENDIMENTO)
+        # 2. Carrega a aba RENDIMENTOS (COM CORREÇÃO DE DATA)
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         try:
@@ -137,38 +137,44 @@ def carregar_dados():
                 
                 # 1. Detectar colunas
                 col_conta_rend = None
-                col_data_rend = None
+                col_data_mov = None
+                col_data_ini = None
                 col_rendimento = None
                 
                 for c in df_rend.columns:
                     c_low = c.lower()
                     if 'contas' in c_low or 'conta' in c_low or 'bancária' in c_low:
                         col_conta_rend = c
-                    if 'data' in c_low or 'movimentação' in c_low:
-                        col_data_rend = c
+                    if 'data movimentação' in c_low:
+                        col_data_mov = c
+                    if 'data início' in c_low:
+                        col_data_ini = c
                     if 'rendimento' in c_low:
                         col_rendimento = c
                 
-                # Se encontrou as 3 colunas
-                if col_data_rend and col_rendimento and col_conta_rend:
-                    # Converte a data
-                    df_rend[col_data_rend] = pd.to_datetime(df_rend[col_data_rend], format='%d/%m/%Y', errors='coerce')
-                    # Converte o valor da coluna Rendimentos
+                if col_conta_rend and col_rendimento:
+                    # Define qual coluna de data usar
+                    col_data_usar = col_data_mov if col_data_mov else col_data_ini
+                    
+                    if col_data_usar:
+                        df_rend[col_data_usar] = pd.to_datetime(df_rend[col_data_usar], format='%d/%m/%Y', errors='coerce')
+                        # Filtra pelo mês
+                        df_rend = df_rend[(df_rend[col_data_usar] >= mes_referencia) & (df_rend[col_data_usar] < proximo_mes)]
+                    else:
+                        # Se não tiver data nenhuma, pega todas as linhas (último recurso)
+                        pass
+                    
+                    # Converte o valor e agrupa
                     df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
                     
-                    # Filtra apenas o mês de referência
-                    df_rend = df_rend[(df_rend[col_data_rend] >= mes_referencia) & (df_rend[col_data_rend] < proximo_mes)]
-                    
                     if not df_rend.empty:
-                        # Agrupa por banco e soma APENAS os rendimentos
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        
-                        # Renomeia para o dashboard
                         df_rend_resumo.rename(columns={
                             col_conta_rend: col_conta, 
                             col_rendimento: 'Valor Líquido'
                         }, inplace=True)
-        except Exception:
+
+        except Exception as e:
             pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, col_conta
