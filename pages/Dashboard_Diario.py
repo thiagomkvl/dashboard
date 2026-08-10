@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import re
+import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
@@ -65,23 +66,18 @@ st.markdown("""
 # 1. FUNÇÃO DE LEITURA E LIMPEZA BLINDADA
 # ==============================================================================
 def limpa_valor_bruto(valor):
-    """Lida perfeitamente com valores que já são números, strings vazias, e formatações contábeis."""
     if pd.isna(valor) or str(valor).strip() in ["", "-"]:
         return 0.0
-    
     if isinstance(valor, (int, float)):
         return float(valor)
-        
     try:
         v_str = str(valor).strip()
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
-        
         if '.' in v_str and ',' in v_str:
             v_str = v_str.replace('.', '').replace(',', '.')
         elif ',' in v_str:
             v_str = v_str.replace(',', '.')
-            
         return float(v_str)
     except ValueError:
         return 0.0
@@ -98,9 +94,7 @@ def carregar_dados():
     conn = conectar_sheets()
     if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
     try:
-        # =========================================================
-        # 1. Carrega Histórico de Saldos (Para saber os bancos e saldos)
-        # =========================================================
+        # 1. Carrega Histórico de Saldos
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
@@ -123,7 +117,7 @@ def carregar_dados():
         proximo_mes = mes_referencia + relativedelta(months=1)
         
         # =========================================================
-        # 2. Lógica dos Extratos (Onde vêm as Entradas e Saídas REAIS)
+        # 2. EXTRATOS (COM FILTRO BLINDADO DE TRANSFERÊNCIAS)
         # =========================================================
         df_extratos = None
         try:
@@ -140,18 +134,26 @@ def carregar_dados():
                 df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
                 df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
                 
-                # --- FILTRO DE TRANSFERÊNCIAS INTERNAS ---
+                # --- FILTRO ANTI-FALHAS PARA TRANSFERÊNCIAS INTERNAS ---
                 if col_ext_tipo in df_extratos.columns:
-                    # Cria máscara para achar tudo que contém "Transferência Interna" e remove do dataframe
-                    mascara_internas = df_extratos[col_ext_tipo].astype(str).str.contains('Transferência Interna', case=False, na=False)
+                    # Função para arrancar acentos e jogar pra minúsculo
+                    def normalizar_texto(txt):
+                        return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                    
+                    serie_tipo = df_extratos[col_ext_tipo].apply(normalizar_texto)
+                    
+                    # Cria a máscara caçando as palavras chave, independentemente do que o usuário digitou
+                    mascara_internas = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+                    
+                    # Salva apenas o que NÃO caiu na máscara (ou seja, apenas o operacional real)
                     df_extratos = df_extratos[~mascara_internas]
-                # -----------------------------------------
+                # -------------------------------------------------------
 
                 df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
                 df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
                 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Aviso ao ler extratos: {e}")
 
         # =========================================================
         # 3. FILTRO DO MÊS E CRIAÇÃO DO TIPO
@@ -164,7 +166,7 @@ def carregar_dados():
         df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
         # =========================================================
-        # 4. TABELA FINAL DE BANCOS (Saldo Fim do Mês + Entradas/Saídas Acumuladas)
+        # 4. TABELA FINAL DE BANCOS (MERGE COM O EXTRATO REAL)
         # =========================================================
         df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
         
@@ -172,12 +174,16 @@ def carregar_dados():
         df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
-        # Se tiver Extrato, calcula o Acumulado do Mês para cada banco
         if df_extratos is not None and not df_extratos.empty:
+            # Agrupa as transações reais (já expurgadas)
             df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
                 col_ext_credito: 'sum',
                 col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_conta: col_conta})
+            
+            # Limpa espaços invisíveis dos nomes dos bancos para garantir o MATCH perfeito
+            df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
+            df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
             
             df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
             df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
@@ -194,7 +200,6 @@ def carregar_dados():
             'Saldo Inicial': 'sum',
         }).reset_index().sort_values(col_data)
         
-        # Adiciona Entrada e Saída diárias ao gráfico
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_diario = df_extratos.groupby([col_ext_data]).agg({
                 col_ext_credito: 'sum',
@@ -237,7 +242,7 @@ def carregar_dados():
                         df_rend_resumo = pd.DataFrame({col_conta: ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
 
                     rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
-        except Exception as e:
+        except Exception:
             pass
 
         # =========================================================
@@ -252,7 +257,7 @@ def carregar_dados():
                 if col_custo:
                     df_custos[col_custo] = df_custos[col_custo].apply(limpa_valor_bruto)
                     custo_oportunidade_total = df_custos[col_custo].sum()
-        except Exception as e:
+        except Exception:
             pass
 
         return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
@@ -269,7 +274,7 @@ if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS (Usando o TOTAL acumulado do gráfico)
+# 3. CÁLCULOS DOS KPIs MENSAIS (Usando o TOTAL acumulado expurgado)
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -280,7 +285,7 @@ limites_totais = limite_getnet + limites_garantidos
 
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 
-# Movimentação do Mês (Soma total do Extrato, se disponível)
+# Movimentação do Mês (Soma total operacional)
 entradas_mes = df_graficos['Entrada'].sum()
 saidas_mes = df_graficos['Saída'].sum()
 resultado_liquido_mes = entradas_mes - saidas_mes
@@ -371,7 +376,7 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown("<div class='section-title'>MOVIMENTAÇÃO DO MÊS</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS</div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:16px; font-weight:bold;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div style='padding:6px;'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:16px; font-weight:bold;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -435,8 +440,9 @@ with col_tab:
         html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:12px; font-weight:bold; color:#555;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
+    
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas de Entrada e Saída exibem apenas movimentações operacionais (Transferências Internas foram desconsideradas matematicamente).</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
