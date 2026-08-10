@@ -16,7 +16,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (ALINHAMENTO À ESQUERDA E FONTE ROBUSTA) ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 0rem; max-width: 95%; }
@@ -30,6 +30,7 @@ st.markdown("""
     .kpi-card.disponivel { border-top: 4px solid #1cc88a; background: #f4fdf6; }
     .kpi-card.limites { border-top: 4px solid #36b9cc; background: #f4fcfe; }
     .kpi-card.aplicacoes { border-top: 4px solid #6f42c1; background: #fbf8ff; }
+    .kpi-card.yellow { border-top: 4px solid #f6c23e; background: #fffbeb; }
     
     .kpi-title { font-size: 11px; font-weight: bold; color: #858796; text-transform: uppercase; }
     .kpi-value { font-size: 20px; font-weight: bold; color: #3a3b45; }
@@ -37,14 +38,12 @@ st.markdown("""
     .section-title { font-size: 13px; font-weight: bold; color: #1a2035; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     .section-title-inline { font-size: 10px; font-weight: bold; color: #858796; text-transform: uppercase; }
 
-    /* Tabela Padrão - Alinhada à esquerda e colada na borda */
+    /* Tabela Padrão */
     .tabela-container { border: 1px solid #e3e6f0; border-radius: 4px; background: white; font-size: 14px; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .tabela-financeira { width: 100%; border-collapse: collapse; }
     .tabela-financeira th { background-color: #4e73df; color: white; font-weight: bold; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e3e6f0; }
     .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
-    
-    /* Força o alinhamento à esquerda em TODAS as células de valor */
     .tabela-financeira .valores { text-align: left; font-weight: bold; color: #2d3748; }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
@@ -74,84 +73,111 @@ def formatar_moeda(valor):
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame(), ""
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
     try:
         df = conn.read(worksheet="Historico_Saldos", ttl=0)
-        
         if df.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
         
         df.columns = [c.strip() for c in df.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df.columns else 'Conta Bancária'
         col_data = 'Data'
         
-        # Limpeza e Conversão
         df[col_data] = pd.to_datetime(df[col_data], format='%d/%m/%Y', errors='coerce')
         for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
             if col in df.columns:
                 df[col] = df[col].apply(limpa_valor_bruto)
 
-        # =========================================================
-        # LÓGICA MENSAL: DEFINIR O MÊS DE REFERÊNCIA
-        # =========================================================
+        # Lógica Mensal
         ultima_data = df[col_data].max()
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
-        
-        # Filtra APENAS os dados do mês de referência
         df_mes = df[(df[col_data] >= mes_referencia) & (df[col_data] < proximo_mes)].copy()
 
         if df_mes.empty:
             st.warning(f"Nenhum dado encontrado para o mês de {mes_referencia.strftime('%B/%Y')}.")
-            return pd.DataFrame(), pd.DataFrame(), ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
-        # =========================================================
-        # CÁLCULOS DE ENTRADA E SAÍDA POR DIFERENÇA DE SALDO
-        # =========================================================
-        # 1. Cria a coluna Tipo com base no nome do banco
-        def definir_tipo(nome): 
-            if 'getnet' in str(nome).lower():
-                return 'Limite'
-            return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
-
-        # 2. Pega o último registro de cada banco no mês (Saldo Final) e mantém o Tipo
+        # Cálculo de Entrada/Saída
         df_fim_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
+        
+        def definir_tipo(nome): 
+            if 'getnet' in str(nome).lower(): return 'Limite'
+            return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
         df_fim_mes['Tipo'] = df_fim_mes[col_conta].apply(definir_tipo)
         
-        # 3. Pega o primeiro registro de cada banco no mês (Saldo Inicial)
         df_inicio_mes = df_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
         df_inicio_mes = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
-
-        # 4. Adiciona o Saldo Inicial no DataFrame de Fim de Mês
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes).fillna(0)
 
-        # 5. Calcula Entrada e Saída baseado na diferença entre Inicial e Final
         df_fim_mes['Variação'] = df_fim_mes['Saldo Final'] - df_fim_mes['Saldo Inicial']
         df_fim_mes['Entrada'] = df_fim_mes['Variação'].apply(lambda x: x if x > 0 else 0)
         df_fim_mes['Saída'] = df_fim_mes['Variação'].apply(lambda x: abs(x) if x < 0 else 0)
 
-        # =========================================================
-        # DADOS PARA O GRÁFICO DE LINHA (Evolução Mensal)
-        # =========================================================
+        # Gráfico de Linha
         df_graficos = df_mes.groupby(col_data)['Saldo Final'].sum().reset_index().sort_values(col_data)
         df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
 
-        return df_fim_mes, df_graficos, col_conta
+        # =========================================================
+        # LEITURA DE RENDIMENTOS E CÁLCULO DE TAXA
+        # =========================================================
+        try:
+            df_rend = conn.read(worksheet="Rendimentos", ttl=0)
+            if not df_rend.empty:
+                df_rend.columns = [c.strip() for c in df_rend.columns]
+                df_rend[col_data] = pd.to_datetime(df_rend[col_data], format='%d/%m/%Y', errors='coerce')
+                df_rend['Valor Líquido'] = df_rend['Valor Líquido'].apply(limpa_valor_bruto)
+                
+                # Filtra apenas rendimentos do mês atual
+                df_rend = df_rend[(df_rend[col_data] >= mes_referencia) & (df_rend[col_data] < proximo_mes)]
+                
+                # Se não houver rendimentos registrados na aba, calcula pela diferença do saldo
+                if df_rend.empty:
+                    raise ValueError("Aba vazia, usando cálculo automático.")
+            else:
+                raise ValueError("Aba vazia, usando cálculo automático.")
+        except:
+            # Lógica de Fallback (Cálculo Automático para Unicred e similares)
+            df_rend = pd.DataFrame()
+            
+            # Para cada banco no mês, calculamos o rendimento do período e dividimos pelos dias
+            for banco in df_fim_mes[col_conta].unique():
+                df_banco = df_mes[df_mes[col_conta] == banco].sort_values(col_data)
+                if len(df_banco) > 1:
+                    saldo_inicial_banco = df_banco.iloc[0]['Saldo Final']
+                    saldo_final_banco = df_banco.iloc[-1]['Saldo Final']
+                    
+                    # Rendimento total do banco no mês
+                    rendimento_total = saldo_final_banco - saldo_inicial_banco
+                    
+                    # Número de dias no mês
+                    dias_no_mes = (df_banco.iloc[-1][col_data] - df_banco.iloc[0][col_data]).days
+                    if dias_no_mes == 0: dias_no_mes = 1
+                    
+                    # Rateia o rendimento por dia
+                    rendimento_diario = rendimento_total / dias_no_mes
+                    
+                    # Cria linhas diárias de rendimento
+                    for i in range(dias_no_mes + 1):
+                        data_dia = df_banco.iloc[0][col_data] + timedelta(days=i)
+                        df_rend = pd.concat([df_rend, pd.DataFrame({
+                            col_data: [data_dia],
+                            col_conta: [banco],
+                            'Valor Líquido': [rendimento_diario]
+                        })])
+
+        return df_fim_mes, df_graficos, df_rend, col_conta
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame(), ""
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ""
 
 # ==============================================================================
-# CHAMADA PRINCIPAL E TRATAMENTO DE ERRO DE COLUNA
+# CHAMADA PRINCIPAL
 # ==============================================================================
-df_consolidado, df_graficos, col_conta = carregar_dados()
-
-# Segurança extra: Se a variável col_conta não foi definida, define um padrão
-if not col_conta:
-    col_conta = 'Contas Bancárias'
-
+df_consolidado, df_graficos, df_rend, col_conta = carregar_dados()
+if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
@@ -167,14 +193,20 @@ limites_totais = limite_getnet + limites_garantidos
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 saldo_com_limites = saldo_total + limites_totais
 
-# Movimentação do Mês
 entradas_mes = df_consolidado['Entrada'].sum()
 saidas_mes = df_consolidado['Saída'].sum()
 resultado_liquido_mes = entradas_mes - saidas_mes
 
+# Rendimento Total do Mês
+if not df_rend.empty:
+    rendimento_total_mes = df_rend['Valor Líquido'].sum()
+else:
+    rendimento_total_mes = 0.0
+
 # ==============================================================================
-# 4. GRÁFICO DONUT
+# 4. GRÁFICOS
 # ==============================================================================
+# Donut
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -185,56 +217,50 @@ fig_donut = go.Figure(data=[go.Pie(
     hoverinfo='label+percent'
 )])
 fig_donut.update_layout(
-    showlegend=True, 
-    legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=40, l=0, r=0), 
-    height=320,
+    showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
+    margin=dict(t=10, b=40, l=0, r=0), height=320,
     annotations=[dict(text=f"<b>R$ {saldo_total:,.2f}</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# ==============================================================================
-# Gráfico 2: Evolução do Saldo (Barra + Linha de Tendência)
+# Linha
 fig_linha = go.Figure()
-
-if not df_graficos.empty:
-    # 1. Gráfico de Barras (Fundo)
-    fig_linha.add_trace(go.Bar(
-        x=df_graficos['Data_Label'], 
-        y=df_graficos['Saldo Final'], 
-        marker_color='#dbe4ff', # Azul bem clarinho para dar volume sem ofuscar a linha
-        name='Saldo Final',
-        hoverinfo='y'
-    ))
-    
-    # 2. Gráfico de Linha (Tendência por cima com os percentuais)
-    fig_linha.add_trace(go.Scatter(
-        x=df_graficos['Data_Label'], 
-        y=df_graficos['Saldo Final'], 
-        mode='lines+markers+text',
-        line=dict(color='#4e73df', width=3),
-        marker=dict(size=8, color='#4e73df'),
-        # Cálculo da % real baseado na coluna de Saldo Final do dia anterior
-        text=[f"{((df_graficos['Saldo Final'].iloc[i] - df_graficos['Saldo Final'].iloc[i-1])/df_graficos['Saldo Final'].iloc[i-1])*100:.2f}%" if i > 0 and df_graficos['Saldo Final'].iloc[i-1] != 0 else "" for i in range(len(df_graficos))],
-        textposition="top center",
-        textfont=dict(size=11, color="#333", weight="bold"),
-        showlegend=False,
-        name='Tendência'
-    ))
-
-# Fundo leve, sem bordas e ALTURA REDUZIDA para alinhar perfeitamente
+fig_linha.add_trace(go.Scatter(
+    x=df_graficos['Data_Label'], y=df_graficos['Saldo Final'], 
+    mode='lines+markers', line=dict(color='#4e73df', width=3), marker=dict(size=8, color='#4e73df'), showlegend=False
+))
 fig_linha.update_layout(
-    margin=dict(t=35, b=10, l=5, r=5), 
-    height=190, # <--- Ajustado de 280 para 190
-    xaxis=dict(tickfont=dict(size=11), showgrid=False), 
-    yaxis=dict(showticklabels=False, showgrid=False),
-    plot_bgcolor='#f8f9fc', 
-    paper_bgcolor='#f8f9fc',
-    barmode='overlay', # Coloca a linha exatamente em cima da barra
-    showlegend=False
+    margin=dict(t=10, b=15, l=5, r=5), height=140, 
+    xaxis=dict(tickfont=dict(size=10), showgrid=False), 
+    yaxis=dict(showticklabels=False, showgrid=False, range=[0, df_graficos['Saldo Final'].max() * 1.1]),
+    plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9'
 )
 
+# Gráfico de Rendimentos (Barras)
+if not df_rend.empty:
+    # Agrupa o rendimento por banco e soma
+    df_rend_grouped = df_rend.groupby(col_conta)['Valor Líquido'].sum().reset_index().sort_values('Valor Líquido', ascending=True)
+    
+    fig_rend = go.Figure()
+    fig_rend.add_trace(go.Bar(
+        x=df_rend_grouped['Valor Líquido'], 
+        y=df_rend_grouped[col_conta], 
+        orientation='h',
+        marker_color='#f6c23e',
+        text=df_rend_grouped['Valor Líquido'].apply(lambda x: f"R$ {x:,.2f}"),
+        textposition='outside'
+    ))
+    fig_rend.update_layout(
+        margin=dict(t=10, b=10, l=5, r=5), height=300,
+        xaxis=dict(showticklabels=False, showgrid=False),
+        yaxis=dict(tickfont=dict(size=11), showgrid=False),
+        plot_bgcolor='#f1f5f9', paper_bgcolor='#f1f5f9',
+        showlegend=False
+    )
+else:
+    fig_rend = None
+
 # ==============================================================================
-# 6. MONTAGEM DO PAINEL
+# 5. MONTAGEM DO PAINEL
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
 mes_referencia_nome = df_graficos['Data'].iloc[-1].strftime('%B/%Y')
@@ -249,13 +275,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPIs (4 Blocos)
-kpi_row = st.columns(4)
+# KPIs (5 Blocos - Adicionado Rendimentos)
+kpi_row = st.columns(5)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "disponivel"),
     (kpi_row[2], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "limites"),
-    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes")
+    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes"),
+    (kpi_row[4], "💰", "RENDIMENTOS", f"R$ {rendimento_total_mes:,.2f}", "yellow")
 ]
 for col, icon, title, val, color in kp_data:
     col.markdown(f"<div class='kpi-card {color}'><div style='font-size:12px;'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
@@ -296,14 +323,11 @@ with c3:
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-col_tab, col_hist = st.columns([1.6, 1])
+col_tab, col_rend = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
-    
-    # Ajusta as colunas para exibição
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
-    
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']}
     
     html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
@@ -314,22 +338,11 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
     st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'><span style='display:inline-block; width:10px; height:10px; background:#1cc88a; border-radius:2px; margin-right:4px;'></span> Disponível <span style='display:inline-block; width:10px; height:10px; background:#4e73df; border-radius:2px; margin-left:15px; margin-right:4px;'></span> Aplicação</div>", unsafe_allow_html=True)
 
-with col_hist:
-    st.markdown(f"<div class='section-title'>HISTÓRICO MENSAL ({mes_referencia_nome.upper()})</div>", unsafe_allow_html=True)
-    if not df_graficos.empty:
-        # Calcula a variação % diária do mês
-        df_hist_view = df_graficos.copy()
-        df_hist_view['Variação %'] = df_hist_view['Saldo Final'].pct_change() * 100
-        df_hist_view['Variação %'] = df_hist_view['Variação %'].fillna(0)
-        
-        html_hist = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
-        for _, row in df_hist_view.iterrows():
-            variacao = row['Variação %']
-            cor = "#1cc88a" if variacao >= 0 else "#e74a3b"
-            html_hist += f'<tr><td style="font-weight:bold; color:#333;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:{cor}; font-weight:bold;">{variacao:.2f}%</td></tr>'
-        html_hist += '</tbody></table></div>'
-        st.markdown(html_hist, unsafe_allow_html=True)
+with col_rend:
+    st.markdown("<div class='section-title'>RENDIMENTOS POR BANCO</div>", unsafe_allow_html=True)
+    if fig_rend:
+        st.plotly_chart(fig_rend, use_container_width=True, config={'displayModeBar': False})
     else:
-        st.info("Sem dados históricos para o mês.")
+        st.markdown("<div style='padding: 20px; text-align:center; color: #888; font-size: 14px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum rendimento registrado ou calculado para este mês.</div>", unsafe_allow_html=True)
 
 st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
