@@ -43,7 +43,7 @@ st.markdown("""
     .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-weight: 500; color: #1a202c; }
     .tabela-financeira .linha-total { background-color: #e2e6ea; font-weight: bold; border-top: 2px solid #ccc; }
     
-    .tabela-financeira .valores { text-align: right; font-family: 'Courier New', monospace; font-weight: bold; color: #2d3748; }
+    .tabela-financeira .valores { text-align: right; font-family: 'Arial', sans-serif; font-weight: bold; color: #2d3748; }
     .tabela-financeira .col-destaque { background-color: #eef2ff; color: #1a3b7c; font-weight: 900; }
     
     .ind-item { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
