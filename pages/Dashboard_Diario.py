@@ -221,10 +221,10 @@ if not df_graficos.empty:
         name='Tendência'
     ))
 
-# Fundo leve, sem bordas e ALTURA AUMENTADA para alinhar com a coluna da direita
+# Fundo leve, sem bordas e ALTURA REDUZIDA para alinhar perfeitamente
 fig_linha.update_layout(
     margin=dict(t=35, b=10, l=5, r=5), 
-    height=280, # <--- Altura esticada para emparelhar com o bloco "Saldo Consolidado"
+    height=190, # <--- Ajustado de 280 para 190
     xaxis=dict(tickfont=dict(size=11), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     plot_bgcolor='#f8f9fc', 
