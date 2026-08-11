@@ -112,23 +112,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. FUNÇÃO DE LEITURA E LIMPEZA
+# 1. FUNÇÃO DE LEITURA E LIMPEZA BLINDADA
 # ==============================================================================
 def limpa_valor_bruto(valor):
-    if isinstance(valor, pd.Series):
-        return valor.apply(limpa_valor_bruto)
-    if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]:
-        return 0.0
-    if isinstance(valor, (int, float)):
-        return float(valor)
     try:
+        # Resolve o erro Ambiguous Truth se o dataframe vier com colunas duplicadas
+        if isinstance(valor, pd.Series): 
+            valor = valor.iloc[0] if not valor.empty else 0.0
+            
+        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]:
+            return 0.0
+        if isinstance(valor, (int, float)):
+            return float(valor)
+            
         v_str = str(valor).strip()
+        # Converte negativo contábil (10,00) para -10,00
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
+        
+        # Lida com vírgulas do padrão BR
         if '.' in v_str and ',' in v_str:
             v_str = v_str.replace('.', '').replace(',', '.')
         elif ',' in v_str:
             v_str = v_str.replace(',', '.')
+            
         return float(v_str)
     except Exception:
         return 0.0
@@ -145,14 +152,14 @@ def formatar_transf(valor):
     try:
         val = float(valor)
         if val == 0: return "-"
-        # Essa lógica adiciona os sinais visuais de + e -
+        # Se entrar transf, fica + R$ (verde). Se sair, fica - R$ (vermelho)
         prefixo = "+ " if val > 0 else "- "
         return f"{prefixo}R$ {abs(val):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception:
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM CLASSIFICAÇÃO)
+# 2. CARGA DE DADOS (BASE ZERO + TIMELINE)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -196,7 +203,7 @@ def carregar_dados():
             print("Aviso ao ler Saldo_Inicial:", e)
 
         # =========================================================
-        # 2. EXTRATOS (Filtro Robusto de Transferência)
+        # 2. EXTRATOS (Cirúrgico e Imune a Datas Erradas)
         # =========================================================
         df_extratos = None
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -207,28 +214,38 @@ def carregar_dados():
                 df_ext.columns = [str(c).strip() for c in df_ext.columns]
                 df_ext = df_ext.loc[:, ~df_ext.columns.duplicated()].copy()
                 
-                col_ext_conta = next((c for c in df_ext.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
-                col_ext_data = next((c for c in df_ext.columns if 'data' in c.lower()), 'Data')
-                col_ext_credito = next((c for c in df_ext.columns if 'crédito' in c.lower() or 'credito' in c.lower() or 'entrada' in c.lower()), 'Vl Crédito')
-                col_ext_debito = next((c for c in df_ext.columns if 'débito' in c.lower() or 'debito' in c.lower() or 'saída' in c.lower() or 'saida' in c.lower()), 'Vl Débito')
+                # Mapeamento estático baseado nas colunas do usuário (Imune a confusão)
+                col_ext_conta = 'Banco'
+                col_ext_data = 'Data'
+                col_ext_credito = 'Vl Crédito'
+                col_ext_debito = 'Vl Débito'
+                
+                # Previne quebra caso a coluna não exista por digitação errada
+                if col_ext_conta not in df_ext.columns: col_ext_conta = next((c for c in df_ext.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
+                if col_ext_data not in df_ext.columns: col_ext_data = next((c for c in df_ext.columns if 'data' in c.lower()), 'Data')
+                if col_ext_credito not in df_ext.columns: col_ext_credito = next((c for c in df_ext.columns if 'crédito' in c.lower() or 'credito' in c.lower()), 'Vl Crédito')
+                if col_ext_debito not in df_ext.columns: col_ext_debito = next((c for c in df_ext.columns if 'débito' in c.lower() or 'debito' in c.lower()), 'Vl Débito')
 
                 for c in [col_ext_conta, col_ext_data, col_ext_credito, col_ext_debito]:
                     if c not in df_ext.columns: df_ext[c] = ""
                 
-                df_ext[col_ext_data] = pd.to_datetime(df_ext[col_ext_data], format='%d/%m/%Y', errors='coerce')
+                # Converte com dayfirst=True para lidar perfeitamente com datas brasileiras
+                df_ext[col_ext_data] = pd.to_datetime(df_ext[col_ext_data], dayfirst=True, errors='coerce').dt.normalize()
                 
-                ultima_data = df_ext[col_ext_data].dropna().max()
-                if not pd.isna(ultima_data):
-                    mes_referencia = ultima_data.replace(day=1)
+                # O Pulo do Gato: Pega a data que mais se repete (Moda) para travar o filtro do mês!
+                # Isso impede que uma data digitada como "2029" zere o painel inteiro.
+                datas_validas = df_ext[col_ext_data].dropna()
+                if not datas_validas.empty:
+                    mes_referencia = datas_validas.mode().iloc[0].replace(day=1)
                     proximo_mes = mes_referencia + relativedelta(months=1)
                 
+                # Agora sim, filtra as operações do mês
                 df_ext = df_ext[(df_ext[col_ext_data] >= mes_referencia) & (df_ext[col_ext_data] < proximo_mes)].copy()
                 
                 df_ext[col_ext_credito] = df_ext[col_ext_credito].apply(limpa_valor_bruto)
                 df_ext[col_ext_debito] = df_ext[col_ext_debito].apply(limpa_valor_bruto)
-                df_ext['Conta Bancária'] = df_ext[col_ext_conta].astype(str).str.strip()
                 
-                # BUSCA POR VARREDURA: Junta todas as colunas em um texto só, tira acentos e procura a palavra!
+                # Filtro Varredura Global: Junta a linha inteira, tira acento e caça "transferência interna"
                 linhas_str = df_ext.astype(str).agg(' '.join, axis=1)
                 linhas_norm = linhas_str.apply(lambda x: unicodedata.normalize('NFKD', x).encode('ASCII', 'ignore').decode('utf-8').lower())
                 df_ext['É Transf'] = linhas_norm.str.contains('transferencia') & linhas_norm.str.contains('interna')
@@ -238,6 +255,10 @@ def carregar_dados():
                 df_ext['Deb_Op'] = df_ext[col_ext_debito].where(~df_ext['É Transf'], 0.0)
                 df_ext['Cred_Tr'] = df_ext[col_ext_credito].where(df_ext['É Transf'], 0.0)
                 df_ext['Deb_Tr'] = df_ext[col_ext_debito].where(df_ext['É Transf'], 0.0)
+                
+                # Renomeia para padronizar as colunas que vão pro motor
+                df_ext.rename(columns={col_ext_conta: 'Conta Bancária', col_ext_data: 'Data'}, inplace=True)
+                df_ext['Conta Bancária'] = df_ext['Conta Bancária'].astype(str).str.strip()
                 
                 df_extratos = df_ext
         except Exception as e:
@@ -264,7 +285,6 @@ def carregar_dados():
             df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
             df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
             
-            # Aqui calculamos a tabela visível
             df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op'].fillna(0)
             df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op'].fillna(0)
             df_fim_mes['Transf Líquida'] = df_fim_mes['Cred_Tr'].fillna(0) - df_fim_mes['Deb_Tr'].fillna(0)
@@ -275,24 +295,23 @@ def carregar_dados():
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         
-        # A Mágica de Saldo Perfeito
+        # Matemática de Fechamento do Saldo Real!
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Transf Líquida']
         df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
+        # 4. GRÁFICO DIÁRIO
         # =========================================================
         saldo_inicial_total = df_fim_mes['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
-            # Para o saldo total do hospital, soma TUDO (pois transf anula)
-            df_ext['Total Credito'] = df_ext['Cred_Op'] + df_ext['Cred_Tr']
-            df_ext['Total Debito'] = df_ext['Deb_Op'] + df_ext['Deb_Tr']
+            df_extratos['Total Credito'] = df_extratos['Cred_Op'] + df_extratos['Cred_Tr']
+            df_extratos['Total Debito'] = df_extratos['Deb_Op'] + df_extratos['Deb_Tr']
             
-            df_extratos_diario = df_ext.groupby(col_ext_data).agg({
+            df_extratos_diario = df_extratos.groupby('Data').agg({
                 'Total Credito': 'sum',
                 'Total Debito': 'sum'
-            }).reset_index().rename(columns={col_ext_data: 'Data'})
+            }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             df_graficos['Movimentação Líquida'] = df_graficos['Total Credito'].fillna(0) - df_graficos['Total Debito'].fillna(0)
@@ -317,7 +336,7 @@ def carregar_dados():
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
         # =========================================================
-        # 6. LER A ABA DE RENDIMENTOS
+        # 6. LER A ABA DE RENDIMENTOS E CUSTO
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
@@ -343,16 +362,12 @@ def carregar_dados():
         except Exception:
             pass
 
-        # =========================================================
-        # 7. LER A ABA DE CUSTO DE OPORTUNIDADE
-        # =========================================================
         custo_oportunidade_total = 0.0
         try:
             df_custos = conn.read(worksheet="Custo_Oportunidade", ttl=0)
             if not df_custos.empty:
                 df_custos.columns = [str(c).strip() for c in df_custos.columns]
                 df_custos = df_custos.loc[:, ~df_custos.columns.duplicated()].copy()
-                
                 col_custo = next((c for c in df_custos.columns if 'custo' in c.lower()), None)
                 if col_custo:
                     df_custos[col_custo] = df_custos[col_custo].apply(limpa_valor_bruto)
@@ -528,7 +543,7 @@ with col_tab:
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As Transferências Internas impactam o Saldo Final de cada banco individualmente, mas o resultado global se anula na matriz.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As Transferências Internas impactam o Saldo Final de cada banco, mas o resultado global (Total) se anula na matriz.</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
