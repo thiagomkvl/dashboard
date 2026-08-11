@@ -22,7 +22,7 @@ st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_ic
 st.markdown("""
     <style>
     /* =========================================================
-       IDENTIDADE VISUAL
+       IDENTIDADE VISUAL — apenas apresentação
        ========================================================= */
     :root {
         --bg: #f5f7fb;
@@ -44,16 +44,22 @@ st.markdown("""
         --purple: #7654c8;
         --purple-soft: #f5f3ff;
         --shadow: 0 2px 10px rgba(24, 39, 75, 0.055);
+        --shadow-hover: 0 5px 18px rgba(24, 39, 75, 0.09);
     }
 
-    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    html, body, [class*="css"] {
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+    }
+
     .main { background: var(--bg); }
     .main .block-container { padding-top: 0.8rem; padding-bottom: 0.7rem; max-width: 97%; }
     div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
     .stPlotlyChart { background: transparent !important; }
     .js-plotly-plot, .plot-container { margin: 0 auto; }
 
-    /* Cabeçalho */
+    /* =========================================================
+       CABEÇALHO
+       ========================================================= */
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
     .header-period { min-width: 170px; }
     .header-period .date { font-size: 17px; font-weight: 750; color: var(--text); letter-spacing: -0.25px; }
@@ -65,7 +71,9 @@ st.markdown("""
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 750; }
 
-    /* KPIs */
+    /* =========================================================
+       KPIs
+       ========================================================= */
     .kpi-card { position: relative; overflow: hidden; min-height: 78px; padding: 12px 15px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); text-align: left; }
     .kpi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
     .kpi-card.total::before { background: var(--primary); }
@@ -83,66 +91,78 @@ st.markdown("""
     .kpi-title { font-size: 9px; line-height: 1; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 5px; }
     .kpi-value { font-size: 20px; line-height: 1.15; font-weight: 800; color: var(--text); letter-spacing: -0.35px; white-space: nowrap; }
 
-    /* Seções */
+    /* =========================================================
+       SEÇÕES
+       ========================================================= */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 
-    /* Tabelas */
+    /* =========================================================
+       TABELAS
+       ========================================================= */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
-    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 11px; font-weight: 800; text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 11px; font-weight: 800; text-align: left; white-space: nowrap; padding: 11px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira th:first-child { border-top-left-radius: 8px; }
+    .tabela-financeira th:last-child { border-top-right-radius: 8px; }
     .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f2f6; font-size: 14px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #fafbfe; }
+    .tabela-financeira tbody tr:last-child td { border-bottom: none; }
+    .tabela-bancos .tabela-financeira th, .tabela-bancos .tabela-financeira td, .tabela-bancos .tabela-financeira .valores { text-align: left; }
     .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
-    .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
-    .tabela-financeira .valores { text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
-    
-    /* Rendimentos e Custo */
+    .tabela-financeira .linha-total td { color: #172033; font-size: 14px; font-weight: 800; }
+    .tabela-financeira .valores { text-align: right; font-weight: 750; color: #273043; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+    /* =========================================================
+       RENDIMENTOS & CUSTO
+       ========================================================= */
     .rend-box { padding: 1px 0 7px; font-size: 12px; }
-    .rend-item { display: flex; justify-content: space-between; padding: 7px 3px; border-bottom: 1px solid #f0f2f6; }
+    .rend-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 3px; border-bottom: 1px solid #f0f2f6; }
     .rend-item:last-child { border-bottom: none; }
-    .rend-total { background: var(--warning-soft); border: 1px solid #f3e4b5; border-left: 3px solid var(--warning); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; }
+    .rend-total { background: var(--warning-soft); border: 1px solid #f3e4b5; border-left: 3px solid var(--warning); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     .rend-total span { font-weight: 800; color: #6e5514; }
-    .custo-oportunidade { background: var(--danger-soft); border: 1px solid #f5d6da; border-left: 3px solid var(--danger); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; }
+    .custo-oportunidade { background: var(--danger-soft); border: 1px solid #f5d6da; border-left: 3px solid var(--danger); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     .custo-oportunidade span { font-weight: 750; color: var(--danger); }
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. FUNÇÃO DE LEITURA E LIMPEZA BLINDADA CONTRA SÉRIES AMBÍGUAS
+# 1. FUNÇÃO DE LEITURA E LIMPEZA BLINDADA
 # ==============================================================================
 def limpa_valor_bruto(valor):
-    """
-    Função resiliente. Se a entrada vier como Series (por colunas duplicadas no Sheets),
-    aplica a conversão item a item para evitar o erro de Ambiguous Truth.
-    """
-    if isinstance(valor, pd.Series):
-        return valor.apply(limpa_valor_bruto)
-        
-    if pd.isna(valor) or str(valor).strip() in ["", "-"]:
-        return 0.0
-    if isinstance(valor, (int, float)):
-        return float(valor)
     try:
+        # Se for None, vazio ou hífen, devolve 0
+        if valor is None: return 0.0
+        if isinstance(valor, (int, float)): 
+            return float(valor) if not pd.isna(valor) else 0.0
+        
         v_str = str(valor).strip()
+        if v_str in ["", "-", "nan", "NaN", "None"]: return 0.0
+        
+        # Converte negativo contábil (10,00) para -10,00
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
+        
+        # Corrige as vírgulas e pontos
         if '.' in v_str and ',' in v_str:
             v_str = v_str.replace('.', '').replace(',', '.')
         elif ',' in v_str:
             v_str = v_str.replace(',', '.')
+            
         return float(v_str)
-    except ValueError:
+    except Exception:
         return 0.0
 
 def formatar_moeda(valor):
-    if pd.isna(valor): return "-"
-    if isinstance(valor, pd.Series): valor = valor.iloc[0] # Blindagem extra
-    if valor == 0: return "-"
-    return f"R$ {float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    try:
+        val = float(valor)
+        if val == 0: return "-"
+        return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception:
+        return "-"
 
 # ==============================================================================
 # 2. CARGA DE DADOS (BASE ZERO + TIMELINE)
@@ -162,21 +182,34 @@ def carregar_dados():
         try:
             df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
             if not df_si.empty:
-                # Anti-Bug: Remove espaços e COLUNAS DUPLICADAS FANTASMAS
+                # Remove colunas duplicadas que atrapalham o código
                 df_si.columns = [str(c).strip() for c in df_si.columns]
                 df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
                 
-                col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Conta Bancária')
-                col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), 'Saldo Inicial')
+                col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), None)
+                col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), None)
                 col_si_garantida = next((c for c in df_si.columns if 'garantida' in c.lower() or 'limite' in c.lower()), None)
                 
+                # Se não achar por palavra chave, pega pelas posições
+                if not col_si_conta: col_si_conta = df_si.columns[0]
+                if not col_si_valor: col_si_valor = df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0]
+                
                 df_si[col_si_valor] = df_si[col_si_valor].apply(limpa_valor_bruto)
+                
+                # Seleção cirúrgica das colunas para evitar o erro "Ambiguous Truth"
+                cols_to_keep = [col_si_conta, col_si_valor]
+                new_cols = ['Conta Bancária', 'Saldo Inicial']
+                
                 if col_si_garantida:
                     df_si[col_si_garantida] = df_si[col_si_garantida].apply(limpa_valor_bruto)
-                    df_saldo_inicial = df_si.rename(columns={col_si_conta: 'Conta Bancária', col_si_valor: 'Saldo Inicial', col_si_garantida: 'Conta Garantida'})
-                else:
-                    df_si['Conta Garantida'] = 0.0
-                    df_saldo_inicial = df_si.rename(columns={col_si_conta: 'Conta Bancária', col_si_valor: 'Saldo Inicial'})
+                    cols_to_keep.append(col_si_garantida)
+                    new_cols.append('Conta Garantida')
+                
+                df_saldo_inicial = df_si[cols_to_keep].copy()
+                df_saldo_inicial.columns = new_cols
+                
+                if 'Conta Garantida' not in df_saldo_inicial.columns:
+                    df_saldo_inicial['Conta Garantida'] = 0.0
                     
                 df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
         except Exception as e:
@@ -191,7 +224,6 @@ def carregar_dados():
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                # Anti-Bug: Remove colunas duplicadas
                 df_ext.columns = [str(c).strip() for c in df_ext.columns]
                 df_ext = df_ext.loc[:, ~df_ext.columns.duplicated()].copy()
                 
@@ -201,8 +233,13 @@ def carregar_dados():
                 col_ext_debito = next((c for c in df_ext.columns if 'débito' in c.lower() or 'debito' in c.lower() or 'saída' in c.lower() or 'saida' in c.lower()), 'Vl Débito')
                 col_ext_tipo = next((c for c in df_ext.columns if 'tipo' in c.lower() or 'transa' in c.lower()), 'Tipo de Transação')
 
+                # Cria colunas vazias se não encontrar, para blindar o código
+                for c in [col_ext_conta, col_ext_data, col_ext_credito, col_ext_debito, col_ext_tipo]:
+                    if c not in df_ext.columns: df_ext[c] = ""
+                
                 df_ext[col_ext_data] = pd.to_datetime(df_ext[col_ext_data], format='%d/%m/%Y', errors='coerce')
                 
+                # Descobre o mês real que está sendo trabalhado
                 ultima_data = df_ext[col_ext_data].dropna().max()
                 if not pd.isna(ultima_data):
                     mes_referencia = ultima_data.replace(day=1)
@@ -210,16 +247,13 @@ def carregar_dados():
                 
                 df_ext = df_ext[(df_ext[col_ext_data] >= mes_referencia) & (df_ext[col_ext_data] < proximo_mes)]
                 
-                if col_ext_credito in df_ext.columns: df_ext[col_ext_credito] = df_ext[col_ext_credito].apply(limpa_valor_bruto)
-                if col_ext_debito in df_ext.columns: df_ext[col_ext_debito] = df_ext[col_ext_debito].apply(limpa_valor_bruto)
+                df_ext[col_ext_credito] = df_ext[col_ext_credito].apply(limpa_valor_bruto)
+                df_ext[col_ext_debito] = df_ext[col_ext_debito].apply(limpa_valor_bruto)
                 
-                df_ext.rename(columns={
-                    col_ext_conta: 'Conta Bancária',
-                    col_ext_data: 'Data',
-                    col_ext_credito: 'Vl Crédito',
-                    col_ext_debito: 'Vl Débito',
-                    col_ext_tipo: 'Tipo de Transação'
-                }, inplace=True)
+                # Extração cirúrgica
+                cols_to_keep_ext = [col_ext_conta, col_ext_data, col_ext_credito, col_ext_debito, col_ext_tipo]
+                df_ext = df_ext[cols_to_keep_ext].copy()
+                df_ext.columns = ['Conta Bancária', 'Data', 'Vl Crédito', 'Vl Débito', 'Tipo de Transação']
                 df_ext['Conta Bancária'] = df_ext['Conta Bancária'].astype(str).str.strip()
                 df_extratos = df_ext
         except Exception as e:
@@ -290,14 +324,13 @@ def carregar_dados():
         
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_operacional = df_extratos.copy()
-            if 'Tipo de Transação' in df_extratos_operacional.columns:
-                def normalizar_texto(txt):
-                    if pd.isna(txt): return ""
-                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
-                
-                serie_tipo = df_extratos_operacional['Tipo de Transação'].apply(normalizar_texto)
-                mascara_internas = serie_tipo.str.contains('transferencia', na=False) & serie_tipo.str.contains('interna', na=False)
-                df_extratos_operacional = df_extratos_operacional[~mascara_internas]
+            def normalizar_texto(txt):
+                if pd.isna(txt) or txt is None: return ""
+                return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
+            
+            serie_tipo = df_extratos_operacional['Tipo de Transação'].apply(normalizar_texto)
+            mascara_internas = serie_tipo.str.contains('transferencia', na=False) & serie_tipo.str.contains('interna', na=False)
+            df_extratos_operacional = df_extratos_operacional[~mascara_internas]
 
             entradas_operacionais = df_extratos_operacional['Vl Crédito'].sum()
             saidas_operacionais = df_extratos_operacional['Vl Débito'].sum()
@@ -320,7 +353,7 @@ def carregar_dados():
                     df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
                     if col_conta_rend:
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.rename(columns={col_conta_rend: 'Conta Bancária', col_rendimento: 'Valor Líquido'}, inplace=True)
+                        df_rend_resumo.columns = ['Conta Bancária', 'Valor Líquido']
                     else:
                         rend_sum = df_rend[col_rendimento].sum()
                         df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
@@ -349,7 +382,7 @@ def carregar_dados():
         return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
-        st.error(f"Erro fatal ao carregar dados: {e}")
+        st.error(f"Erro fatal: {e}")
         mes_fallback = pd.to_datetime(datetime.now().date()).replace(day=1)
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0, mes_fallback
 
