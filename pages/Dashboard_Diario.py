@@ -596,6 +596,18 @@ def carregar_dados():
             df_fim_mes['Entrada'] = 0
             df_fim_mes['Saída'] = 0
 
+        # ---------------------------------------------------------
+        # RECALCULA O SALDO FINAL COM BASE NO EXTRATO REAL
+        # (e não mais no snapshot "de hoje" do Historico_Saldos,
+        #  que pode estar desatualizado/incompleto)
+        # ---------------------------------------------------------
+        df_fim_mes['Saldo Final'] = (
+            df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada'] - df_fim_mes['Saída']
+        )
+        df_fim_mes['Disponível'] = (
+            df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida'].fillna(0)
+        )
+
         # =========================================================
         # 5. DADOS PARA O GRÁFICO DIÁRIO E MOVIMENTAÇÃO DO MÊS
         # =========================================================
@@ -852,7 +864,7 @@ with col_tab:
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas de Entrada e Saída exibem apenas movimentações operacionais (Transferências Internas foram desconsideradas matematicamente).</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* Entrada e Saída exibem apenas movimentações operacionais do extrato (Transferências Internas desconsideradas). O Saldo Final é calculado como Saldo Inicial + Entrada − Saída (com base no extrato), e não copiado do último lançamento manual do dia.</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
