@@ -51,410 +51,89 @@ st.markdown("""
         font-family: "Inter", "Segoe UI", Arial, sans-serif;
     }
 
-    .main {
-        background: var(--bg);
-    }
-
-    .main .block-container {
-        padding-top: 0.8rem;
-        padding-bottom: 0.7rem;
-        max-width: 97%;
-    }
-
-    div[data-testid="stVerticalBlock"] > div {
-        gap: 0.38rem !important;
-    }
-
-    .stPlotlyChart {
-        background: transparent !important;
-    }
-
-    .js-plotly-plot,
-    .plot-container {
-        margin: 0 auto;
-    }
+    .main { background: var(--bg); }
+    .main .block-container { padding-top: 0.8rem; padding-bottom: 0.7rem; max-width: 97%; }
+    div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
+    .stPlotlyChart { background: transparent !important; }
+    .js-plotly-plot, .plot-container { margin: 0 auto; }
 
     /* =========================================================
        CABEÇALHO
        ========================================================= */
     .dashboard-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        min-height: 64px;
-        padding: 8px 4px 10px;
-        margin-bottom: 10px;
-        border-bottom: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: center;
+        min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border);
     }
-
-    .header-period {
-        min-width: 170px;
-    }
-
-    .header-period .date {
-        font-size: 17px;
-        font-weight: 750;
-        color: var(--text);
-        letter-spacing: -0.25px;
-    }
-
-    .header-period .label {
-        margin-top: 2px;
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.7px;
-    }
-
-    .header-center {
-        text-align: center;
-    }
-
-    .header-center h1 {
-        margin: 0;
-        color: var(--text);
-        font-size: 21px;
-        line-height: 1.2;
-        font-weight: 800;
-        letter-spacing: 0.35px;
-    }
-
-    .header-center p {
-        margin: 3px 0 0;
-        color: var(--muted);
-        font-size: 10px;
-        font-weight: 500;
-        letter-spacing: 0.3px;
-    }
-
-    .update-badge {
-        min-width: 105px;
-        padding: 6px 12px;
-        text-align: center;
-        border: 1px solid #ccebdc;
-        border-radius: 8px;
-        background: var(--success-soft);
-        color: #23795d;
-    }
-
-    .update-badge span {
-        font-size: 9px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .update-badge b {
-        font-size: 12px;
-        font-weight: 750;
-    }
+    .header-period { min-width: 170px; }
+    .header-period .date { font-size: 17px; font-weight: 750; color: var(--text); letter-spacing: -0.25px; }
+    .header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+    .header-center { text-align: center; }
+    .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
+    .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
+    .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: var(--success-soft); color: #23795d; }
+    .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .update-badge b { font-size: 12px; font-weight: 750; }
 
     /* =========================================================
        KPIs
        ========================================================= */
     .kpi-card {
-        position: relative;
-        overflow: hidden;
-        min-height: 78px;
-        padding: 12px 15px 11px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--surface);
-        box-shadow: var(--shadow);
-        text-align: left;
-        transition: box-shadow .15s ease, transform .15s ease;
+        position: relative; overflow: hidden; min-height: 78px; padding: 12px 15px 11px;
+        border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); text-align: left;
     }
-
-    .kpi-card::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: var(--primary);
-    }
-
+    .kpi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
     .kpi-card.total::before { background: var(--primary); }
     .kpi-card.disponivel::before { background: var(--success); }
     .kpi-card.limites::before { background: var(--info); }
     .kpi-card.aplicacoes::before { background: var(--purple); }
-
     .kpi-card.total { background: linear-gradient(135deg, #fff, #f8faff); }
     .kpi-card.disponivel { background: linear-gradient(135deg, #fff, #f7fdf9); }
     .kpi-card.limites { background: linear-gradient(135deg, #fff, #f6fcfe); }
     .kpi-card.aplicacoes { background: linear-gradient(135deg, #fff, #faf8ff); }
-
-    .kpi-icon {
-        width: 25px;
-        height: 25px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 5px;
-        border-radius: 7px;
-        background: var(--primary-soft);
-        font-size: 13px;
-    }
-
+    .kpi-icon { width: 25px; height: 25px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 5px; border-radius: 7px; background: var(--primary-soft); font-size: 13px; }
     .kpi-card.disponivel .kpi-icon { background: var(--success-soft); }
     .kpi-card.limites .kpi-icon { background: var(--info-soft); }
     .kpi-card.aplicacoes .kpi-icon { background: var(--purple-soft); }
-
-    .kpi-title {
-        font-size: 9px;
-        line-height: 1;
-        font-weight: 750;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.65px;
-        margin-bottom: 5px;
-    }
-
-    .kpi-value {
-        font-size: 20px;
-        line-height: 1.15;
-        font-weight: 800;
-        color: var(--text);
-        letter-spacing: -0.35px;
-        white-space: nowrap;
-    }
+    .kpi-title { font-size: 9px; line-height: 1; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 5px; }
+    .kpi-value { font-size: 20px; line-height: 1.15; font-weight: 800; color: var(--text); letter-spacing: -0.35px; white-space: nowrap; }
 
     /* =========================================================
-       SEÇÕES
+       SEÇÕES & MOVIMENTAÇÃO
        ========================================================= */
-    .section-title {
-        display: flex;
-        align-items: center;
-        min-height: 25px;
-        margin-bottom: 5px;
-        padding: 0 0 5px;
-        border-bottom: 1px solid var(--border);
-        color: var(--text);
-        font-size: 12px;
-        line-height: 1.15;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.75px;
-    }
-
-    .section-title::before {
-        content: "";
-        width: 3px;
-        height: 12px;
-        margin-right: 7px;
-        border-radius: 4px;
-        background: var(--primary);
-    }
-
-    .section-title-inline {
-        font-size: 9px;
-        line-height: 1.1;
-        font-weight: 750;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.45px;
-    }
-
-    /* =========================================================
-       MOVIMENTAÇÃO
-       ========================================================= */
-    .movement-card {
-        padding: 8px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface-soft);
-    }
+    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; line-height: 1.15; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
+    .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
+    .section-title-inline { font-size: 9px; line-height: 1.1; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
+    .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 
     /* =========================================================
        TABELAS
        ========================================================= */
-    .tabela-container {
-        overflow-x: auto;
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        background: var(--surface);
-        box-shadow: var(--shadow);
-        font-size: 12px;
-        width: 100%;
-        margin-bottom: 8px;
-    }
-
-    .tabela-financeira {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-
-    .tabela-financeira th {
-        background: #f7f9fc;
-        color: #596274;
-        font-size: 11px;
-        font-weight: 800;
-        text-align: left;
-        white-space: nowrap;
-        padding: 11px 12px;
-        border-bottom: 1px solid var(--border);
-        text-transform: uppercase;
-        letter-spacing: 0.35px;
-    }
-
-    .tabela-financeira th:first-child {
-        border-top-left-radius: 8px;
-    }
-
-    .tabela-financeira th:last-child {
-        border-top-right-radius: 8px;
-    }
-
-    .tabela-financeira td {
-        padding: 10px 12px;
-        border-bottom: 1px solid #f0f2f6;
-        font-size: 14px;
-        font-weight: 550;
-        color: #273043;
-        white-space: nowrap;
-    }
-
-    .tabela-financeira tbody tr:hover td {
-        background: #fafbfe;
-    }
-
-    .tabela-financeira tbody tr:last-child td {
-        border-bottom: none;
-    }
-    
-    /* =========================================================
-       TABELA EXECUTIVA — SALDO DE TODOS OS BANCOS
-       Mantém somente esta tabela alinhada à esquerda.
-       ========================================================= */
-    .tabela-bancos .tabela-financeira th,
-    .tabela-bancos .tabela-financeira td,
-    .tabela-bancos .tabela-financeira .valores {
-        text-align: left;
-    }
-
-
-    .tabela-financeira .linha-total {
-        background: #eef2f7;
-        border-top: 2px solid #d8dee8;
-    }
-
-    .tabela-financeira .linha-total td {
-        color: #172033;
-        font-size: 14px;
-        font-weight: 800;
-    }
-
-    .tabela-financeira .valores {
-        text-align: right;
-        font-weight: 750;
-        color: #273043;
-        font-size: 14px;
-        font-variant-numeric: tabular-nums;
-    }
+    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 11px; font-weight: 800; text-align: left; white-space: nowrap; padding: 11px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira th:first-child { border-top-left-radius: 8px; }
+    .tabela-financeira th:last-child { border-top-right-radius: 8px; }
+    .tabela-financeira td { padding: 10px 12px; border-bottom: 1px solid #f0f2f6; font-size: 14px; font-weight: 550; color: #273043; white-space: nowrap; }
+    .tabela-financeira tbody tr:hover td { background: #fafbfe; }
+    .tabela-financeira tbody tr:last-child td { border-bottom: none; }
+    .tabela-bancos .tabela-financeira th, .tabela-bancos .tabela-financeira td, .tabela-bancos .tabela-financeira .valores { text-align: left; }
+    .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
+    .tabela-financeira .linha-total td { color: #172033; font-size: 14px; font-weight: 800; }
+    .tabela-financeira .valores { text-align: right; font-weight: 750; color: #273043; font-size: 14px; font-variant-numeric: tabular-nums; }
 
     /* =========================================================
-       RENDIMENTOS
+       RENDIMENTOS & CUSTO OPORTUNIDADE
        ========================================================= */
-    .rend-box {
-        padding: 1px 0 7px;
-        font-size: 12px;
-    }
-
-    .rend-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-        padding: 7px 3px;
-        border-bottom: 1px solid #f0f2f6;
-    }
-
-    .rend-item:last-child {
-        border-bottom: none;
-    }
-
-    .rend-total {
-        background: var(--warning-soft);
-        border: 1px solid #f3e4b5;
-        border-left: 3px solid var(--warning);
-        padding: 8px 10px;
-        margin-top: 8px;
-        border-radius: 7px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .rend-total span {
-        font-weight: 800;
-        color: #6e5514;
-    }
-
-    .custo-oportunidade {
-        background: var(--danger-soft);
-        border: 1px solid #f5d6da;
-        border-left: 3px solid var(--danger);
-        padding: 8px 10px;
-        margin-top: 8px;
-        border-radius: 7px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .custo-oportunidade span {
-        font-weight: 750;
-        color: var(--danger);
-    }
-
-    /* =========================================================
-       RODAPÉ / AJUSTES STREAMLIT
-       ========================================================= */
-    hr {
-        border: 0 !important;
-        border-top: 1px solid var(--border) !important;
-    }
-
-    [data-testid="stMarkdownContainer"] p {
-        margin-bottom: 0.15rem;
-    }
-
-    [data-testid="stDataFrame"] {
-        border-radius: 9px;
-    }
-
-    @media (max-width: 900px) {
-        .main .block-container {
-            max-width: 100%;
-            padding-left: 0.65rem;
-            padding-right: 0.65rem;
-        }
-
-        .dashboard-header {
-            min-height: auto;
-        }
-
-        .header-center h1 {
-            font-size: 17px;
-        }
-
-        .header-period .date {
-            font-size: 14px;
-        }
-
-        .kpi-value {
-            font-size: 17px;
-        }
-
-        .tabela-financeira td {
-            padding: 7px 8px;
-        }
-    }
+    .rend-box { padding: 1px 0 7px; font-size: 12px; }
+    .rend-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 3px; border-bottom: 1px solid #f0f2f6; }
+    .rend-item:last-child { border-bottom: none; }
+    .rend-total { background: var(--warning-soft); border: 1px solid #f3e4b5; border-left: 3px solid var(--warning); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .rend-total span { font-weight: 800; color: #6e5514; }
+    .custo-oportunidade { background: var(--danger-soft); border: 1px solid #f5d6da; border-left: 3px solid var(--danger); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .custo-oportunidade span { font-weight: 750; color: var(--danger); }
+    hr { border: 0 !important; border-top: 1px solid var(--border) !important; }
+    [data-testid="stMarkdownContainer"] p { margin-bottom: 0.15rem; }
+    [data-testid="stDataFrame"] { border-radius: 9px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -483,229 +162,186 @@ def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # ==============================================================================
-# 2. CARGA DE DADOS COM SEPARAÇÃO DE TABELA E EXTRATO
+# 2. CARGA DE DADOS: BASE ZERO (SALDO_INICIAL) + TIMELINE (EXTRATOS)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
+    mes_referencia = pd.to_datetime(datetime.now().date()).replace(day=1)
+    
+    if conn is None: 
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0, mes_referencia
     try:
         # =========================================================
-        # 1. Carrega Histórico de Saldos
+        # 1. ABA SALDO_INICIAL (Base Zero)
         # =========================================================
-        df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
-        if df_saldos.empty:
-            st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
-        
-        df_saldos.columns = [str(c).strip() for c in df_saldos.columns]
-        col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_saldos.columns else 'Conta Bancária'
-        col_data = 'Data'
-        
-        df_saldos[col_data] = pd.to_datetime(df_saldos[col_data], format='%d/%m/%Y', errors='coerce')
-        for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']:
-            if col in df_saldos.columns:
-                df_saldos[col] = df_saldos[col].apply(limpa_valor_bruto)
+        df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
+        try:
+            df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
+            if not df_si.empty:
+                df_si.columns = [str(c).strip() for c in df_si.columns]
+                
+                col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Conta Bancária')
+                col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), 'Saldo Inicial')
+                col_si_garantida = next((c for c in df_si.columns if 'garantida' in c.lower() or 'limite' in c.lower()), None)
+                
+                df_si[col_si_valor] = df_si[col_si_valor].apply(limpa_valor_bruto)
+                if col_si_garantida:
+                    df_si[col_si_garantida] = df_si[col_si_garantida].apply(limpa_valor_bruto)
+                    df_saldo_inicial = df_si.rename(columns={col_si_conta: 'Conta Bancária', col_si_valor: 'Saldo Inicial', col_si_garantida: 'Conta Garantida'})
+                else:
+                    df_si['Conta Garantida'] = 0.0
+                    df_saldo_inicial = df_si.rename(columns={col_si_conta: 'Conta Bancária', col_si_valor: 'Saldo Inicial'})
+                    
+                df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
+        except Exception as e:
+            print("Aviso ao ler Saldo_Inicial:", e)
 
-        ultima_data = df_saldos[col_data].dropna().max()
-        if pd.isna(ultima_data):
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
-            
-        mes_referencia = ultima_data.replace(day=1)
-        proximo_mes = mes_referencia + relativedelta(months=1)
-        
         # =========================================================
-        # 2. EXTRATOS (COM FILTRO BLINDADO EXATO)
+        # 2. EXTRATOS (Timeline Operacional)
         # =========================================================
         df_extratos = None
+        proximo_mes = mes_referencia + relativedelta(months=1)
+        
         try:
-            df_extratos = conn.read(worksheet="Extratos_Bancos", ttl=0)
-            if not df_extratos.empty:
-                # Remove espaços em branco dos cabeçalhos para evitar erros
-                df_extratos.columns = [str(c).strip() for c in df_extratos.columns]
+            df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
+            if not df_ext.empty:
+                df_ext.columns = [str(c).strip() for c in df_ext.columns]
                 
-                # Mapeamento EXATO baseado na sua imagem
-                col_ext_conta = 'Banco'
-                col_ext_data = 'Data'
-                col_ext_credito = 'Vl Crédito'
-                col_ext_debito = 'Vl Débito'
-                col_ext_tipo = 'Tipo de Transação'
+                col_ext_conta = next((c for c in df_ext.columns if 'banco' in c.lower() or 'conta' in c.lower()), 'Banco')
+                col_ext_data = next((c for c in df_ext.columns if 'data' in c.lower()), 'Data')
+                col_ext_credito = next((c for c in df_ext.columns if 'crédito' in c.lower() or 'credito' in c.lower() or 'entrada' in c.lower()), 'Vl Crédito')
+                col_ext_debito = next((c for c in df_ext.columns if 'débito' in c.lower() or 'debito' in c.lower() or 'saída' in c.lower() or 'saida' in c.lower()), 'Vl Débito')
+                col_ext_tipo = next((c for c in df_ext.columns if 'tipo' in c.lower() or 'transa' in c.lower()), 'Tipo de Transação')
 
-                # Converte a data e filtra o mês
-                df_extratos[col_ext_data] = pd.to_datetime(df_extratos[col_ext_data], format='%d/%m/%Y', errors='coerce')
-                df_extratos = df_extratos[(df_extratos[col_ext_data] >= mes_referencia) & (df_extratos[col_ext_data] < proximo_mes)]
+                df_ext[col_ext_data] = pd.to_datetime(df_ext[col_ext_data], format='%d/%m/%Y', errors='coerce')
                 
-                # --- FILTRO CIRÚRGICO PARA TRANSFERÊNCIAS INTERNAS ---
-                if col_ext_tipo in df_extratos.columns:
-                    def normalizar_texto(txt):
-                        if pd.isna(txt): return ""
-                        # Remove acentos, cedilhas e joga para minúsculo
-                        return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
-                    
-                    # Aplica a limpeza apenas na coluna Tipo de Transação
-                    serie_tipo = df_extratos[col_ext_tipo].apply(normalizar_texto)
-                    
-                    # Procura "transferencia" e "interna"
-                    mascara_internas = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
-                    
-                    # Salva apenas o que NÃO é transferência interna
-                    df_extratos = df_extratos[~mascara_internas]
-                # -----------------------------------------------------
-
-                # Limpa os valores de dinheiro
-                if col_ext_credito in df_extratos.columns:
-                    df_extratos[col_ext_credito] = df_extratos[col_ext_credito].apply(limpa_valor_bruto)
-                if col_ext_debito in df_extratos.columns:
-                    df_extratos[col_ext_debito] = df_extratos[col_ext_debito].apply(limpa_valor_bruto)
+                # Descobre o mês real que está sendo trabalhado pelo extrato
+                ultima_data = df_ext[col_ext_data].dropna().max()
+                if not pd.isna(ultima_data):
+                    mes_referencia = ultima_data.replace(day=1)
+                    proximo_mes = mes_referencia + relativedelta(months=1)
                 
+                df_ext = df_ext[(df_ext[col_ext_data] >= mes_referencia) & (df_ext[col_ext_data] < proximo_mes)]
+                
+                if col_ext_credito in df_ext.columns:
+                    df_ext[col_ext_credito] = df_ext[col_ext_credito].apply(limpa_valor_bruto)
+                if col_ext_debito in df_ext.columns:
+                    df_ext[col_ext_debito] = df_ext[col_ext_debito].apply(limpa_valor_bruto)
+                
+                # Renomeia padronizado para facilitar
+                df_ext.rename(columns={
+                    col_ext_conta: 'Conta Bancária',
+                    col_ext_data: 'Data',
+                    col_ext_credito: 'Vl Crédito',
+                    col_ext_debito: 'Vl Débito',
+                    col_ext_tipo: 'Tipo de Transação'
+                }, inplace=True)
+                df_ext['Conta Bancária'] = df_ext['Conta Bancária'].astype(str).str.strip()
+                df_extratos = df_ext
         except Exception as e:
-            print(f"Aviso ao ler extratos: {e}")
+            print("Aviso ao ler extratos:", e)
 
         # =========================================================
-        # 3. FILTRO DO MÊS E CRIAÇÃO DO TIPO
+        # 3. CONSTRUÇÃO DA TABELA FINAL DE BANCOS
         # =========================================================
-        df_saldos_mes = df_saldos[(df_saldos[col_data] >= mes_referencia) & (df_saldos[col_data] < proximo_mes)].copy()
-
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
-        df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
-        # =========================================================
-        # 4. TABELA FINAL DE BANCOS
-        # =========================================================
-        # SALDO INICIAL = somente o campo "Saldo Inicial" do primeiro
-        # registro encontrado no mês para cada banco.
-        df_inicio_mes = (
-            df_saldos_mes
-            .sort_values(by=[col_conta, col_data])
-            .drop_duplicates(subset=[col_conta], keep='first')
-            .copy()
-        )
-        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Inicial'].to_dict()
-
-        # Mantém uma linha por conta/banco existente no histórico do mês.
-        df_fim_mes = (
-            df_saldos_mes
-            .sort_values(by=[col_data, col_conta])
-            .drop_duplicates(subset=[col_conta], keep='last')
-            .copy()
-        )
-        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
-
-        # Movimentação TOTAL do extrato: inclui transferências internas.
+        df_fim_mes = df_saldo_inicial.copy()
+        
+        # Agrupa extratos totais (para fechar o saldo)
         if df_extratos is not None and not df_extratos.empty:
-            df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
-                col_ext_credito: 'sum',
-                col_ext_debito: 'sum'
-            }).reset_index().rename(columns={col_ext_conta: col_conta})
-
-            df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
-            df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
-
-            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
-            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
-            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
+            df_extratos_grouped = df_extratos.groupby('Conta Bancária').agg({
+                'Vl Crédito': 'sum',
+                'Vl Débito': 'sum'
+            }).reset_index()
+            
+            # Merge OUTER: garante que bancos que só estão no extrato ou só no saldo inicial apareçam!
+            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on='Conta Bancária', how='outer')
+            df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
+            df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
+            df_fim_mes['Entrada'] = df_fim_mes['Vl Crédito'].fillna(0)
+            df_fim_mes['Saída'] = df_fim_mes['Vl Débito'].fillna(0)
         else:
             df_fim_mes['Entrada'] = 0.0
             df_fim_mes['Saída'] = 0.0
 
-        # Saldo final calculado EXCLUSIVAMENTE pelo saldo inicial + extrato.
-        df_fim_mes['Saldo Final'] = (
-            df_fim_mes['Saldo Inicial']
-            + df_fim_mes['Entrada']
-            - df_fim_mes['Saída']
-        )
-
-        # "Disponível" da tabela:
-        # saldo final + conta garantida. Para Getnet, o próprio saldo
-        # calculado pelo extrato representa a disponibilidade da conta.
-        df_fim_mes['Conta Garantida'] = df_fim_mes.get('Conta Garantida', 0).fillna(0)
+        # Define tipo e calcula saldo
+        df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
+        df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada'] - df_fim_mes['Saída']
         df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 5. DADOS PARA GRÁFICO DIÁRIO E KPIs
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
         # =========================================================
-        # A série diária começa no PRIMEIRO SALDO DO MÊS e acumula
-        # toda movimentação do Extratos_Bancos.
-        saldo_inicial_total = df_inicio_mes['Saldo Inicial'].sum()
-
+        saldo_inicial_total = df_fim_mes['Saldo Inicial'].sum()
+        
         if df_extratos is not None and not df_extratos.empty:
-            df_extratos_diario = df_extratos.groupby([col_ext_data]).agg({
-                col_ext_credito: 'sum',
-                col_ext_debito: 'sum'
-            }).reset_index().rename(columns={col_ext_data: col_data})
+            df_extratos_diario = df_extratos.groupby('Data').agg({
+                'Vl Crédito': 'sum',
+                'Vl Débito': 'sum'
+            }).reset_index()
 
-            df_graficos = df_extratos_diario.sort_values(col_data).copy()
-            df_graficos['Entrada'] = df_graficos[col_ext_credito].fillna(0)
-            df_graficos['Saída'] = df_graficos[col_ext_debito].fillna(0)
+            df_graficos = df_extratos_diario.sort_values('Data').copy()
+            df_graficos['Entrada'] = df_graficos['Vl Crédito'].fillna(0)
+            df_graficos['Saída'] = df_graficos['Vl Débito'].fillna(0)
             df_graficos['Movimentação Líquida'] = df_graficos['Entrada'] - df_graficos['Saída']
             df_graficos['Saldo Final'] = saldo_inicial_total + df_graficos['Movimentação Líquida'].cumsum()
         else:
-            df_graficos = pd.DataFrame(columns=[col_data, 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final'])
-
-        # Variação agora é contra o PRIMEIRO SALDO DO MÊS, e não contra o dia anterior.
+            df_graficos = pd.DataFrame(columns=['Data', 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final'])
+            
         if saldo_inicial_total != 0 and not df_graficos.empty:
-            df_graficos['Variação %'] = (
-                (df_graficos['Saldo Final'] - saldo_inicial_total)
-                / abs(saldo_inicial_total)
-            ) * 100
+            df_graficos['Variação %'] = ((df_graficos['Saldo Final'] - saldo_inicial_total) / abs(saldo_inicial_total)) * 100
         else:
             df_graficos['Variação %'] = 0.0
 
         if not df_graficos.empty:
-            df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
+            df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
         else:
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
-        # Extrato operacional: exclui transferências internas SOMENTE para o KPI.
+        # =========================================================
+        # 5. KPI OPERACIONAL (Expurgando Transferências Internas)
+        # =========================================================
+        entradas_operacionais = 0.0
+        saidas_operacionais = 0.0
+        
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_operacional = df_extratos.copy()
-
-            if col_ext_tipo in df_extratos_operacional.columns:
+            if 'Tipo de Transação' in df_extratos_operacional.columns:
                 def normalizar_texto(txt):
-                    if pd.isna(txt):
-                        return ""
+                    if pd.isna(txt): return ""
                     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
-
-                serie_tipo = df_extratos_operacional[col_ext_tipo].apply(normalizar_texto)
-                mascara_internas = (
-                    serie_tipo.str.contains('transferencia', na=False)
-                    & serie_tipo.str.contains('interna', na=False)
-                )
+                
+                serie_tipo = df_extratos_operacional['Tipo de Transação'].apply(normalizar_texto)
+                mascara_internas = serie_tipo.str.contains('transferencia', na=False) & serie_tipo.str.contains('interna', na=False)
                 df_extratos_operacional = df_extratos_operacional[~mascara_internas]
 
-            entradas_operacionais = df_extratos_operacional[col_ext_credito].sum()
-            saidas_operacionais = df_extratos_operacional[col_ext_debito].sum()
-        else:
-            entradas_operacionais = 0.0
-            saidas_operacionais = 0.0
-
-        resultado_operacional = entradas_operacionais - saidas_operacionais
+            entradas_operacionais = df_extratos_operacional['Vl Crédito'].sum()
+            saidas_operacionais = df_extratos_operacional['Vl Débito'].sum()
 
         # =========================================================
-        # 6. Carrega a aba RENDIMENTOS
+        # 6. LER A ABA DE RENDIMENTOS
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
-        
         try:
             df_rend = conn.read(worksheet="Rendimentos", ttl=0)
             if not df_rend.empty:
                 df_rend.columns = [str(c).strip() for c in df_rend.columns]
-                
                 col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
                 col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
                 
                 if col_rendimento:
                     df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
-                    
                     if col_conta_rend:
                         df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.rename(columns={col_conta_rend: col_conta, col_rendimento: 'Valor Líquido'}, inplace=True)
+                        df_rend_resumo.rename(columns={col_conta_rend: 'Conta Bancária', col_rendimento: 'Valor Líquido'}, inplace=True)
                     else:
                         rend_sum = df_rend[col_rendimento].sum()
-                        df_rend_resumo = pd.DataFrame({col_conta: ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
+                        df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
 
                     rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
         except Exception:
@@ -726,26 +362,27 @@ def carregar_dados():
         except Exception:
             pass
 
-        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais
+        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
+        mes_fallback = pd.to_datetime(datetime.now().date()).replace(day=1)
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0, mes_fallback
 
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais = carregar_dados()
-if not col_conta: col_conta = 'Contas Bancárias'
+df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
+if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS (Usando o TOTAL acumulado expurgado)
+# 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
-# LIMITE = saldo da Conta Garantida + saldo/disponibilidade da Getnet.
+# LIMITE
 saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
@@ -811,7 +448,9 @@ fig_combinado.update_layout(
 # 5. MONTAGEM DO PAINEL
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
-mes_referencia_nome = df_graficos['Data_Label'].iloc[-1] if not df_graficos.empty else ""
+meses_pt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+mes_str = meses_pt[mes_referencia.month - 1]
+mes_referencia_nome = f"{mes_str}/{mes_referencia.year}"
 
 st.markdown(f"""
 <div class="dashboard-header">
