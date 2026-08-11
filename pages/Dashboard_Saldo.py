@@ -572,94 +572,29 @@ def carregar_dados():
         df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
         # =========================================================
+        # 4. TABELA FINAL DE BANCOS (MERGE COM O EXTRATO REAL)
         # =========================================================
-        # 4. TABELA FINAL DE BANCOS
-        #    REGRA:
-        #    Saldo Inicial + Entradas - Saídas = Saldo Final
-        #    Disponível = Saldo Final + Conta Garantida
-        # =========================================================
+        df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
+        
+        df_inicio_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
+        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
+        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
-        # Uma linha por conta, preservando os dados cadastrais da
-        # última ocorrência da conta dentro do mês.
-        df_fim_mes = (
-            df_saldos_mes
-            .sort_values(by=[col_data, col_conta])
-            .drop_duplicates(subset=[col_conta], keep='last')
-            .copy()
-        )
-
-        # SALDO INICIAL DO MÊS:
-        # utiliza somente o campo "Saldo Inicial" da primeira ocorrência
-        # da conta no mês. O saldo final histórico NÃO é mais utilizado.
-        df_inicio_mes = (
-            df_saldos_mes
-            .sort_values(by=[col_data, col_conta])
-            .drop_duplicates(subset=[col_conta], keep='first')
-            .copy()
-        )
-
-        df_inicio_mes_dict = (
-            df_inicio_mes
-            .set_index(col_conta)['Saldo Inicial']
-            .to_dict()
-        )
-
-        df_fim_mes['Saldo Inicial'] = (
-            df_fim_mes[col_conta]
-            .map(df_inicio_mes_dict)
-            .fillna(0.0)
-        )
-
-        # ENTRADAS E SAÍDAS:
-        # vêm exclusivamente do extrato consolidado do mês.
         if df_extratos is not None and not df_extratos.empty:
-            df_extratos_grouped = (
-                df_extratos
-                .groupby(col_ext_conta)
-                .agg({
-                    col_ext_credito: 'sum',
-                    col_ext_debito: 'sum'
-                })
-                .reset_index()
-                .rename(columns={col_ext_conta: col_conta})
-            )
-
-            df_fim_mes[col_conta] = (
-                df_fim_mes[col_conta].astype(str).str.strip()
-            )
-            df_extratos_grouped[col_conta] = (
-                df_extratos_grouped[col_conta].astype(str).str.strip()
-            )
-
-            df_fim_mes = df_fim_mes.merge(
-                df_extratos_grouped,
-                on=col_conta,
-                how='left'
-            )
-
-            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0.0)
-            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0.0)
+            df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
+                col_ext_credito: 'sum',
+                col_ext_debito: 'sum'
+            }).reset_index().rename(columns={col_ext_conta: col_conta})
+            
+            df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
+            df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
+            
+            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
+            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
+            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
         else:
-            df_fim_mes['Entrada'] = 0.0
-            df_fim_mes['Saída'] = 0.0
-
-        # SALDO FINAL:
-        # saldo inicial do mês + entradas do extrato - saídas do extrato.
-        df_fim_mes['Saldo Final'] = (
-            df_fim_mes['Saldo Inicial']
-            + df_fim_mes['Entrada']
-            - df_fim_mes['Saída']
-        )
-
-        # DISPONÍVEL:
-        # saldo final + limite/conta garantida.
-        if 'Conta Garantida' not in df_fim_mes.columns:
-            df_fim_mes['Conta Garantida'] = 0.0
-
-        df_fim_mes['Disponível'] = (
-            df_fim_mes['Saldo Final']
-            + df_fim_mes['Conta Garantida'].fillna(0.0)
-        )
+            df_fim_mes['Entrada'] = 0
+            df_fim_mes['Saída'] = 0
 
         # =========================================================
         # 5. DADOS PARA O GRÁFICO DIÁRIO E MOVIMENTAÇÃO DO MÊS
