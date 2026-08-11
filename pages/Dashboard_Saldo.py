@@ -145,7 +145,7 @@ def formatar_transf(valor):
     try:
         val = float(valor)
         if val == 0: return "-"
-        # Essa lógica adiciona os sinais visuais de + e -
+        # Adiciona um sinal de + para ficar mais visual
         prefixo = "+ " if val > 0 else "- "
         return f"{prefixo}R$ {abs(val):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception:
@@ -163,7 +163,7 @@ def carregar_dados():
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0, mes_referencia
     try:
         # =========================================================
-        # 1. ABA SALDO_INICIAL
+        # 1. ABA SALDO_INICIAL (Base Zero)
         # =========================================================
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
         try:
@@ -196,7 +196,7 @@ def carregar_dados():
             print("Aviso ao ler Saldo_Inicial:", e)
 
         # =========================================================
-        # 2. EXTRATOS (Filtro Robusto de Transferência)
+        # 2. EXTRATOS (Separação Matemática: Op. x Transf.)
         # =========================================================
         df_extratos = None
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -211,8 +211,9 @@ def carregar_dados():
                 col_ext_data = next((c for c in df_ext.columns if 'data' in c.lower()), 'Data')
                 col_ext_credito = next((c for c in df_ext.columns if 'crédito' in c.lower() or 'credito' in c.lower() or 'entrada' in c.lower()), 'Vl Crédito')
                 col_ext_debito = next((c for c in df_ext.columns if 'débito' in c.lower() or 'debito' in c.lower() or 'saída' in c.lower() or 'saida' in c.lower()), 'Vl Débito')
+                col_ext_tipo = next((c for c in df_ext.columns if 'tipo' in c.lower() or 'transa' in c.lower()), 'Tipo de Transação')
 
-                for c in [col_ext_conta, col_ext_data, col_ext_credito, col_ext_debito]:
+                for c in [col_ext_conta, col_ext_data, col_ext_credito, col_ext_debito, col_ext_tipo]:
                     if c not in df_ext.columns: df_ext[c] = ""
                 
                 df_ext[col_ext_data] = pd.to_datetime(df_ext[col_ext_data], format='%d/%m/%Y', errors='coerce')
@@ -228,12 +229,15 @@ def carregar_dados():
                 df_ext[col_ext_debito] = df_ext[col_ext_debito].apply(limpa_valor_bruto)
                 df_ext['Conta Bancária'] = df_ext[col_ext_conta].astype(str).str.strip()
                 
-                # BUSCA POR VARREDURA: Junta todas as colunas em um texto só, tira acentos e procura a palavra!
-                linhas_str = df_ext.astype(str).agg(' '.join, axis=1)
-                linhas_norm = linhas_str.apply(lambda x: unicodedata.normalize('NFKD', x).encode('ASCII', 'ignore').decode('utf-8').lower())
-                df_ext['É Transf'] = linhas_norm.str.contains('transferencia') & linhas_norm.str.contains('interna')
+                # Inteligência para classificar Transferências Internas
+                def normalizar_texto(txt):
+                    if pd.isna(txt) or txt is None: return ""
+                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                
+                serie_tipo = df_ext[col_ext_tipo].apply(normalizar_texto)
+                df_ext['É Transf'] = serie_tipo.str.contains('transferencia', na=False) & serie_tipo.str.contains('interna', na=False)
 
-                # Separa em 4 cestas matemáticas
+                # Cria colunas separadas: Operacional x Transferência
                 df_ext['Cred_Op'] = df_ext[col_ext_credito].where(~df_ext['É Transf'], 0.0)
                 df_ext['Deb_Op'] = df_ext[col_ext_debito].where(~df_ext['É Transf'], 0.0)
                 df_ext['Cred_Tr'] = df_ext[col_ext_credito].where(df_ext['É Transf'], 0.0)
@@ -264,7 +268,7 @@ def carregar_dados():
             df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
             df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
             
-            # Aqui calculamos a tabela visível
+            # Colunas da tabela
             df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op'].fillna(0)
             df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op'].fillna(0)
             df_fim_mes['Transf Líquida'] = df_fim_mes['Cred_Tr'].fillna(0) - df_fim_mes['Deb_Tr'].fillna(0)
@@ -275,27 +279,23 @@ def carregar_dados():
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         
-        # A Mágica de Saldo Perfeito
+        # A MATEMÁTICA PERFEITA: Saldo Inicial + Entrada(Op) - Saida(Op) + Transf.
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Transf Líquida']
         df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
+        # 4. GRÁFICO DIÁRIO (Evolução de Saldo)
         # =========================================================
         saldo_inicial_total = df_fim_mes['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
-            # Para o saldo total do hospital, soma TUDO (pois transf anula)
-            df_ext['Total Credito'] = df_ext['Cred_Op'] + df_ext['Cred_Tr']
-            df_ext['Total Debito'] = df_ext['Deb_Op'] + df_ext['Deb_Tr']
-            
-            df_extratos_diario = df_ext.groupby(col_ext_data).agg({
-                'Total Credito': 'sum',
-                'Total Debito': 'sum'
+            df_extratos_diario = df_extratos.groupby(col_ext_data).agg({
+                col_ext_credito: 'sum',
+                col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_data: 'Data'})
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-            df_graficos['Movimentação Líquida'] = df_graficos['Total Credito'].fillna(0) - df_graficos['Total Debito'].fillna(0)
+            df_graficos['Movimentação Líquida'] = df_graficos[col_ext_credito].fillna(0) - df_graficos[col_ext_debito].fillna(0)
             df_graficos['Saldo Final'] = saldo_inicial_total + df_graficos['Movimentação Líquida'].cumsum()
         else:
             df_graficos = pd.DataFrame(columns=['Data', 'Movimentação Líquida', 'Saldo Final'])
@@ -311,7 +311,7 @@ def carregar_dados():
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
         # =========================================================
-        # 5. KPI OPERACIONAL LÍQUIDO
+        # 5. KPI OPERACIONAL
         # =========================================================
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
@@ -524,7 +524,7 @@ with col_tab:
     for idx, row in df_view.iterrows():
         cor_transf = "#858796" if row["Transf Líquida"] == 0 else ("#1cc88a" if row["Transf Líquida"] > 0 else "#e74a3b")
         html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_transf(row["Transf Líquida"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
-    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores">{formatar_transf(totais["Transf Líquida"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
+    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores">{formatar_moeda(totais["Transf Líquida"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
