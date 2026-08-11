@@ -324,6 +324,17 @@ st.markdown("""
     .tabela-financeira tbody tr:last-child td {
         border-bottom: none;
     }
+    
+    /* =========================================================
+       TABELA EXECUTIVA — SALDO DE TODOS OS BANCOS
+       Mantém somente esta tabela alinhada à esquerda.
+       ========================================================= */
+    .tabela-bancos .tabela-financeira th,
+    .tabela-bancos .tabela-financeira td,
+    .tabela-bancos .tabela-financeira .valores {
+        text-align: left;
+    }
+
 
     .tabela-financeira .linha-total {
         background: #eef2f7;
@@ -561,29 +572,94 @@ def carregar_dados():
         df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
         # =========================================================
-        # 4. TABELA FINAL DE BANCOS (MERGE COM O EXTRATO REAL)
         # =========================================================
-        df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
-        
-        df_inicio_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
-        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
-        df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
+        # 4. TABELA FINAL DE BANCOS
+        #    REGRA:
+        #    Saldo Inicial + Entradas - Saídas = Saldo Final
+        #    Disponível = Saldo Final + Conta Garantida
+        # =========================================================
 
+        # Uma linha por conta, preservando os dados cadastrais da
+        # última ocorrência da conta dentro do mês.
+        df_fim_mes = (
+            df_saldos_mes
+            .sort_values(by=[col_data, col_conta])
+            .drop_duplicates(subset=[col_conta], keep='last')
+            .copy()
+        )
+
+        # SALDO INICIAL DO MÊS:
+        # utiliza somente o campo "Saldo Inicial" da primeira ocorrência
+        # da conta no mês. O saldo final histórico NÃO é mais utilizado.
+        df_inicio_mes = (
+            df_saldos_mes
+            .sort_values(by=[col_data, col_conta])
+            .drop_duplicates(subset=[col_conta], keep='first')
+            .copy()
+        )
+
+        df_inicio_mes_dict = (
+            df_inicio_mes
+            .set_index(col_conta)['Saldo Inicial']
+            .to_dict()
+        )
+
+        df_fim_mes['Saldo Inicial'] = (
+            df_fim_mes[col_conta]
+            .map(df_inicio_mes_dict)
+            .fillna(0.0)
+        )
+
+        # ENTRADAS E SAÍDAS:
+        # vêm exclusivamente do extrato consolidado do mês.
         if df_extratos is not None and not df_extratos.empty:
-            df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
-                col_ext_credito: 'sum',
-                col_ext_debito: 'sum'
-            }).reset_index().rename(columns={col_ext_conta: col_conta})
-            
-            df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
-            df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
-            
-            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
-            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
-            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
+            df_extratos_grouped = (
+                df_extratos
+                .groupby(col_ext_conta)
+                .agg({
+                    col_ext_credito: 'sum',
+                    col_ext_debito: 'sum'
+                })
+                .reset_index()
+                .rename(columns={col_ext_conta: col_conta})
+            )
+
+            df_fim_mes[col_conta] = (
+                df_fim_mes[col_conta].astype(str).str.strip()
+            )
+            df_extratos_grouped[col_conta] = (
+                df_extratos_grouped[col_conta].astype(str).str.strip()
+            )
+
+            df_fim_mes = df_fim_mes.merge(
+                df_extratos_grouped,
+                on=col_conta,
+                how='left'
+            )
+
+            df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0.0)
+            df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0.0)
         else:
-            df_fim_mes['Entrada'] = 0
-            df_fim_mes['Saída'] = 0
+            df_fim_mes['Entrada'] = 0.0
+            df_fim_mes['Saída'] = 0.0
+
+        # SALDO FINAL:
+        # saldo inicial do mês + entradas do extrato - saídas do extrato.
+        df_fim_mes['Saldo Final'] = (
+            df_fim_mes['Saldo Inicial']
+            + df_fim_mes['Entrada']
+            - df_fim_mes['Saída']
+        )
+
+        # DISPONÍVEL:
+        # saldo final + limite/conta garantida.
+        if 'Conta Garantida' not in df_fim_mes.columns:
+            df_fim_mes['Conta Garantida'] = 0.0
+
+        df_fim_mes['Disponível'] = (
+            df_fim_mes['Saldo Final']
+            + df_fim_mes['Conta Garantida'].fillna(0.0)
+        )
 
         # =========================================================
         # 5. DADOS PARA O GRÁFICO DIÁRIO E MOVIMENTAÇÃO DO MÊS
@@ -834,7 +910,7 @@ with col_tab:
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']].copy()
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada', 'Saída', 'Saldo Final', 'Conta Garantida', 'Disponível']}
     
-    html_tabela = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
+    html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th>SALDO INICIAL</th><th>ENTRADA</th><th>SAÍDA</th><th class="valores">SALDO FINAL</th><th>CONTA GARANTIDA</th><th>DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
         html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:13px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada"])}</td><td class="valores">{formatar_moeda(row["Saída"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Conta Garantida"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada"])}</td><td class="valores">{formatar_moeda(totais["Saída"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Conta Garantida"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
