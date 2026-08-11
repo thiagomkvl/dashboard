@@ -488,7 +488,7 @@ def formatar_moeda(valor):
 @st.cache_data(ttl=60)
 def carregar_dados():
     conn = conectar_sheets()
-    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
     try:
         # =========================================================
         # 1. Carrega Histórico de Saldos
@@ -496,7 +496,7 @@ def carregar_dados():
         df_saldos = conn.read(worksheet="Historico_Saldos", ttl=0)
         if df_saldos.empty:
             st.warning("A aba 'Historico_Saldos' está vazia.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
         
         df_saldos.columns = [str(c).strip() for c in df_saldos.columns]
         col_conta = 'Contas Bancárias' if 'Contas Bancárias' in df_saldos.columns else 'Conta Bancária'
@@ -509,7 +509,7 @@ def carregar_dados():
 
         ultima_data = df_saldos[col_data].dropna().max()
         if pd.isna(ultima_data):
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
             
         mes_referencia = ultima_data.replace(day=1)
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -572,54 +572,116 @@ def carregar_dados():
         df_saldos_mes['Tipo'] = df_saldos_mes[col_conta].apply(definir_tipo)
 
         # =========================================================
-        # 4. TABELA FINAL DE BANCOS (MERGE COM O EXTRATO REAL)
+        # 4. TABELA FINAL DE BANCOS
         # =========================================================
-        df_fim_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='last').copy()
-        
-        df_inicio_mes = df_saldos_mes.sort_values(by=[col_data, col_conta]).drop_duplicates(subset=[col_conta], keep='first').copy()
-        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Final'].to_dict()
+        # SALDO INICIAL = somente o campo "Saldo Inicial" do primeiro
+        # registro encontrado no mês para cada banco.
+        df_inicio_mes = (
+            df_saldos_mes
+            .sort_values(by=[col_conta, col_data])
+            .drop_duplicates(subset=[col_conta], keep='first')
+            .copy()
+        )
+        df_inicio_mes_dict = df_inicio_mes.set_index(col_conta)['Saldo Inicial'].to_dict()
+
+        # Mantém uma linha por conta/banco existente no histórico do mês.
+        df_fim_mes = (
+            df_saldos_mes
+            .sort_values(by=[col_data, col_conta])
+            .drop_duplicates(subset=[col_conta], keep='last')
+            .copy()
+        )
         df_fim_mes['Saldo Inicial'] = df_fim_mes[col_conta].map(df_inicio_mes_dict).fillna(0)
 
+        # Movimentação TOTAL do extrato: inclui transferências internas.
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_grouped = df_extratos.groupby(col_ext_conta).agg({
                 col_ext_credito: 'sum',
                 col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_conta: col_conta})
-            
+
             df_fim_mes[col_conta] = df_fim_mes[col_conta].astype(str).str.strip()
             df_extratos_grouped[col_conta] = df_extratos_grouped[col_conta].astype(str).str.strip()
-            
+
             df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on=col_conta, how='left')
             df_fim_mes['Entrada'] = df_fim_mes[col_ext_credito].fillna(0)
             df_fim_mes['Saída'] = df_fim_mes[col_ext_debito].fillna(0)
         else:
-            df_fim_mes['Entrada'] = 0
-            df_fim_mes['Saída'] = 0
+            df_fim_mes['Entrada'] = 0.0
+            df_fim_mes['Saída'] = 0.0
+
+        # Saldo final calculado EXCLUSIVAMENTE pelo saldo inicial + extrato.
+        df_fim_mes['Saldo Final'] = (
+            df_fim_mes['Saldo Inicial']
+            + df_fim_mes['Entrada']
+            - df_fim_mes['Saída']
+        )
+
+        # "Disponível" da tabela:
+        # saldo final + conta garantida. Para Getnet, o próprio saldo
+        # calculado pelo extrato representa a disponibilidade da conta.
+        df_fim_mes['Conta Garantida'] = df_fim_mes.get('Conta Garantida', 0).fillna(0)
+        df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 5. DADOS PARA O GRÁFICO DIÁRIO E MOVIMENTAÇÃO DO MÊS
+        # 5. DADOS PARA GRÁFICO DIÁRIO E KPIs
         # =========================================================
-        df_graficos = df_saldos_mes.groupby(col_data).agg({
-            'Saldo Final': 'sum',
-            'Saldo Inicial': 'sum',
-        }).reset_index().sort_values(col_data)
-        
+        # A série diária começa no PRIMEIRO SALDO DO MÊS e acumula
+        # toda movimentação do Extratos_Bancos.
+        saldo_inicial_total = df_inicio_mes['Saldo Inicial'].sum()
+
         if df_extratos is not None and not df_extratos.empty:
             df_extratos_diario = df_extratos.groupby([col_ext_data]).agg({
                 col_ext_credito: 'sum',
                 col_ext_debito: 'sum'
             }).reset_index().rename(columns={col_ext_data: col_data})
-            
-            df_graficos = df_graficos.merge(df_extratos_diario, on=col_data, how='left')
+
+            df_graficos = df_extratos_diario.sort_values(col_data).copy()
             df_graficos['Entrada'] = df_graficos[col_ext_credito].fillna(0)
             df_graficos['Saída'] = df_graficos[col_ext_debito].fillna(0)
+            df_graficos['Movimentação Líquida'] = df_graficos['Entrada'] - df_graficos['Saída']
+            df_graficos['Saldo Final'] = saldo_inicial_total + df_graficos['Movimentação Líquida'].cumsum()
         else:
-            df_graficos['Entrada'] = 0
-            df_graficos['Saída'] = 0
-        
-        df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
-        df_graficos['Variação %'] = df_graficos['Saldo Final'].pct_change() * 100
-        df_graficos['Variação %'] = df_graficos['Variação %'].fillna(0)
+            df_graficos = pd.DataFrame(columns=[col_data, 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final'])
+
+        # Variação agora é contra o PRIMEIRO SALDO DO MÊS, e não contra o dia anterior.
+        if saldo_inicial_total != 0 and not df_graficos.empty:
+            df_graficos['Variação %'] = (
+                (df_graficos['Saldo Final'] - saldo_inicial_total)
+                / abs(saldo_inicial_total)
+            ) * 100
+        else:
+            df_graficos['Variação %'] = 0.0
+
+        if not df_graficos.empty:
+            df_graficos['Data_Label'] = df_graficos[col_data].dt.strftime('%d/%m')
+        else:
+            df_graficos['Data_Label'] = pd.Series(dtype='object')
+
+        # Extrato operacional: exclui transferências internas SOMENTE para o KPI.
+        if df_extratos is not None and not df_extratos.empty:
+            df_extratos_operacional = df_extratos.copy()
+
+            if col_ext_tipo in df_extratos_operacional.columns:
+                def normalizar_texto(txt):
+                    if pd.isna(txt):
+                        return ""
+                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
+
+                serie_tipo = df_extratos_operacional[col_ext_tipo].apply(normalizar_texto)
+                mascara_internas = (
+                    serie_tipo.str.contains('transferencia', na=False)
+                    & serie_tipo.str.contains('interna', na=False)
+                )
+                df_extratos_operacional = df_extratos_operacional[~mascara_internas]
+
+            entradas_operacionais = df_extratos_operacional[col_ext_credito].sum()
+            saidas_operacionais = df_extratos_operacional[col_ext_debito].sum()
+        else:
+            entradas_operacionais = 0.0
+            saidas_operacionais = 0.0
+
+        resultado_operacional = entradas_operacionais - saidas_operacionais
 
         # =========================================================
         # 6. Carrega a aba RENDIMENTOS
@@ -664,16 +726,16 @@ def carregar_dados():
         except Exception:
             pass
 
-        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta
+        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais
         
     except Exception as e:
         st.error(f"Erro fatal: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, ""
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 0.0, "", 0.0, 0.0
 
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta = carregar_dados()
+df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais = carregar_dados()
 if not col_conta: col_conta = 'Contas Bancárias'
 if df_consolidado.empty: st.stop()
 
@@ -683,14 +745,16 @@ if df_consolidado.empty: st.stop()
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
-limite_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Disponível'].sum()
-limites_garantidos = df_consolidado['Conta Garantida'].sum()
-limites_totais = limite_getnet + limites_garantidos
+# LIMITE = saldo da Conta Garantida + saldo/disponibilidade da Getnet.
+saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
+saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
+limites_totais = saldo_getnet + saldo_conta_garantida
 
 saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
 
-entradas_mes = df_graficos['Entrada'].sum()
-saidas_mes = df_graficos['Saída'].sum()
+# KPI operacional: transferências internas NÃO entram.
+entradas_mes = entradas_operacionais
+saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
@@ -752,7 +816,7 @@ mes_referencia_nome = df_graficos['Data_Label'].iloc[-1] if not df_graficos.empt
 st.markdown(f"""
 <div class="dashboard-header">
     <div class="header-period">
-        <div class="date">📅 Agosto/2026</div>
+        <div class="date">📅 {mes_referencia_nome}</div>
         <div class="label">Período de referência</div>
     </div>
     <div class="header-center">
@@ -852,7 +916,7 @@ with col_tab:
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas de Entrada e Saída exibem apenas movimentações operacionais (Transferências Internas foram desconsideradas matematicamente).</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas de Entrada e Saída consideram TODAS as movimentações do extrato, inclusive transferências internas. O KPI de movimentação operacional exclui transferências internas.</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
