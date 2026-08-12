@@ -59,15 +59,15 @@ st.markdown("""
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 750; }
 
-    /* KPIs SÓLIDOS */
-    .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; }
-    .kpi-card.total { background: var(--primary); }
-    .kpi-card.disponivel { background: var(--success); }
-    .kpi-card.limites { background: var(--info); }
-    .kpi-card.aplicacoes { background: var(--purple); }
+    /* KPIs - CORES SÓLIDAS COM GRADIENTE E TRANSPARÊNCIA */
+    .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
+    .kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
+    .kpi-card.disponivel { background: linear-gradient(135deg, rgba(21, 149, 112, 0.95), rgba(28, 200, 138, 0.75)); }
+    .kpi-card.aplicacoes { background: linear-gradient(135deg, rgba(118, 84, 200, 0.95), rgba(143, 104, 228, 0.75)); }
+    .kpi-card.limites { background: linear-gradient(135deg, rgba(35, 136, 167, 0.95), rgba(54, 185, 204, 0.75)); }
     
     .kpi-icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px; border-radius: 7px; background: rgba(255,255,255,0.2); font-size: 14px; color: white; }
-    .kpi-title { font-size: 10px; line-height: 1; font-weight: 750; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 4px; }
+    .kpi-title { font-size: 10px; line-height: 1; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 4px; }
     .kpi-value { font-size: 24px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.35px; white-space: nowrap; }
 
     /* Seções */
@@ -128,7 +128,6 @@ def formatar_moeda(valor):
         return "-"
 
 def formatar_abreviado(valor):
-    """Abrevia para K ou M para o gráfico de evolução"""
     try:
         val = float(valor)
         if abs(val) >= 1_000_000:
@@ -271,15 +270,15 @@ def carregar_dados():
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
-        df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real = Disponível + Aplicação)
         # =========================================================
-        saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'] != 'Limite']['Saldo Inicial'].sum()
+        # Pega somente o Saldo Inicial de contas de caixa e aplicação
+        saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
-            df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo) != 'Limite'].copy()
+            df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({
                 'Cred_Op': 'sum',
@@ -351,7 +350,7 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS (Nova Lógica Solicitada)
+# 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -386,7 +385,6 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico de Barras - Evolução Diária (Sem linha, Com M formatado)
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
@@ -434,12 +432,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Nova ordem dos KPIs
 kpi_row = st.columns(4)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "disponivel"),
-    (kpi_row[2], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "limites"),
-    (kpi_row[3], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes")
+    (kpi_row[2], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes"),
+    (kpi_row[3], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "limites")
 ]
 for col, icon, title, val, color in kp_data:
     col.markdown(f"<div class='kpi-card {color}'><div class='kpi-icon'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
@@ -509,12 +508,15 @@ col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
+    # Removido 'Disponível' da visualização, pois é igual ao Saldo Final neste contexto (sem GetNet e Limites)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
     html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Tr"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+        cor_transf = "#858796" if row["Entrada Tr"] == 0 else "#1cc88a"
+        cor_transf_saida = "#858796" if row["Saída Tr"] == 0 else "#e74a3b"
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row["Saída Tr"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
     
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores valor-destaque">{formatar_moeda(totais["Saldo Final"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
@@ -526,9 +528,10 @@ with col_diario:
     df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
+    # Ordem das colunas: DATA | SALDO FINAL | ENTRADA (OP.) | SAÍDA (OP.)
+    html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th></tr></thead><tbody>'
     for _, row in df_diario_view.iterrows():
-        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td></tr>'
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
