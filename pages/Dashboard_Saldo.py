@@ -190,7 +190,7 @@ def carregar_dados():
             print("Aviso ao ler Saldo_Inicial:", e)
 
         # =========================================================
-        # 2. EXTRATOS (Mapeamento Cirúrgico por Posição)
+        # 2. EXTRATOS (Mapeamento Posicional)
         # =========================================================
         df_extratos = None
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -257,7 +257,6 @@ def carregar_dados():
             df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op'].fillna(0)
             df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op'].fillna(0)
             
-            # Duas colunas separadas para transferências
             df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr'].fillna(0)
             df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr'].fillna(0)
         else:
@@ -268,32 +267,37 @@ def carregar_dados():
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         
-        # Matemática de Fechamento do Saldo Real
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
         df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
         # =========================================================
-        saldo_inicial_total = df_fim_mes['Saldo Inicial'].sum()
+        # Pega somente o Saldo Inicial de contas de caixa/aplicação
+        saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'] != 'Limite']['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
             df_extratos['Total Credito'] = df_extratos['Cred_Op'] + df_extratos['Cred_Tr']
             df_extratos['Total Debito'] = df_extratos['Deb_Op'] + df_extratos['Deb_Tr']
             
-            df_extratos_diario = df_extratos.groupby('Data').agg({
+            # Filtra extratos ignorando o tipo Limite (GetNet) para a evolução diária do caixa
+            df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo) != 'Limite'].copy()
+            
+            df_extratos_diario = df_ext_caixa.groupby('Data').agg({
                 'Total Credito': 'sum',
                 'Total Debito': 'sum'
             }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-            df_graficos['Movimentação Líquida'] = df_graficos['Total Credito'].fillna(0) - df_graficos['Total Debito'].fillna(0)
-            df_graficos['Saldo Final'] = saldo_inicial_total + df_graficos['Movimentação Líquida'].cumsum()
+            df_graficos['Entrada'] = df_graficos['Total Credito'].fillna(0)
+            df_graficos['Saída'] = df_graficos['Total Debito'].fillna(0)
+            df_graficos['Movimentação Líquida'] = df_graficos['Entrada'] - df_graficos['Saída']
+            df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
         else:
-            df_graficos = pd.DataFrame(columns=['Data', 'Movimentação Líquida', 'Saldo Final'])
+            df_graficos = pd.DataFrame(columns=['Data', 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final'])
             
-        if saldo_inicial_total != 0 and not df_graficos.empty:
-            df_graficos['Variação %'] = ((df_graficos['Saldo Final'] - saldo_inicial_total) / abs(saldo_inicial_total)) * 100
+        if saldo_inicial_caixa != 0 and not df_graficos.empty:
+            df_graficos['Variação %'] = ((df_graficos['Saldo Final'] - saldo_inicial_caixa) / abs(saldo_inicial_caixa)) * 100
         else:
             df_graficos['Variação %'] = 0.0
 
@@ -363,7 +367,7 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS
+# 3. CÁLCULOS DOS KPIs MENSAIS (Sem GetNet e Limites no Saldo Total)
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -372,7 +376,8 @@ saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final']
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-saldo_total = saldo_disponivel + limites_totais + saldo_aplicado
+# Saldo Total do Caixa REAL (Soma apenas Disponível + Aplicação)
+saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
 saidas_mes = saidas_operacionais
@@ -396,28 +401,22 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
+# Gráfico de Barras Apenas (Sem % e Sem Linha de Tendência)
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#dbe4ff',
+    marker_color='#4e73df',
+    text=[formatar_moeda(v) for v in df_graficos['Saldo Final']],
+    textposition='outside',
+    textfont=dict(size=10, color="#273043", weight="bold"),
     opacity=0.85,
-    width=0.5
+    width=0.45
 ))
-fig_combinado.add_trace(go.Scatter(
-    x=df_graficos['Data_Label'],
-    y=df_graficos['Saldo Final'],
-    name='Tendência',
-    mode='lines+markers+text',
-    line=dict(color='#1a3b7c', width=2.5),
-    marker=dict(size=7, color='#1a3b7c', line=dict(width=2, color='white')),
-    text=[f"{((df_graficos['Saldo Final'].iloc[i] - df_graficos['Saldo Final'].iloc[i-1])/df_graficos['Saldo Final'].iloc[i-1])*100:.2f}%" if i > 0 and df_graficos['Saldo Final'].iloc[i-1] != 0 else "" for i in range(len(df_graficos))],
-    textposition="top center",
-    textfont=dict(size=11, color="#333", weight="bold"),
-))
+
 fig_combinado.update_layout(
-    margin=dict(t=35, b=15, l=5, r=5), height=190, 
+    margin=dict(t=25, b=15, l=5, r=5), height=190, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -511,24 +510,27 @@ with col_tab:
     html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th><th class="valores">DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
         html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Tr"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
-    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(totais["Entrada Tr"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(totais["Saída Tr"])}</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
+    
+    # Linha TOTAL: Exibe hífen "-" nas transferências internas para não duplicar somatórios desnecessários
+    html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas Entrada (INT.) e Saída (INT.) representam o fluxo de transferências internas e impactam o Saldo Final. O KPI de Movimentação Operacional lá no topo ignora estas movimentações para mostrar o resultado real da empresa.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas Entrada (INT.) e Saída (INT.) representam o fluxo de transferências internas e impactam o Saldo Final. O KPI de Movimentação Operacional ignora estas movimentações para mostrar o resultado real da empresa.</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Variação %']].copy()
+    df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final', 'Variação %']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    html_diario = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
+    # Tabela com as colunas novas de Entrada e Saída diárias
+    html_diario = '<div class="tabela-container" style="font-size:13px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">ENTRADA</th><th class="valores">SAÍDA</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
     
     for _, row in df_diario_view.iterrows():
         variacao = row['Variação %']
         cor = "#1cc88a" if variacao >= 0 else "#e74a3b"
-        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="font-size:14px;">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="font-size:13px; color:{cor}; font-weight:800;">{variacao:.2f}%</td></tr>'
+        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td><td class="valores" style="font-size:14px;">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="font-size:13px; color:{cor}; font-weight:800;">{variacao:.2f}%</td></tr>'
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
