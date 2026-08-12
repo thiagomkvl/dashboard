@@ -140,6 +140,15 @@ def formatar_abreviado(valor):
     except Exception:
         return ""
 
+def formatar_transf(valor):
+    try:
+        val = float(valor)
+        if val == 0: return "-"
+        prefixo = "+ " if val > 0 else "- "
+        return f"{prefixo}R$ {abs(val):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception:
+        return "-"
+
 # ==============================================================================
 # 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM MAPEAMENTO POSICIONAL)
 # ==============================================================================
@@ -262,6 +271,7 @@ def carregar_dados():
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
+        df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
         # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
@@ -385,9 +395,9 @@ fig_combinado.add_trace(go.Bar(
     marker_color='#4e73df',
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
-    textfont=dict(size=13, color="#1a2035", weight="900"),
+    textfont=dict(size=13, color="#1a2035", weight="bold"),
     opacity=0.9,
-    width=0.5
+    width=0.45
 ))
 fig_combinado.update_layout(
     margin=dict(t=25, b=15, l=5, r=5), height=210, 
