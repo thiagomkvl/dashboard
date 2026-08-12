@@ -101,12 +101,7 @@ st.markdown("""
     /* Alinhamento de Números para a Direita */
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: right !important; font-weight: 750; font-variant-numeric: tabular-nums; }
     
-    /* Resumo Aplicações e Custo */
-    .rend-box { padding: 1px 0 7px; font-size: 12px; }
-    .rend-item { display: flex; justify-content: space-between; padding: 7px 3px; border-bottom: 1px solid #f0f2f6; }
-    .rend-item:last-child { border-bottom: none; }
-    .rend-total { background: var(--warning-soft); border: 1px solid #f3e4b5; border-left: 3px solid var(--warning); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; }
-    .rend-total span { font-weight: 800; color: #6e5514; }
+    /* Custo Oportunidade */
     .custo-oportunidade { background: var(--danger-soft); border: 1px solid #f5d6da; border-left: 3px solid var(--danger); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; }
     .custo-oportunidade span { font-weight: 750; color: var(--danger); }
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; }
@@ -157,7 +152,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM MAPEAMENTO POSICIONAL)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -281,7 +276,7 @@ def carregar_dados():
         df_fim_mes['Disponível'] = df_fim_mes['Saldo Final'] + df_fim_mes['Conta Garantida']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
+        # 4. GRÁFICO DIÁRIO (Excluindo GetNet e Limites)
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'] != 'Limite']['Saldo Inicial'].sum()
         
@@ -322,7 +317,7 @@ def carregar_dados():
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
         # =========================================================
-        # 6. LER A ABA DE RENDIMENTOS E CUSTO
+        # 6. LER A ABA DE RENDIMENTOS
         # =========================================================
         df_rend_resumo = pd.DataFrame()
         rendimento_total_mes = 0.0
@@ -348,6 +343,9 @@ def carregar_dados():
         except Exception:
             pass
 
+        # =========================================================
+        # 7. LER A ABA DE CUSTO DE OPORTUNIDADE
+        # =========================================================
         custo_oportunidade_total = 0.0
         try:
             df_custos = conn.read(worksheet="Custo_Oportunidade", ttl=0)
@@ -410,7 +408,6 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
-# Gráfico de Barras Apenas (Sem % e Sem Linha de Tendência)
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
@@ -423,7 +420,6 @@ fig_combinado.add_trace(go.Bar(
     opacity=0.85,
     width=0.45
 ))
-
 fig_combinado.update_layout(
     margin=dict(t=25, b=15, l=5, r=5), height=190, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
@@ -494,29 +490,48 @@ with c2:
 with c3:
     st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
     
-    # Saldos de Aplicações
-    df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']
+    df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
     if not df_aplicacoes.empty:
-        st.markdown("<div class='section-title-inline' style='color:var(--purple); margin-bottom:5px;'>SALDOS APLICADOS</div>", unsafe_allow_html=True)
-        st.markdown("<div class='rend-box' style='padding-bottom:5px; margin-bottom:8px;'>", unsafe_allow_html=True)
-        for _, row in df_aplicacoes.iterrows():
-            st.markdown(f"<div class='rend-item'><span style='font-weight:500;'>{row[col_conta]}</span><span style='font-weight:bold; color:var(--text);'>{formatar_moeda(row['Saldo Final'])}</span></div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Resgates é a soma de todas as saídas da conta de aplicação
+        df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
         
-    # Rendimentos
-    st.markdown("<div class='section-title-inline' style='color:var(--success); margin-bottom:5px;'>RENDIMENTOS DO MÊS</div>", unsafe_allow_html=True)
-    if not df_rend_resumo.empty:
-        st.markdown("<div class='rend-box'>", unsafe_allow_html=True)
-        for _, row in df_rend_resumo.iterrows():
-            valor = row['Valor Líquido']
-            cor = "#1cc88a" if valor >= 0 else "#e74a3b"
-            st.markdown(f"<div class='rend-item'><span style='font-weight:500;'>{row['Conta Bancária']}</span><span style='font-weight:bold; color:{cor};'>{formatar_moeda(valor)}</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='rend-total'><span>💰 TOTAL RENDIMENTOS</span><span>{formatar_moeda(rendimento_total_mes)}</span></div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        if not df_rend_resumo.empty:
+            df_app_table = pd.merge(df_aplicacoes, df_rend_resumo, on=col_conta, how='left')
+        else:
+            df_app_table = df_aplicacoes.copy()
+            df_app_table['Valor Líquido'] = 0.0
+            
+        df_app_table['Valor Líquido'] = df_app_table['Valor Líquido'].fillna(0.0)
+        
+        # Montagem da Tabela de Aplicações
+        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">TOTAL APLICADO</th><th class="valores">RENDIMENTO</th><th class="valores">RESGATES</th></tr></thead><tbody>'
+        
+        tot_aplicado = 0
+        tot_rend = 0
+        tot_resg = 0
+        
+        for _, row in df_app_table.iterrows():
+            banco = row[col_conta]
+            aplicado = row['Saldo Final']
+            rendimento = row['Valor Líquido']
+            resgate = row['Resgates']
+            
+            tot_aplicado += aplicado
+            tot_rend += rendimento
+            tot_resg += resgate
+            
+            cor_rend = "#858796" if rendimento == 0 else ("#1cc88a" if rendimento > 0 else "#e74a3b")
+            
+            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(aplicado)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rendimento)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resgate)}</td></tr>'
+            
+        cor_tot_rend = "#858796" if tot_rend == 0 else ("#1cc88a" if tot_rend > 0 else "#e74a3b")
+        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_aplicado)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td></tr>'
+        html_app += '</tbody></table></div>'
+        
+        st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhum dado de rendimento.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada.</div>", unsafe_allow_html=True)
 
-    # Custo de Oportunidade
     st.markdown(f"<div class='custo-oportunidade'><span>🔻 PERDA MENSAL (NÃO APLICADO)</span><span>- {formatar_moeda(custo_oportunidade_total)}</span></div>", unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
@@ -534,7 +549,6 @@ with col_tab:
         cor_transf_saida = "#858796" if row["Saída Tr"] == 0 else "#e74a3b"
         html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row["Saída Tr"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     
-    # Linha TOTAL: Exibe hífen "-" nas transferências internas para não duplicar somatórios desnecessários
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     
