@@ -97,9 +97,11 @@ st.markdown("""
     .tabela-financeira tbody tr:hover td { background: #fafbfe; }
     .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
     .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
-    .tabela-financeira .valores { text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
     
-    /* Rendimentos e Custo */
+    /* Alinhamento de Números para a Direita */
+    .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: right !important; font-weight: 750; font-variant-numeric: tabular-nums; }
+    
+    /* Resumo Aplicações e Custo */
     .rend-box { padding: 1px 0 7px; font-size: 12px; }
     .rend-item { display: flex; justify-content: space-between; padding: 7px 3px; border-bottom: 1px solid #f0f2f6; }
     .rend-item:last-child { border-bottom: none; }
@@ -295,11 +297,9 @@ def carregar_dados():
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             
-            # As colunas visíveis exibem APENAS as movimentações reais do hospital
             df_graficos['Entrada'] = df_graficos['Cred_Op'].fillna(0)
             df_graficos['Saída'] = df_graficos['Deb_Op'].fillna(0)
             
-            # O Saldo Final continua somando as transferências para garantir a contabilidade
             df_graficos['Movimentação Líquida'] = (df_graficos['Cred_Op'] + df_graficos['Cred_Tr']).fillna(0) - (df_graficos['Deb_Op'] + df_graficos['Deb_Tr']).fillna(0)
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
         else:
@@ -376,7 +376,7 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS
+# 3. CÁLCULOS DOS KPIs MENSAIS (Sem GetNet e Limites no Saldo Total)
 # ==============================================================================
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
@@ -410,6 +410,7 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
 )
 
+# Gráfico de Barras Apenas (Sem % e Sem Linha de Tendência)
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
@@ -422,6 +423,7 @@ fig_combinado.add_trace(go.Bar(
     opacity=0.85,
     width=0.45
 ))
+
 fig_combinado.update_layout(
     margin=dict(t=25, b=15, l=5, r=5), height=190, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
@@ -490,19 +492,31 @@ with c2:
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
-    st.markdown("<div class='section-title'>RESUMO DE RENDIMENTOS</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
+    
+    # Saldos de Aplicações
+    df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']
+    if not df_aplicacoes.empty:
+        st.markdown("<div class='section-title-inline' style='color:var(--purple); margin-bottom:5px;'>SALDOS APLICADOS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='rend-box' style='padding-bottom:5px; margin-bottom:8px;'>", unsafe_allow_html=True)
+        for _, row in df_aplicacoes.iterrows():
+            st.markdown(f"<div class='rend-item'><span style='font-weight:500;'>{row[col_conta]}</span><span style='font-weight:bold; color:var(--text);'>{formatar_moeda(row['Saldo Final'])}</span></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    # Rendimentos
+    st.markdown("<div class='section-title-inline' style='color:var(--success); margin-bottom:5px;'>RENDIMENTOS DO MÊS</div>", unsafe_allow_html=True)
     if not df_rend_resumo.empty:
         st.markdown("<div class='rend-box'>", unsafe_allow_html=True)
         for _, row in df_rend_resumo.iterrows():
             valor = row['Valor Líquido']
             cor = "#1cc88a" if valor >= 0 else "#e74a3b"
-            st.markdown(f"<div class='rend-item'><span style='font-weight:500;'>{row[col_conta]}</span><span style='font-weight:bold; color:{cor};'>{formatar_moeda(valor)}</span></div>", unsafe_allow_html=True)
-
+            st.markdown(f"<div class='rend-item'><span style='font-weight:500;'>{row['Conta Bancária']}</span><span style='font-weight:bold; color:{cor};'>{formatar_moeda(valor)}</span></div>", unsafe_allow_html=True)
         st.markdown(f"<div class='rend-total'><span>💰 TOTAL RENDIMENTOS</span><span>{formatar_moeda(rendimento_total_mes)}</span></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px;'>Nenhum dado de rendimento formatado.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhum dado de rendimento.</div>", unsafe_allow_html=True)
 
+    # Custo de Oportunidade
     st.markdown(f"<div class='custo-oportunidade'><span>🔻 PERDA MENSAL (NÃO APLICADO)</span><span>- {formatar_moeda(custo_oportunidade_total)}</span></div>", unsafe_allow_html=True)
 
 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
@@ -516,27 +530,27 @@ with col_tab:
     
     html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th><th class="valores">DISPONÍVEL</th></tr></thead><tbody>'
     for idx, row in df_view.iterrows():
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Tr"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
+        cor_transf = "#858796" if row["Entrada Tr"] == 0 else "#1cc88a"
+        cor_transf_saida = "#858796" if row["Saída Tr"] == 0 else "#e74a3b"
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row["Saída Tr"])}</td><td class="valores">{formatar_moeda(row["Saldo Final"])}</td><td class="valores">{formatar_moeda(row["Disponível"])}</td></tr>'
     
-    # Linha TOTAL com hífen nas transferências internas para não somar as transferências globais desnecessariamente
+    # Linha TOTAL: Exibe hífen "-" nas transferências internas para não duplicar somatórios desnecessários
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores">{formatar_moeda(totais["Saldo Final"])}</td><td class="valores">{formatar_moeda(totais["Disponível"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
     
     st.markdown(html_tabela, unsafe_allow_html=True)
-    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As Transferências Internas impactam o Saldo Final de cada banco individualmente, mas o resultado global (Total) se anula na matriz.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px; color:gray; margin-top:2px;'>* As colunas Entrada (INT.) e Saída (INT.) representam o fluxo de transferências internas e impactam o Saldo Final. O KPI de Movimentação Operacional ignora estas movimentações para mostrar o resultado real da empresa.</div>", unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final', 'Variação %']].copy()
+    df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    html_diario = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">SALDO FINAL</th><th class="valores">VARIAÇÃO</th></tr></thead><tbody>'
+    html_diario = '<div class="tabela-container" style="font-size:14px;"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
     
     for _, row in df_diario_view.iterrows():
-        variacao = row['Variação %']
-        cor = "#1cc88a" if variacao >= 0 else "#e74a3b"
-        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td><td class="valores" style="font-size:14px;">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="font-size:13px; color:{cor}; font-weight:800;">{variacao:.2f}%</td></tr>'
+        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td><td class="valores" style="font-size:14px;">{formatar_moeda(row["Saldo Final"])}</td></tr>'
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
