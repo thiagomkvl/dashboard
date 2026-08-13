@@ -89,6 +89,9 @@ st.markdown("""
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
     .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
     
+    /* Custo Oportunidade */
+    .custo-oportunidade { background: var(--danger-soft); border: 1px solid #f5d6da; border-left: 3px solid var(--danger); padding: 8px 10px; margin-top: 8px; border-radius: 7px; display: flex; justify-content: space-between; }
+    .custo-oportunidade span { font-weight: 750; color: var(--danger); }
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -157,7 +160,7 @@ def carregar_dados():
     mes_referencia = pd.to_datetime(datetime.now().date()).replace(day=1)
     
     if conn is None: 
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
+        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
     try:
         # =========================================================
         # 1. ABA SALDO_INICIAL
@@ -193,7 +196,7 @@ def carregar_dados():
             print("Aviso ao ler Saldo_Inicial:", e)
 
         # =========================================================
-        # 2. EXTRATOS
+        # 2. EXTRATOS (Com Leitura da Nova Coluna I)
         # =========================================================
         df_extratos = None
         proximo_mes = mes_referencia + relativedelta(months=1)
@@ -201,11 +204,13 @@ def carregar_dados():
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                while len(df_ext.columns) < 8:
+                # Garante que tenha no mínimo 9 colunas (A até I)
+                while len(df_ext.columns) < 9:
                     df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
                 
-                df_ext = df_ext.iloc[:, [0, 1, 4, 5, 7]].copy()
-                df_ext.columns = ['Conta Bancária', 'Data', 'Vl Débito', 'Vl Crédito', 'Tipo de Transação']
+                # Mapeamento posicional: A=0, B=1, E=4, F=5, H=7, I=8
+                df_ext = df_ext.iloc[:, [0, 1, 4, 5, 7, 8]].copy()
+                df_ext.columns = ['Conta Bancária', 'Data', 'Vl Débito', 'Vl Crédito', 'Tipo de Transação', 'Categoria App']
 
                 df_ext['Data'] = pd.to_datetime(df_ext['Data'], dayfirst=True, errors='coerce').dt.normalize()
                 
@@ -232,6 +237,15 @@ def carregar_dados():
                 df_ext['Cred_Tr'] = df_ext['Vl Crédito'].where(df_ext['É Transf'], 0.0)
                 df_ext['Deb_Tr'] = df_ext['Vl Débito'].where(df_ext['É Transf'], 0.0)
                 
+                # --- NOVA LÓGICA DE APLICAÇÕES (COLUNA I) ---
+                serie_cat_app = df_ext['Categoria App'].apply(normalizar_texto)
+                # Soma crédito e débito para capturar o valor independente de onde foi digitado
+                valor_movimento = df_ext['Vl Crédito'].fillna(0.0) + df_ext['Vl Débito'].fillna(0.0)
+                
+                df_ext['App_Aplic'] = valor_movimento.where(serie_cat_app.str.contains('aplicacao'), 0.0)
+                df_ext['App_Resg'] = valor_movimento.where(serie_cat_app.str.contains('resgate'), 0.0)
+                df_ext['App_Rend'] = valor_movimento.where(serie_cat_app.str.contains('rendimento'), 0.0)
+                
                 df_extratos = df_ext
         except Exception as e:
             print("Aviso ao ler extratos:", e)
@@ -251,6 +265,9 @@ def carregar_dados():
                 'Deb_Op': 'sum',
                 'Cred_Tr': 'sum',
                 'Deb_Tr': 'sum',
+                'App_Aplic': 'sum',
+                'App_Resg': 'sum',
+                'App_Rend': 'sum'
             }).reset_index()
             
             df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on='Conta Bancária', how='outer')
@@ -261,17 +278,25 @@ def carregar_dados():
             df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op'].fillna(0)
             df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr'].fillna(0)
             df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr'].fillna(0)
+            
+            # Cestas de aplicação para o Resumo
+            df_fim_mes['App_Aplic'] = df_fim_mes['App_Aplic'].fillna(0)
+            df_fim_mes['App_Resg'] = df_fim_mes['App_Resg'].fillna(0)
+            df_fim_mes['App_Rend'] = df_fim_mes['App_Rend'].fillna(0)
         else:
             df_fim_mes['Entrada Op'] = 0.0
             df_fim_mes['Saída Op'] = 0.0
             df_fim_mes['Entrada Tr'] = 0.0
             df_fim_mes['Saída Tr'] = 0.0
+            df_fim_mes['App_Aplic'] = 0.0
+            df_fim_mes['App_Resg'] = 0.0
+            df_fim_mes['App_Rend'] = 0.0
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
@@ -301,49 +326,35 @@ def carregar_dados():
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
         # =========================================================
-        # 5. KPI OPERACIONAL LÍQUIDO
+        # 5. KPI OPERACIONAL LÍQUIDO E CUSTO
         # =========================================================
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
-        # =========================================================
-        # 6. LER A ABA DE RENDIMENTOS
-        # =========================================================
-        df_rend_resumo = pd.DataFrame()
-        rendimento_total_mes = 0.0
+        custo_oportunidade_total = 0.0
         try:
-            df_rend = conn.read(worksheet="Rendimentos", ttl=0)
-            if not df_rend.empty:
-                df_rend.columns = [str(c).strip() for c in df_rend.columns]
-                df_rend = df_rend.loc[:, ~df_rend.columns.duplicated()].copy()
-                
-                col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
-                col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
-                
-                if col_rendimento:
-                    df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
-                    if col_conta_rend:
-                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.columns = ['Conta Bancária', 'Valor Líquido']
-                    else:
-                        rend_sum = df_rend[col_rendimento].sum()
-                        df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
-
-                    rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
+            df_custos = conn.read(worksheet="Custo_Oportunidade", ttl=0)
+            if not df_custos.empty:
+                df_custos.columns = [str(c).strip() for c in df_custos.columns]
+                df_custos = df_custos.loc[:, ~df_custos.columns.duplicated()].copy()
+                col_custo = next((c for c in df_custos.columns if 'custo' in c.lower()), None)
+                if col_custo:
+                    df_custos[col_custo] = df_custos[col_custo].apply(limpa_valor_bruto)
+                    custo_oportunidade_total = df_custos[col_custo].sum()
         except Exception:
             pass
 
-        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
+        return df_fim_mes, df_graficos, custo_oportunidade_total, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         mes_fallback = pd.to_datetime(datetime.now().date()).replace(day=1)
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
+        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
 
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
+df_consolidado, df_graficos, custo_oportunidade_total, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
 if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
@@ -472,10 +483,12 @@ with c3:
     
     df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
     if not df_aplicacoes.empty:
-        df_aplicacoes['Total Aplicado'] = df_aplicacoes['Saldo Inicial']
-        df_aplicacoes['Rendimento'] = df_aplicacoes['Entrada Op'] + df_aplicacoes['Entrada Tr']
-        df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
+        # Matemática Inteligente com base na nova Coluna I
+        df_aplicacoes['Total Aplicado'] = df_aplicacoes['Saldo Inicial'] + df_aplicacoes['App_Aplic']
+        df_aplicacoes['Rendimento'] = df_aplicacoes['App_Rend']
+        df_aplicacoes['Resgates'] = df_aplicacoes['App_Resg']
         
+        # Exclui linhas sem histórico (Contas vazias e inativas)
         df_aplicacoes = df_aplicacoes[(df_aplicacoes['Total Aplicado'] != 0) | (df_aplicacoes['Rendimento'] != 0) | (df_aplicacoes['Resgates'] != 0)]
         
         if not df_aplicacoes.empty:
@@ -500,6 +513,8 @@ with c3:
             st.markdown(html_app, unsafe_allow_html=True)
         else:
             st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada com movimentação.</div>", unsafe_allow_html=True)
+
+    st.markdown(f"<div class='custo-oportunidade'><span>🔻 PERDA MENSAL (NÃO APLICADO)</span><span>- {formatar_moeda(custo_oportunidade_total)}</span></div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
