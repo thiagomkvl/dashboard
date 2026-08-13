@@ -224,6 +224,7 @@ def carregar_dados():
                     if pd.isna(txt) or txt is None: return ""
                     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
                 
+                # Regra Operacional baseada 100% na COLUNA H
                 serie_tipo = df_ext['Tipo de Transação'].apply(normalizar_texto)
                 df_ext['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
 
@@ -232,13 +233,15 @@ def carregar_dados():
                 df_ext['Cred_Tr'] = df_ext['Vl Crédito'].where(df_ext['É Transf'], 0.0)
                 df_ext['Deb_Tr'] = df_ext['Vl Débito'].where(df_ext['É Transf'], 0.0)
                 
-                # --- NOVA LÓGICA DE APLICAÇÕES (COLUNA I) ---
+                # --- LÓGICA DE APLICAÇÕES ISOLADA (COLUNA I) ---
                 serie_cat_app = df_ext['Categoria App'].apply(normalizar_texto)
-                valor_movimento = df_ext['Vl Crédito'].fillna(0.0) + df_ext['Vl Débito'].fillna(0.0)
                 
-                df_ext['App_Aplic'] = valor_movimento.where(serie_cat_app.str.contains('aplicacao'), 0.0)
-                df_ext['App_Resg'] = valor_movimento.where(serie_cat_app.str.contains('resgate'), 0.0)
-                df_ext['App_Rend'] = valor_movimento.where(serie_cat_app.str.contains('rendimento'), 0.0)
+                # Aplicação e Rendimento = Vl Crédito na conta de investimento
+                df_ext['App_Aplic'] = df_ext['Vl Crédito'].where(serie_cat_app.str.contains('aplicacao'), 0.0)
+                df_ext['App_Rend']  = df_ext['Vl Crédito'].where(serie_cat_app.str.contains('rendimento'), 0.0)
+                
+                # Resgate = Vl Débito na conta de investimento
+                df_ext['App_Resg']  = df_ext['Vl Débito'].where(serie_cat_app.str.contains('resgate'), 0.0)
                 
                 df_extratos = df_ext
         except Exception as e:
@@ -273,7 +276,7 @@ def carregar_dados():
             df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr'].fillna(0)
             df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr'].fillna(0)
             
-            # Cestas de aplicação para o Resumo
+            # Cestas de aplicação isoladas para o Resumo
             df_fim_mes['App_Aplic'] = df_fim_mes['App_Aplic'].fillna(0)
             df_fim_mes['App_Resg'] = df_fim_mes['App_Resg'].fillna(0)
             df_fim_mes['App_Rend'] = df_fim_mes['App_Rend'].fillna(0)
@@ -464,12 +467,12 @@ with c3:
     
     df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
     if not df_aplicacoes.empty:
-        # Matemática Inteligente com base na nova Coluna I
+        # Matemática Inteligente isolada da Coluna I
         df_aplicacoes['Total Aplicado'] = df_aplicacoes['Saldo Inicial'] + df_aplicacoes['App_Aplic']
         df_aplicacoes['Rendimento'] = df_aplicacoes['App_Rend']
         df_aplicacoes['Resgates'] = df_aplicacoes['App_Resg']
         
-        # Exclui linhas sem histórico (Contas vazias e inativas)
+        # Exclui linhas sem histórico
         df_aplicacoes = df_aplicacoes[(df_aplicacoes['Total Aplicado'] != 0) | (df_aplicacoes['Rendimento'] != 0) | (df_aplicacoes['Resgates'] != 0)]
         
         if not df_aplicacoes.empty:
