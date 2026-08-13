@@ -59,7 +59,7 @@ st.markdown("""
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 750; }
 
-    /* KPIs - CORES SÓLIDAS COM GRADIENTE E TRANSPARÊNCIA */
+    /* KPIs SÓLIDOS COM GRADIENTE E TRANSPARÊNCIA */
     .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
     .kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
     .kpi-card.disponivel { background: linear-gradient(135deg, rgba(21, 149, 112, 0.95), rgba(28, 200, 138, 0.75)); }
@@ -149,7 +149,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM MAPEAMENTO POSICIONAL)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -157,7 +157,7 @@ def carregar_dados():
     mes_referencia = pd.to_datetime(datetime.now().date()).replace(day=1)
     
     if conn is None: 
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
+        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
     try:
         # =========================================================
         # 1. ABA SALDO_INICIAL
@@ -268,13 +268,11 @@ def carregar_dados():
             df_fim_mes['Saída Tr'] = 0.0
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
-        
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real = Disponível + Aplicação)
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real)
         # =========================================================
-        # Pega somente o Saldo Inicial de contas de caixa e aplicação
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
@@ -302,50 +300,20 @@ def carregar_dados():
         else:
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
-        # =========================================================
-        # 5. KPI OPERACIONAL LÍQUIDO
-        # =========================================================
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
-        # =========================================================
-        # 6. LER A ABA DE RENDIMENTOS
-        # =========================================================
-        df_rend_resumo = pd.DataFrame()
-        rendimento_total_mes = 0.0
-        try:
-            df_rend = conn.read(worksheet="Rendimentos", ttl=0)
-            if not df_rend.empty:
-                df_rend.columns = [str(c).strip() for c in df_rend.columns]
-                df_rend = df_rend.loc[:, ~df_rend.columns.duplicated()].copy()
-                
-                col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
-                col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
-                
-                if col_rendimento:
-                    df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
-                    if col_conta_rend:
-                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.columns = ['Conta Bancária', 'Valor Líquido']
-                    else:
-                        rend_sum = df_rend[col_rendimento].sum()
-                        df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
-
-                    rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
-        except Exception:
-            pass
-
-        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
+        return df_fim_mes, df_graficos, 0.0, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         mes_fallback = pd.to_datetime(datetime.now().date()).replace(day=1)
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
+        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
 
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
+df_consolidado, df_graficos, _, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
 if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
@@ -355,7 +323,7 @@ if df_consolidado.empty: st.stop()
 saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
-# Limites (Apenas informativo, não soma no caixa)
+# Limites
 saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
@@ -368,8 +336,18 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS
+# 4. GRÁFICOS E DATAS
 # ==============================================================================
+data_hoje = datetime.now().strftime('%d/%m/%Y')
+data_inicio_str = mes_referencia.strftime('%d/%m/%Y')
+
+if not df_graficos.empty and 'Data' in df_graficos.columns:
+    data_fim_str = df_graficos['Data'].max().strftime('%d/%m/%Y')
+else:
+    data_fim_str = data_hoje
+    
+periodo_str = f"{data_inicio_str} - {data_fim_str}"
+
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -410,15 +388,10 @@ fig_combinado.update_layout(
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL
 # ==============================================================================
-data_hoje = datetime.now().strftime('%d/%m/%Y')
-meses_pt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-mes_str = meses_pt[mes_referencia.month - 1]
-mes_referencia_nome = f"{mes_str}/{mes_referencia.year}"
-
 st.markdown(f"""
 <div class="dashboard-header">
     <div class="header-period">
-        <div class="date">📅 {mes_referencia_nome}</div>
+        <div class="date">📅 {periodo_str}</div>
         <div class="label">Período de referência</div>
     </div>
     <div class="header-center">
@@ -432,7 +405,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Nova ordem dos KPIs
 kpi_row = st.columns(4)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
@@ -452,7 +424,7 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown("<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:10px; color:var(--muted); font-weight:600; text-transform:none;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -470,37 +442,36 @@ with c3:
     
     df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
     if not df_aplicacoes.empty:
+        # Matemática solicitada:
+        df_aplicacoes['Total Aplicado'] = df_aplicacoes['Saldo Inicial']
+        df_aplicacoes['Rendimento'] = df_aplicacoes['Entrada Op'] + df_aplicacoes['Entrada Tr']
         df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
         
-        if not df_rend_resumo.empty:
-            df_app_table = pd.merge(df_aplicacoes, df_rend_resumo, on=col_conta, how='left')
+        # Filtra apenas o que tem Saldo Aplicado ou Movimentação
+        df_aplicacoes = df_aplicacoes[(df_aplicacoes['Total Aplicado'] != 0) | (df_aplicacoes['Rendimento'] != 0) | (df_aplicacoes['Resgates'] != 0)]
+        
+        if not df_aplicacoes.empty:
+            html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">TOTAL APLICADO</th><th class="valores">RENDIMENTO</th><th class="valores">RESGATES</th></tr></thead><tbody>'
+            
+            tot_aplicado = 0; tot_rend = 0; tot_resg = 0
+            
+            for _, row in df_aplicacoes.iterrows():
+                banco = row[col_conta]
+                aplicado = row['Total Aplicado']
+                rendimento = row['Rendimento']
+                resgate = row['Resgates']
+                
+                tot_aplicado += aplicado; tot_rend += rendimento; tot_resg += resgate
+                
+                cor_rend = "#858796" if rendimento == 0 else ("#1cc88a" if rendimento > 0 else "#e74a3b")
+                html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(aplicado)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rendimento)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resgate)}</td></tr>'
+                
+            cor_tot_rend = "#858796" if tot_rend == 0 else ("#1cc88a" if tot_rend > 0 else "#e74a3b")
+            html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_aplicado)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td></tr>'
+            html_app += '</tbody></table></div>'
+            st.markdown(html_app, unsafe_allow_html=True)
         else:
-            df_app_table = df_aplicacoes.copy()
-            df_app_table['Valor Líquido'] = 0.0
-            
-        df_app_table['Valor Líquido'] = df_app_table['Valor Líquido'].fillna(0.0)
-        
-        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">TOTAL APLICADO</th><th class="valores">RENDIMENTO</th><th class="valores">RESGATES</th></tr></thead><tbody>'
-        
-        tot_aplicado = 0; tot_rend = 0; tot_resg = 0
-        
-        for _, row in df_app_table.iterrows():
-            banco = row[col_conta]
-            aplicado = row['Saldo Final']
-            rendimento = row['Valor Líquido']
-            resgate = row['Resgates']
-            
-            tot_aplicado += aplicado; tot_rend += rendimento; tot_resg += resgate
-            
-            cor_rend = "#858796" if rendimento == 0 else ("#1cc88a" if rendimento > 0 else "#e74a3b")
-            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(aplicado)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rendimento)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resgate)}</td></tr>'
-            
-        cor_tot_rend = "#858796" if tot_rend == 0 else ("#1cc88a" if tot_rend > 0 else "#e74a3b")
-        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_aplicado)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td></tr>'
-        html_app += '</tbody></table></div>'
-        st.markdown(html_app, unsafe_allow_html=True)
-    else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada com movimentação.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -508,15 +479,32 @@ col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
-    # Removido 'Disponível' da visualização, pois é igual ao Saldo Final neste contexto (sem GetNet e Limites)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
+    
+    # Ordem personalizada dos bancos
+    ordem_bancos = [
+        "Caixa", "Unicred", "Uniprime", "Banco do Brasil", "Bradesco 70860", 
+        "Bradesco/Comerc", "Itaú 15668*", "Santander", "Sicoob", "Cofre", 
+        "Unicred Aplicação", "Bradesco Aplicação", "Santander Aplicação", "GetNet"
+    ]
+    
+    def get_ordem(banco_nome):
+        banco_nome_lower = str(banco_nome).lower()
+        for i, banco in enumerate(ordem_bancos):
+            if banco.lower() in banco_nome_lower:
+                return i
+        return 999
+
+    df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
+    df_view = df_view.sort_values('Ordem').drop(columns=['Ordem'])
+
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
     html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
-    for idx, row in df_view.iterrows():
-        cor_transf = "#858796" if row["Entrada Tr"] == 0 else "#1cc88a"
-        cor_transf_saida = "#858796" if row["Saída Tr"] == 0 else "#e74a3b"
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row["Saída Tr"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+    for idx, row in enumerate(df_view.itertuples()):
+        cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
+        cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row._2}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row.Tipo}</td><td class="valores">{formatar_moeda(row._3)}</td><td class="valores">{formatar_moeda(row._4)}</td><td class="valores">{formatar_moeda(row._5)}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row._6)}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row._7)}</td><td class="valores valor-destaque">{formatar_moeda(row._8)}</td></tr>'
     
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores valor-destaque">{formatar_moeda(totais["Saldo Final"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
@@ -525,10 +513,9 @@ with col_tab:
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final']].copy()
+    df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Entrada', 'Saída']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    # Ordem das colunas: DATA | SALDO FINAL | ENTRADA (OP.) | SAÍDA (OP.)
     html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th></tr></thead><tbody>'
     for _, row in df_diario_view.iterrows():
         html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td></tr>'
