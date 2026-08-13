@@ -49,15 +49,15 @@ st.markdown("""
 
     /* Cabeçalho */
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
-    .header-period { min-width: 170px; }
-    .header-period .date { font-size: 17px; font-weight: 750; color: var(--text); letter-spacing: -0.25px; }
+    .header-period { min-width: 200px; }
+    .header-period .date { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.25px; }
     .header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
     .header-center { text-align: center; }
     .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
     .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
     .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .update-badge b { font-size: 12px; font-weight: 750; }
+    .update-badge b { font-size: 12px; font-weight: 800; }
 
     /* KPIs SÓLIDOS COM GRADIENTE E TRANSPARÊNCIA */
     .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
@@ -149,7 +149,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM MAPEAMENTO POSICIONAL)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -157,7 +157,7 @@ def carregar_dados():
     mes_referencia = pd.to_datetime(datetime.now().date()).replace(day=1)
     
     if conn is None: 
-        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_referencia
     try:
         # =========================================================
         # 1. ABA SALDO_INICIAL
@@ -271,7 +271,7 @@ def carregar_dados():
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real)
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Excluindo GetNet e Limites)
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
@@ -300,20 +300,50 @@ def carregar_dados():
         else:
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
+        # =========================================================
+        # 5. KPI OPERACIONAL LÍQUIDO
+        # =========================================================
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
-        return df_fim_mes, df_graficos, 0.0, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
+        # =========================================================
+        # 6. LER A ABA DE RENDIMENTOS
+        # =========================================================
+        df_rend_resumo = pd.DataFrame()
+        rendimento_total_mes = 0.0
+        try:
+            df_rend = conn.read(worksheet="Rendimentos", ttl=0)
+            if not df_rend.empty:
+                df_rend.columns = [str(c).strip() for c in df_rend.columns]
+                df_rend = df_rend.loc[:, ~df_rend.columns.duplicated()].copy()
+                
+                col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
+                col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
+                
+                if col_rendimento:
+                    df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
+                    if col_conta_rend:
+                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
+                        df_rend_resumo.columns = ['Conta Bancária', 'Valor Líquido']
+                    else:
+                        rend_sum = df_rend[col_rendimento].sum()
+                        df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
+
+                    rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
+        except Exception:
+            pass
+
+        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         mes_fallback = pd.to_datetime(datetime.now().date()).replace(day=1)
-        return pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, mes_fallback
 
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, _, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
+df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
 if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
@@ -328,7 +358,7 @@ saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final']
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação)
+# Saldo Total REAL
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -424,7 +454,7 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:10px; color:var(--muted); font-weight:600; text-transform:none;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -442,12 +472,10 @@ with c3:
     
     df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
     if not df_aplicacoes.empty:
-        # Matemática solicitada:
         df_aplicacoes['Total Aplicado'] = df_aplicacoes['Saldo Inicial']
         df_aplicacoes['Rendimento'] = df_aplicacoes['Entrada Op'] + df_aplicacoes['Entrada Tr']
         df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
         
-        # Filtra apenas o que tem Saldo Aplicado ou Movimentação
         df_aplicacoes = df_aplicacoes[(df_aplicacoes['Total Aplicado'] != 0) | (df_aplicacoes['Rendimento'] != 0) | (df_aplicacoes['Resgates'] != 0)]
         
         if not df_aplicacoes.empty:
@@ -481,18 +509,31 @@ with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
     
-    # Ordem personalizada dos bancos
-    ordem_bancos = [
-        "Caixa", "Unicred", "Uniprime", "Banco do Brasil", "Bradesco 70860", 
-        "Bradesco/Comerc", "Itaú 15668*", "Santander", "Sicoob", "Cofre", 
-        "Unicred Aplicação", "Bradesco Aplicação", "Santander Aplicação", "GetNet"
-    ]
-    
+    # Motor de Ordenação por Camadas (Filtra "Aplicações" antes para evitar colisões com "Conta Corrente")
     def get_ordem(banco_nome):
-        banco_nome_lower = str(banco_nome).lower()
-        for i, banco in enumerate(ordem_bancos):
-            if banco.lower() in banco_nome_lower:
-                return i
+        nome = str(banco_nome).lower().strip()
+        
+        # 1. Tratamento isolado para os investimentos
+        if "aplicação" in nome or "aplicacao" in nome or "invest" in nome:
+            if "unicred" in nome: return 11
+            if "bradesco" in nome: return 12
+            if "santander" in nome: return 13
+            if "itaú" in nome or "itau" in nome: return 14 
+            return 50 # Outras aplicações
+            
+        # 2. Tratamento exato para o restante na ordem solicitada
+        if "caixa" in nome: return 1
+        if "unicred" in nome: return 2
+        if "uniprime" in nome: return 3
+        if "brasil" in nome or "bb" in nome: return 4
+        if "70860" in nome: return 5
+        if "comerc" in nome: return 6
+        if "itaú" in nome or "itau" in nome: return 7
+        if "santander" in nome: return 8
+        if "sicoob" in nome: return 9
+        if "cofre" in nome: return 10
+        if "getnet" in nome: return 100 # Fica por último fixo
+        
         return 999
 
     df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
