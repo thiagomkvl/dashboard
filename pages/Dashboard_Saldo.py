@@ -49,15 +49,15 @@ st.markdown("""
 
     /* Cabeçalho */
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
-    .header-period { min-width: 170px; }
-    .header-period .date { font-size: 17px; font-weight: 750; color: var(--text); letter-spacing: -0.25px; }
+    .header-period { min-width: 200px; }
+    .header-period .date { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.25px; }
     .header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
     .header-center { text-align: center; }
     .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
     .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
     .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .update-badge b { font-size: 12px; font-weight: 750; }
+    .update-badge b { font-size: 12px; font-weight: 800; }
 
     /* KPIs - CORES SÓLIDAS COM GRADIENTE E TRANSPARÊNCIA */
     .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
@@ -274,7 +274,6 @@ def carregar_dados():
         # =========================================================
         # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real = Disponível + Aplicação)
         # =========================================================
-        # Pega somente o Saldo Inicial de contas de caixa e aplicação
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
@@ -368,8 +367,18 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS
+# 4. GRÁFICOS E DATAS (Atualizado)
 # ==============================================================================
+data_hoje = datetime.now().strftime('%d/%m/%Y')
+data_inicio_str = mes_referencia.strftime('%d/%m/%Y')
+
+if not df_graficos.empty and 'Data' in df_graficos.columns:
+    data_fim_str = df_graficos['Data'].max().strftime('%d/%m/%Y')
+else:
+    data_fim_str = data_hoje
+    
+periodo_str = f"{data_inicio_str} - {data_fim_str}"
+
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
@@ -410,15 +419,10 @@ fig_combinado.update_layout(
 # ==============================================================================
 # 5. MONTAGEM DO PAINEL
 # ==============================================================================
-data_hoje = datetime.now().strftime('%d/%m/%Y')
-meses_pt = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-mes_str = meses_pt[mes_referencia.month - 1]
-mes_referencia_nome = f"{mes_str}/{mes_referencia.year}"
-
 st.markdown(f"""
 <div class="dashboard-header">
     <div class="header-period">
-        <div class="date">📅 {mes_referencia_nome}</div>
+        <div class="date">📅 {periodo_str}</div>
         <div class="label">Período de referência</div>
     </div>
     <div class="header-center">
@@ -452,7 +456,7 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown("<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -508,15 +512,45 @@ col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
-    # Removido 'Disponível' da visualização, pois é igual ao Saldo Final neste contexto (sem GetNet e Limites)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
+    
+    # Motor de Ordenação por Camadas (Aplicações primeiro para separar, depois a ordem exata pedida)
+    def get_ordem(banco_nome):
+        nome = str(banco_nome).lower().strip()
+        
+        # 1. Tratamento isolado para os investimentos (Camada 2)
+        if "aplicação" in nome or "aplicacao" in nome or "invest" in nome:
+            if "unicred" in nome: return 11
+            if "bradesco" in nome: return 12
+            if "santander" in nome: return 13
+            if "itaú" in nome or "itau" in nome: return 14 
+            return 50 # Outras aplicações que possam surgir
+            
+        # 2. Tratamento exato para o restante na ordem solicitada (Camada 1)
+        if "caixa" in nome: return 1
+        if "unicred" in nome: return 2
+        if "uniprime" in nome: return 3
+        if "brasil" in nome or "bb" in nome: return 4
+        if "70860" in nome: return 5
+        if "comerc" in nome: return 6
+        if "itaú" in nome or "itau" in nome: return 7
+        if "santander" in nome: return 8
+        if "sicoob" in nome: return 9
+        if "cofre" in nome: return 10
+        if "getnet" in nome: return 100 # Fica por último fixo
+        
+        return 999
+
+    df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
+    df_view = df_view.sort_values('Ordem').drop(columns=['Ordem'])
+
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
     html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
-    for idx, row in df_view.iterrows():
-        cor_transf = "#858796" if row["Entrada Tr"] == 0 else "#1cc88a"
-        cor_transf_saida = "#858796" if row["Saída Tr"] == 0 else "#e74a3b"
-        html_tabela += f'<tr><td>{idx+1}</td><td>{row[col_conta]}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row["Tipo"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(row["Entrada Op"])}</td><td class="valores">{formatar_moeda(row["Saída Op"])}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row["Entrada Tr"])}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row["Saída Tr"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+    for idx, row in enumerate(df_view.itertuples()):
+        cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
+        cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
+        html_tabela += f'<tr><td>{idx+1}</td><td>{row._2}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row.Tipo}</td><td class="valores">{formatar_moeda(row._3)}</td><td class="valores">{formatar_moeda(row._4)}</td><td class="valores">{formatar_moeda(row._5)}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row._6)}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row._7)}</td><td class="valores valor-destaque">{formatar_moeda(row._8)}</td></tr>'
     
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores valor-destaque">{formatar_moeda(totais["Saldo Final"])}</td></tr>'
     html_tabela += '</tbody></table></div>'
@@ -525,10 +559,9 @@ with col_tab:
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    df_diario_view = df_graficos[['Data_Label', 'Entrada', 'Saída', 'Saldo Final']].copy()
+    df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Entrada', 'Saída']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    # Ordem das colunas: DATA | SALDO FINAL | ENTRADA (OP.) | SAÍDA (OP.)
     html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th></tr></thead><tbody>'
     for _, row in df_diario_view.iterrows():
         html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td></tr>'
