@@ -268,7 +268,6 @@ def carregar_dados():
             df_fim_mes['Saída Tr'] = 0.0
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
-        
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
@@ -308,33 +307,54 @@ def carregar_dados():
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
         # =========================================================
-        # 6. LER A ABA DE RENDIMENTOS
+        # 6. LER A NOVA ABA DE APLICAÇÕES
         # =========================================================
-        df_rend_resumo = pd.DataFrame()
-        rendimento_total_mes = 0.0
+        df_aplicacoes_nova = pd.DataFrame()
+        saldo_aplicado_kpi = 0.0
+        
         try:
-            df_rend = conn.read(worksheet="Rendimentos", ttl=0)
-            if not df_rend.empty:
-                df_rend.columns = [str(c).strip() for c in df_rend.columns]
-                df_rend = df_rend.loc[:, ~df_rend.columns.duplicated()].copy()
+            df_app = conn.read(worksheet="Aplicações", ttl=0)
+            if not df_app.empty:
+                df_app.columns = [str(c).strip() for c in df_app.columns]
                 
-                col_conta_rend = next((c for c in df_rend.columns if 'conta' in c.lower() or 'banco' in c.lower()), None)
-                col_rendimento = next((c for c in df_rend.columns if 'rendimento' in c.lower() or 'l\u00edquido' in c.lower() or 'liquido' in c.lower()), None)
+                # Identifica a coluna de Banco/Conta
+                col_banco = df_app.columns[0]
+                for c in df_app.columns:
+                    if 'banco' in c.lower() or 'conta' in c.lower():
+                        col_banco = c
+                        break
+                        
+                # Filtra linhas vazias e a linha de Total Geral
+                df_app = df_app[df_app[col_banco].notna() & (df_app[col_banco].astype(str).str.strip() != '')]
+                df_app = df_app[~df_app[col_banco].astype(str).str.lower().str.contains('total')]
                 
-                if col_rendimento:
-                    df_rend[col_rendimento] = df_rend[col_rendimento].apply(limpa_valor_bruto)
-                    if col_conta_rend:
-                        df_rend_resumo = df_rend.groupby(col_conta_rend)[col_rendimento].sum().reset_index()
-                        df_rend_resumo.columns = ['Conta Bancária', 'Valor Líquido']
-                    else:
-                        rend_sum = df_rend[col_rendimento].sum()
-                        df_rend_resumo = pd.DataFrame({'Conta Bancária': ['Aplicações Consolidadas'], 'Valor Líquido': [rend_sum]})
+                # Identifica dinamicamente as colunas numéricas
+                def get_col(kws):
+                    for c in df_app.columns:
+                        if any(kw in c.lower() for kw in kws): return c
+                    return None
+                    
+                c_si = get_col(['inicial'])
+                c_app = get_col(['aplicaç', 'aplicac'])
+                c_imp = get_col(['imposto'])
+                c_rend = get_col(['rendimento'])
+                c_resg = get_col(['resgate'])
+                c_atual = get_col(['atual', 'final'])
+                
+                # Aplica formatação matemática
+                cols_to_clean = [c for c in [c_si, c_app, c_imp, c_rend, c_resg, c_atual] if c]
+                for c in cols_to_clean:
+                    df_app[c] = df_app[c].apply(limpa_valor_bruto)
+                    
+                df_aplicacoes_nova = df_app.copy()
+                
+                # Saldo para alimentar o bloco principal
+                if c_atual:
+                    saldo_aplicado_kpi = df_aplicacoes_nova[c_atual].sum()
+        except Exception as e:
+            print("Erro ao ler Aplicações:", e)
 
-                    rendimento_total_mes = df_rend_resumo['Valor Líquido'].sum()
-        except Exception:
-            pass
-
-        return df_fim_mes, df_graficos, df_rend_resumo, rendimento_total_mes, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
+        return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_operacionais, saidas_operacionais, mes_referencia
         
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
@@ -344,14 +364,15 @@ def carregar_dados():
 # ==============================================================================
 # CHAMADA PRINCIPAL E MONTAGEM DO PAINEL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
+df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta, entradas_operacionais, saidas_operacionais, mes_referencia = carregar_dados()
 if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
-saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
+# Saldo aplicado agora é alimentado EXCLUSIVAMENTE pela nova aba
+saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
 # Limites (Apenas informativo, não soma no caixa)
@@ -359,7 +380,7 @@ saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final']
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação)
+# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação da aba isolada)
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -367,7 +388,7 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS E DATAS (Atualizado)
+# 4. GRÁFICOS E DATAS
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y')
 data_inicio_str = mes_referencia.strftime('%d/%m/%Y')
@@ -436,7 +457,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Nova ordem dos KPIs
 kpi_row = st.columns(4)
 kp_data = [
     (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
@@ -472,39 +492,45 @@ with c2:
 with c3:
     st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
     
-    df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
-    if not df_aplicacoes.empty:
-        df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
-        
-        if not df_rend_resumo.empty:
-            df_app_table = pd.merge(df_aplicacoes, df_rend_resumo, on=col_conta, how='left')
-        else:
-            df_app_table = df_aplicacoes.copy()
-            df_app_table['Valor Líquido'] = 0.0
+    if not df_aplicacoes_nova.empty:
+        # Funções para mapear o nome da coluna independente se tiver espaços a mais
+        def find_c(kws):
+            for c in df_aplicacoes_nova.columns:
+                if any(kw in c.lower() for kw in kws): return c
+            return None
             
-        df_app_table['Valor Líquido'] = df_app_table['Valor Líquido'].fillna(0.0)
+        c_banco = find_c(['conta', 'banco']) or df_aplicacoes_nova.columns[0]
+        c_si = find_c(['inicial'])
+        c_app = find_c(['aplicaç', 'aplicac'])
+        c_imp = find_c(['imposto'])
+        c_rend = find_c(['rendimento'])
+        c_resg = find_c(['resgate'])
+        c_atual = find_c(['atual', 'final'])
         
-        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">TOTAL APLICADO</th><th class="valores">RENDIMENTO</th><th class="valores">RESGATES</th></tr></thead><tbody>'
+        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL</th></tr></thead><tbody>'
         
-        tot_aplicado = 0; tot_rend = 0; tot_resg = 0
+        tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
-        for _, row in df_app_table.iterrows():
-            banco = row[col_conta]
-            aplicado = row['Saldo Final']
-            rendimento = row['Valor Líquido']
-            resgate = row['Resgates']
+        for _, row in df_aplicacoes_nova.iterrows():
+            banco = row[c_banco]
+            si = row[c_si] if c_si else 0
+            app = row[c_app] if c_app else 0
+            imp = row[c_imp] if c_imp else 0
+            rend = row[c_rend] if c_rend else 0
+            resg = row[c_resg] if c_resg else 0
+            atual = row[c_atual] if c_atual else 0
             
-            tot_aplicado += aplicado; tot_rend += rendimento; tot_resg += resgate
+            tot_si += si; tot_app += app; tot_imp += imp; tot_rend += rend; tot_resg += resg; tot_atual += atual
             
-            cor_rend = "#858796" if rendimento == 0 else ("#1cc88a" if rendimento > 0 else "#e74a3b")
-            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(aplicado)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rendimento)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resgate)}</td></tr>'
+            cor_rend = "#858796" if rend == 0 else ("#1cc88a" if rend > 0 else "#e74a3b")
+            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(si)}</td><td class="valores">{formatar_moeda(app)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(imp)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resg)}</td><td class="valores valor-destaque">{formatar_moeda(atual)}</td></tr>'
             
         cor_tot_rend = "#858796" if tot_rend == 0 else ("#1cc88a" if tot_rend > 0 else "#e74a3b")
-        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_aplicado)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td></tr>'
+        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_si)}</td><td class="valores">{formatar_moeda(tot_app)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_imp)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td><td class="valores valor-destaque">{formatar_moeda(tot_atual)}</td></tr>'
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada na aba Aplicações.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -514,19 +540,19 @@ with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
     
-    # Motor de Ordenação por Camadas (Aplicações primeiro para separar, depois a ordem exata pedida)
+    # Motor de Ordenação por Camadas
     def get_ordem(banco_nome):
         nome = str(banco_nome).lower().strip()
         
-        # 1. Tratamento isolado para os investimentos (Camada 2)
+        # 1. Tratamento isolado para os investimentos
         if "aplicação" in nome or "aplicacao" in nome or "invest" in nome:
             if "unicred" in nome: return 11
             if "bradesco" in nome: return 12
             if "santander" in nome: return 13
             if "itaú" in nome or "itau" in nome: return 14 
-            return 50 # Outras aplicações que possam surgir
+            return 50 # Outras aplicações
             
-        # 2. Tratamento exato para o restante na ordem solicitada (Camada 1)
+        # 2. Tratamento exato para o restante na ordem solicitada
         if "caixa" in nome: return 1
         if "unicred" in nome: return 2
         if "uniprime" in nome: return 3
