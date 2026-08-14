@@ -79,8 +79,8 @@ st.markdown("""
     /* Tabelas */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.03); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
-    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
-    .tabela-financeira td { padding: 11px 12px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
+    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #fafbfe; }
     .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
     .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
@@ -268,6 +268,7 @@ def carregar_dados():
             df_fim_mes['Saída Tr'] = 0.0
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
+        
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
@@ -469,7 +470,8 @@ for col, icon, title, val, color in kp_data:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns([1.1, 1.4, 1])
+# ---> AJUSTE DA LARGURA DAS COLUNAS AQUI <---
+c1, c2, c3 = st.columns([0.85, 1.25, 1.6])
 
 with c1:
     st.markdown("<div class='section-title'>DISTRIBUIÇÃO DO CAIXA</div>", unsafe_allow_html=True)
@@ -493,7 +495,6 @@ with c3:
     st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
     
     if not df_aplicacoes_nova.empty:
-        # Funções para mapear o nome da coluna independente se tiver espaços a mais
         def find_c(kws):
             for c in df_aplicacoes_nova.columns:
                 if any(kw in c.lower() for kw in kws): return c
@@ -540,19 +541,14 @@ with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
     
-    # Motor de Ordenação por Camadas
     def get_ordem(banco_nome):
         nome = str(banco_nome).lower().strip()
-        
-        # 1. Tratamento isolado para os investimentos
         if "aplicação" in nome or "aplicacao" in nome or "invest" in nome:
             if "unicred" in nome: return 11
             if "bradesco" in nome: return 12
             if "santander" in nome: return 13
             if "itaú" in nome or "itau" in nome: return 14 
-            return 50 # Outras aplicações
-            
-        # 2. Tratamento exato para o restante na ordem solicitada
+            return 50
         if "caixa" in nome: return 1
         if "unicred" in nome: return 2
         if "uniprime" in nome: return 3
@@ -563,8 +559,7 @@ with col_tab:
         if "santander" in nome: return 8
         if "sicoob" in nome: return 9
         if "cofre" in nome: return 10
-        if "getnet" in nome: return 100 # Fica por último fixo
-        
+        if "getnet" in nome: return 100
         return 999
 
     df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
