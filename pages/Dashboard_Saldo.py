@@ -23,7 +23,7 @@ st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_ic
 st.markdown("""
     <style>
     /* =========================================================
-       IDENTIDADE VISUAL
+       IDENTIDADE VISUAL E LAYOUT
        ========================================================= */
     :root {
         --bg: #f5f7fb;
@@ -91,11 +91,38 @@ st.markdown("""
     .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
     
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
+
+    /* =========================================================
+       MODO IMPRESSÃO (PDF DE ALTA QUALIDADE VETORIAL)
+       ========================================================= */
+    @media print {
+        /* Esconde elementos do sistema que não devem ir pro PDF */
+        [data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        
+        /* Ajusta a tela principal para 100% do papel */
+        .main .block-container { 
+            max-width: 100% !important; 
+            padding: 10px !important; 
+        }
+        
+        /* Força o navegador a imprimir o fundo colorido (crucial) */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+        
+        /* Evita que blocos quebrem no meio da folha */
+        .kpi-card, .tabela-container, .movement-card { 
+            break-inside: avoid; 
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO DA BARRA LATERAL (FILTROS E BOTÃO DE DOWNLOAD)
+# 0. CONFIGURAÇÃO DA BARRA LATERAL (FILTROS)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
@@ -106,62 +133,23 @@ with st.sidebar:
     # Cria o seletor de datas
     data_selecionada = st.date_input(
         "Selecione o Período:",
-        value=(primeiro_dia_mes, hoje), # Valor padrão ao abrir a tela
+        value=(primeiro_dia_mes, hoje),
         min_value=datetime(2020, 1, 1).date(),
         max_value=hoje,
         format="DD/MM/YYYY"
     )
     
-    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### Relatório")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
     
-    # Motor Javascript para capturar o Dashboard
+    # Botão Injetado para chamar a impressão nativa do navegador
     components.html("""
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-        <style>
-            .btn-download {
-                width: 100%;
-                background: linear-gradient(135deg, #3157d5, #4e73df);
-                color: white;
-                border: none;
-                padding: 12px;
-                border-radius: 8px;
-                font-family: Arial, sans-serif;
-                font-weight: bold;
-                font-size: 13px;
-                cursor: pointer;
-                box-shadow: 0 4px 6px rgba(49, 87, 213, 0.2);
-                transition: all 0.3s;
-            }
-            .btn-download:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 6px 12px rgba(49, 87, 213, 0.3);
-            }
-            .btn-download:active {
-                transform: translateY(0);
-            }
-        </style>
-        <button class="btn-download" onclick="capturarPainel()">📸 Baixar PNG (Alta Qualidade)</button>
-
-        <script>
-            function capturarPainel() {
-                // Seleciona a área principal do painel (ignora a barra lateral)
-                const painel = window.parent.document.querySelector('.main .block-container');
-                
-                if(painel) {
-                    html2canvas(painel, {
-                        scale: 3, // Aumenta a resolução em 3x para não perder qualidade
-                        useCORS: true, 
-                        backgroundColor: '#f5f7fb' // Fundo original do painel
-                    }).then(canvas => {
-                        let link = document.createElement('a');
-                        link.href = canvas.toDataURL('image/png');
-                        link.download = 'Dashboard_Financeiro.png';
-                        link.click();
-                    });
-                }
-            }
-        </script>
-    """, height=80)
+        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
+        style="width:100%; background:linear-gradient(135deg, #3157d5, #4e73df); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(49, 87, 213, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Dashboard (PDF)
+        </button>
+    """, height=55)
 
 # Validação segura para garantir que o usuário escolheu duas datas no calendário
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
