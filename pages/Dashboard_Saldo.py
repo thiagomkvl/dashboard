@@ -341,18 +341,15 @@ def carregar_dados(data_inicio, data_fim):
             if not df_app.empty:
                 df_app.columns = [str(c).strip() for c in df_app.columns]
                 
-                # Identifica a coluna de Banco/Conta
                 col_banco = df_app.columns[0]
                 for c in df_app.columns:
                     if 'banco' in c.lower() or 'conta' in c.lower():
                         col_banco = c
                         break
                         
-                # Filtra linhas vazias e a linha de Total Geral
                 df_app = df_app[df_app[col_banco].notna() & (df_app[col_banco].astype(str).str.strip() != '')]
                 df_app = df_app[~df_app[col_banco].astype(str).str.lower().str.contains('total')]
                 
-                # Identifica dinamicamente as colunas numéricas
                 def get_col(kws):
                     for c in df_app.columns:
                         if any(kw in c.lower() for kw in kws): return c
@@ -365,14 +362,12 @@ def carregar_dados(data_inicio, data_fim):
                 c_resg = get_col(['resgate'])
                 c_atual = get_col(['atual', 'final'])
                 
-                # Aplica formatação matemática
                 cols_to_clean = [c for c in [c_si, c_app, c_imp, c_rend, c_resg, c_atual] if c]
                 for c in cols_to_clean:
                     df_app[c] = df_app[c].apply(limpa_valor_bruto)
                     
                 df_aplicacoes_nova = df_app.copy()
                 
-                # Saldo para alimentar o bloco principal
                 if c_atual:
                     saldo_aplicado_kpi = df_aplicacoes_nova[c_atual].sum()
         except Exception as e:
@@ -394,7 +389,6 @@ if df_consolidado.empty: st.stop()
 # ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
-# Saldo aplicado agora é alimentado EXCLUSIVAMENTE pela nova aba
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
@@ -411,10 +405,14 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS E DATAS
+# 4. GRÁFICOS E VARIÁVEIS DE DATA
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
+
+# Strings curtas para os cabeçalhos das tabelas (ex: "01/08" e "19/08")
+dt_ini_short = data_ini_painel.strftime('%d/%m')
+dt_fim_short = data_fim_painel.strftime('%d/%m')
 
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
@@ -485,7 +483,6 @@ for col, icon, title, val, color in kp_data:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ---> AJUSTE DA LARGURA DAS COLUNAS AQUI <---
 c1, c2, c3 = st.columns([0.85, 1.25, 1.6])
 
 with c1:
@@ -523,7 +520,8 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL</th></tr></thead><tbody>'
+        # --- ATUALIZAÇÃO DOS TÍTULOS DINÂMICOS NA TABELA DE APLICAÇÕES ---
+        html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
@@ -582,7 +580,8 @@ with col_tab:
 
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
-    html_tabela = '<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+'</th><th>TIPO</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
+    # --- ATUALIZAÇÃO DOS TÍTULOS DINÂMICOS NA TABELA TODOS OS BANCOS ---
+    html_tabela = f'<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+f'</th><th>TIPO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
     for idx, row in enumerate(df_view.itertuples()):
         cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
         cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
