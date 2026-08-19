@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -94,7 +95,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO DA BARRA LATERAL (FILTROS)
+# 0. CONFIGURAÇÃO DA BARRA LATERAL (FILTROS E BOTÃO DE DOWNLOAD)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
@@ -110,6 +111,57 @@ with st.sidebar:
         max_value=hoje,
         format="DD/MM/YYYY"
     )
+    
+    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+    
+    # Motor Javascript para capturar o Dashboard
+    components.html("""
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <style>
+            .btn-download {
+                width: 100%;
+                background: linear-gradient(135deg, #3157d5, #4e73df);
+                color: white;
+                border: none;
+                padding: 12px;
+                border-radius: 8px;
+                font-family: Arial, sans-serif;
+                font-weight: bold;
+                font-size: 13px;
+                cursor: pointer;
+                box-shadow: 0 4px 6px rgba(49, 87, 213, 0.2);
+                transition: all 0.3s;
+            }
+            .btn-download:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 12px rgba(49, 87, 213, 0.3);
+            }
+            .btn-download:active {
+                transform: translateY(0);
+            }
+        </style>
+        <button class="btn-download" onclick="capturarPainel()">📸 Baixar PNG (Alta Qualidade)</button>
+
+        <script>
+            function capturarPainel() {
+                // Seleciona a área principal do painel (ignora a barra lateral)
+                const painel = window.parent.document.querySelector('.main .block-container');
+                
+                if(painel) {
+                    html2canvas(painel, {
+                        scale: 3, // Aumenta a resolução em 3x para não perder qualidade
+                        useCORS: true, 
+                        backgroundColor: '#f5f7fb' // Fundo original do painel
+                    }).then(canvas => {
+                        let link = document.createElement('a');
+                        link.href = canvas.toDataURL('image/png');
+                        link.download = 'Dashboard_Financeiro.png';
+                        link.click();
+                    });
+                }
+            }
+        </script>
+    """, height=80)
 
 # Validação segura para garantir que o usuário escolheu duas datas no calendário
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
@@ -233,7 +285,6 @@ def carregar_dados(data_inicio, data_fim):
 
                 df_ext['Data'] = pd.to_datetime(df_ext['Data'], dayfirst=True, errors='coerce').dt.normalize()
                 
-                # ---> O FILTRO DE DATAS ACONTECE AQUI <---
                 dt_ini_pd = pd.to_datetime(data_inicio)
                 dt_fim_pd = pd.to_datetime(data_fim)
                 
@@ -392,12 +443,12 @@ if df_consolidado.empty: st.stop()
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
-# Limites (Apenas informativo, não soma no caixa)
+# Limites
 saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação da aba isolada)
+# Saldo Total REAL 
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -410,7 +461,6 @@ resultado_liquido_mes = entradas_mes - saidas_mes
 data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 
-# Strings curtas para os cabeçalhos das tabelas (ex: "01/08" e "19/08")
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
@@ -490,7 +540,7 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -520,7 +570,6 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # --- ATUALIZAÇÃO DOS TÍTULOS DINÂMICOS NA TABELA DE APLICAÇÕES ---
         html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
@@ -580,7 +629,6 @@ with col_tab:
 
     totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
-    # --- ATUALIZAÇÃO DOS TÍTULOS DINÂMICOS NA TABELA TODOS OS BANCOS ---
     html_tabela = f'<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+f'</th><th>TIPO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
     for idx, row in enumerate(df_view.itertuples()):
         cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
