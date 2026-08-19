@@ -100,7 +100,6 @@ hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=60) # Ícone genérico de financeiro
     st.markdown("### Filtros do Painel")
     
     # Cria o seletor de datas
@@ -235,7 +234,6 @@ def carregar_dados(data_inicio, data_fim):
                 df_ext['Data'] = pd.to_datetime(df_ext['Data'], dayfirst=True, errors='coerce').dt.normalize()
                 
                 # ---> O FILTRO DE DATAS ACONTECE AQUI <---
-                # Transforma a data do Streamlit para o formato do Pandas para comparar
                 dt_ini_pd = pd.to_datetime(data_inicio)
                 dt_fim_pd = pd.to_datetime(data_fim)
                 
@@ -339,7 +337,7 @@ def carregar_dados(data_inicio, data_fim):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
 
 # ==============================================================================
-# CHAMADA PRINCIPAL (Passando as datas do filtro para o motor)
+# CHAMADA PRINCIPAL
 # ==============================================================================
 df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel = carregar_dados(data_inicio_filtro, data_fim_filtro)
 if not col_conta: col_conta = 'Conta Bancária'
@@ -367,7 +365,6 @@ resultado_liquido_mes = entradas_mes - saidas_mes
 # 4. GRÁFICOS E DATAS
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
-# Formata o período de acordo com o que o usuário escolheu no calendário lateral
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 
 fig_donut = go.Figure(data=[go.Pie(
