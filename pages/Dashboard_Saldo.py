@@ -79,8 +79,8 @@ st.markdown("""
     /* Tabelas */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.03); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
-    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
-    .tabela-financeira td { padding: 11px 12px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
+    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #fafbfe; }
     .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
     .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
@@ -330,7 +330,55 @@ def carregar_dados(data_inicio, data_fim):
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
-        return df_fim_mes, df_graficos, pd.DataFrame(), 0.0, 'Conta Bancária', entradas_operacionais, saidas_operacionais, data_inicio, data_fim
+        # =========================================================
+        # 6. LER A NOVA ABA DE APLICAÇÕES
+        # =========================================================
+        df_aplicacoes_nova = pd.DataFrame()
+        saldo_aplicado_kpi = 0.0
+        
+        try:
+            df_app = conn.read(worksheet="Aplicações", ttl=0)
+            if not df_app.empty:
+                df_app.columns = [str(c).strip() for c in df_app.columns]
+                
+                # Identifica a coluna de Banco/Conta
+                col_banco = df_app.columns[0]
+                for c in df_app.columns:
+                    if 'banco' in c.lower() or 'conta' in c.lower():
+                        col_banco = c
+                        break
+                        
+                # Filtra linhas vazias e a linha de Total Geral
+                df_app = df_app[df_app[col_banco].notna() & (df_app[col_banco].astype(str).str.strip() != '')]
+                df_app = df_app[~df_app[col_banco].astype(str).str.lower().str.contains('total')]
+                
+                # Identifica dinamicamente as colunas numéricas
+                def get_col(kws):
+                    for c in df_app.columns:
+                        if any(kw in c.lower() for kw in kws): return c
+                    return None
+                    
+                c_si = get_col(['inicial'])
+                c_app = get_col(['aplicaç', 'aplicac'])
+                c_imp = get_col(['imposto'])
+                c_rend = get_col(['rendimento'])
+                c_resg = get_col(['resgate'])
+                c_atual = get_col(['atual', 'final'])
+                
+                # Aplica formatação matemática
+                cols_to_clean = [c for c in [c_si, c_app, c_imp, c_rend, c_resg, c_atual] if c]
+                for c in cols_to_clean:
+                    df_app[c] = df_app[c].apply(limpa_valor_bruto)
+                    
+                df_aplicacoes_nova = df_app.copy()
+                
+                # Saldo para alimentar o bloco principal
+                if c_atual:
+                    saldo_aplicado_kpi = df_aplicacoes_nova[c_atual].sum()
+        except Exception as e:
+            print("Erro ao ler Aplicações:", e)
+
+        return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_operacionais, saidas_operacionais, data_inicio, data_fim
         
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
@@ -339,14 +387,15 @@ def carregar_dados(data_inicio, data_fim):
 # ==============================================================================
 # CHAMADA PRINCIPAL
 # ==============================================================================
-df_consolidado, df_graficos, df_rend_resumo, rendimento_total_mes, col_conta, entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel = carregar_dados(data_inicio_filtro, data_fim_filtro)
+df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta, entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel = carregar_dados(data_inicio_filtro, data_fim_filtro)
 if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS
 # ==============================================================================
-saldo_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Final'].sum()
+# Saldo aplicado agora é alimentado EXCLUSIVAMENTE pela nova aba
+saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
 # Limites (Apenas informativo, não soma no caixa)
@@ -354,7 +403,7 @@ saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final']
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação)
+# Saldo Total REAL (Soma apenas Conta Corrente + Aplicação da aba isolada)
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -436,14 +485,15 @@ for col, icon, title, val, color in kp_data:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns([1.1, 1.4, 1])
+# ---> AJUSTE DA LARGURA DAS COLUNAS AQUI <---
+c1, c2, c3 = st.columns([0.85, 1.25, 1.6])
 
 with c1:
     st.markdown("<div class='section-title'>DISTRIBUIÇÃO DO CAIXA</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL DO MÊS <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'>⬇ ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'>⬆ SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
@@ -459,39 +509,44 @@ with c2:
 with c3:
     st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
     
-    df_aplicacoes = df_consolidado[df_consolidado['Tipo'] == 'Aplicação'].copy()
-    if not df_aplicacoes.empty:
-        df_aplicacoes['Resgates'] = df_aplicacoes['Saída Op'] + df_aplicacoes['Saída Tr']
-        
-        if not df_rend_resumo.empty:
-            df_app_table = pd.merge(df_aplicacoes, df_rend_resumo, on=col_conta, how='left')
-        else:
-            df_app_table = df_aplicacoes.copy()
-            df_app_table['Valor Líquido'] = 0.0
+    if not df_aplicacoes_nova.empty:
+        def find_c(kws):
+            for c in df_aplicacoes_nova.columns:
+                if any(kw in c.lower() for kw in kws): return c
+            return None
             
-        df_app_table['Valor Líquido'] = df_app_table['Valor Líquido'].fillna(0.0)
+        c_banco = find_c(['conta', 'banco']) or df_aplicacoes_nova.columns[0]
+        c_si = find_c(['inicial'])
+        c_app = find_c(['aplicaç', 'aplicac'])
+        c_imp = find_c(['imposto'])
+        c_rend = find_c(['rendimento'])
+        c_resg = find_c(['resgate'])
+        c_atual = find_c(['atual', 'final'])
         
-        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">TOTAL APLICADO</th><th class="valores">RENDIMENTO</th><th class="valores">RESGATES</th></tr></thead><tbody>'
+        html_app = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL</th></tr></thead><tbody>'
         
-        tot_aplicado = 0; tot_rend = 0; tot_resg = 0
+        tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
-        for _, row in df_app_table.iterrows():
-            banco = row[col_conta]
-            aplicado = row['Saldo Final']
-            rendimento = row['Valor Líquido']
-            resgate = row['Resgates']
+        for _, row in df_aplicacoes_nova.iterrows():
+            banco = row[c_banco]
+            si = row[c_si] if c_si else 0
+            app = row[c_app] if c_app else 0
+            imp = row[c_imp] if c_imp else 0
+            rend = row[c_rend] if c_rend else 0
+            resg = row[c_resg] if c_resg else 0
+            atual = row[c_atual] if c_atual else 0
             
-            tot_aplicado += aplicado; tot_rend += rendimento; tot_resg += resgate
+            tot_si += si; tot_app += app; tot_imp += imp; tot_rend += rend; tot_resg += resg; tot_atual += atual
             
-            cor_rend = "#858796" if rendimento == 0 else ("#1cc88a" if rendimento > 0 else "#e74a3b")
-            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(aplicado)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rendimento)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resgate)}</td></tr>'
+            cor_rend = "#858796" if rend == 0 else ("#1cc88a" if rend > 0 else "#e74a3b")
+            html_app += f'<tr><td style="font-size:12px; font-weight:600; color:#4b5563;">{banco}</td><td class="valores">{formatar_moeda(si)}</td><td class="valores">{formatar_moeda(app)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(imp)}</td><td class="valores" style="color:{cor_rend};">{formatar_moeda(rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(resg)}</td><td class="valores valor-destaque">{formatar_moeda(atual)}</td></tr>'
             
         cor_tot_rend = "#858796" if tot_rend == 0 else ("#1cc88a" if tot_rend > 0 else "#e74a3b")
-        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_aplicado)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td></tr>'
+        html_app += f'<tr class="linha-total"><td style="font-size:12px;">TOTAL</td><td class="valores">{formatar_moeda(tot_si)}</td><td class="valores">{formatar_moeda(tot_app)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_imp)}</td><td class="valores" style="color:{cor_tot_rend};">{formatar_moeda(tot_rend)}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(tot_resg)}</td><td class="valores valor-destaque">{formatar_moeda(tot_atual)}</td></tr>'
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada na aba Aplicações.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
