@@ -542,7 +542,7 @@ with c2:
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
-    st.markdown("<div class='section-title'>RESUMO APLICAÇÕES</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     
     if not df_aplicacoes_nova.empty:
         def find_c(kws):
