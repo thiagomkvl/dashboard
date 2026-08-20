@@ -25,7 +25,7 @@ st.markdown("""
     <style>
     :root {
         --bg: #f5f7fb; --surface: #ffffff; --border: #e7ebf2;
-        --text: #172033; --muted: #6b7280; --primary: #d53157; /* Vermelho/Rosa para CP */
+        --text: #172033; --muted: #6b7280; --primary: #d53157;
         --success: #159570; --danger: #d94a4a; --warning: #c58a16;
         --shadow: 0 4px 15px rgba(213, 49, 87, 0.08);
     }
@@ -65,7 +65,6 @@ def formata_brl(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def normalizar_coluna(cols):
-    # Facilita encontrar as colunas mesmo que o nome mude um pouco na planilha
     return {c: unicodedata.normalize('NFKD', str(c)).encode('ASCII', 'ignore').decode('utf-8').lower().strip() for c in cols}
 
 # ==============================================================================
@@ -80,15 +79,12 @@ def carregar_base_titulos():
         df = conn.read(worksheet="Base_Títulos", ttl=0)
         if df.empty: return df
         
-        # Mapa de colunas dinâmico
         mapa_cols = normalizar_coluna(df.columns)
-        
         def acha_col(chaves):
             for col_orig, col_norm in mapa_cols.items():
                 if any(k in col_norm for k in chaves): return col_orig
             return None
 
-        # Identifica colunas chave
         c_benef = acha_col(['beneficiari'])
         c_venc = acha_col(['vencimento'])
         c_emissao = acha_col(['emissao'])
@@ -98,21 +94,17 @@ def carregar_base_titulos():
         c_sit = acha_col(['situacao'])
         c_nota = acha_col(['nota', 'nr. nota', 'documento'])
 
-        # Limpeza e Tipagem
         df['Beneficiário'] = df[c_benef].astype(str).str.strip().str.upper() if c_benef else "DESCONHECIDO"
         df['Nr. Nota'] = df[c_nota].astype(str).str.strip() if c_nota else "-"
         df['Situação'] = df[c_sit].astype(str).str.strip().str.upper() if c_sit else "ABERTO"
         
-        # Datas
         df['Vencimento'] = pd.to_datetime(df[c_venc], dayfirst=True, errors='coerce') if c_venc else pd.NaT
         df['Dt. Emissão'] = pd.to_datetime(df[c_emissao], dayfirst=True, errors='coerce') if c_emissao else pd.NaT
         df['Dt. Liquidação'] = pd.to_datetime(df[c_liq], dayfirst=True, errors='coerce') if c_liq else pd.NaT
         
-        # Valores
         df['Saldo Atual'] = df[c_saldo].apply(limpa_valor) if c_saldo else 0.0
         df['Valor Pago'] = df[c_pago].apply(limpa_valor) if c_pago else 0.0
 
-        # Identifica status lógico
         hoje_pd = pd.to_datetime(datetime.now().date())
         df['Status Real'] = 'PAGO'
         mask_aberto = (df['Saldo Atual'] > 0) | (df['Situação'].str.contains('ABERTO|PENDENTE|LIBERADO', na=False))
@@ -130,20 +122,14 @@ if df_base.empty:
     st.stop()
 
 # ==============================================================================
-# BARRA LATERAL & FILTROS
+# BARRA LATERAL & FILTROS MACRO
 # ==============================================================================
 with st.sidebar:
-    st.markdown("### Filtros de Busca")
-    
-    lista_fornecedores = ["TODOS"] + sorted([f for f in df_base['Beneficiário'].unique() if f and f != 'NAN'])
-    fornecedor_sel = st.selectbox("🔍 Fornecedor / Beneficiário:", lista_fornecedores)
-    
+    st.markdown("### Filtros Globais")
     situacao_sel = st.multiselect("📌 Status do Título:", ['A VENCER', 'VENCIDO', 'PAGO'], default=['A VENCER', 'VENCIDO'])
-    
     hoje = datetime.now().date()
-    data_sel = st.date_input("🗓️ Período de Vencimento:", value=(hoje.replace(day=1), hoje + timedelta(days=30)), format="DD/MM/YYYY")
+    data_sel = st.date_input("🗓️ Vencimento Original:", value=(hoje.replace(day=1), hoje + timedelta(days=60)), format="DD/MM/YYYY")
 
-# Aplicação dos filtros
 df_filtro = df_base.copy()
 
 if isinstance(data_sel, tuple) and len(data_sel) == 2:
@@ -152,9 +138,6 @@ if isinstance(data_sel, tuple) and len(data_sel) == 2:
 
 if situacao_sel:
     df_filtro = df_filtro[df_filtro['Status Real'].isin(situacao_sel)]
-
-if fornecedor_sel != "TODOS":
-    df_filtro = df_filtro[df_filtro['Beneficiário'] == fornecedor_sel]
 
 # ==============================================================================
 # CABEÇALHO & KPIs MACRO
@@ -181,12 +164,78 @@ k4.markdown(f"<div class='kpi-card pago'><div class='kpi-icon'>✅</div><div cla
 st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
 
 # ==============================================================================
-# VISÃO MICRO (FORNECEDOR SELECIONADO) E MOTOR DE ACORDOS
+# VISÃO MACRO: GRÁFICOS E SALDO CONSOLIDADO FORNECEDORES
 # ==============================================================================
-if fornecedor_sel != "TODOS":
-    st.markdown(f"<h3 style='color:#172033;'>🏢 Raio-X: {fornecedor_sel}</h3>", unsafe_allow_html=True)
+c_graf, c_tab = st.columns([1.3, 1])
+
+with c_graf:
+    st.markdown("<div class='section-title'>PROJEÇÃO DE DESEMBOLSOS FUTUROS (A Vencer)</div>", unsafe_allow_html=True)
+    df_proj = df_abertos[df_abertos['Status Real'] == 'A VENCER'].groupby('Vencimento')['Saldo Atual'].sum().reset_index()
+    if not df_proj.empty:
+        fig1 = px.area(df_proj, x='Vencimento', y='Saldo Atual', color_discrete_sequence=['#f59e0b'], markers=True)
+        fig1.update_layout(height=220, margin=dict(l=0, r=0, t=10, b=0), xaxis_title="", yaxis_title="")
+        st.plotly_chart(fig1, use_container_width=True)
+    else:
+        st.info("Nenhum título projetado a vencer neste período.")
+        
+    st.markdown("<div class='section-title' style='margin-top:20px;'>AGING LIST (Risco de Títulos Vencidos)</div>", unsafe_allow_html=True)
+    df_vencidos = df_abertos[df_abertos['Status Real'] == 'VENCIDO'].copy()
+    if not df_vencidos.empty:
+        hoje_pd = pd.to_datetime(hoje)
+        df_vencidos['Dias Atraso'] = (hoje_pd - df_vencidos['Vencimento']).dt.days
+        
+        def faixa_atraso(dias):
+            if dias <= 15: return '1 a 15 dias'
+            elif dias <= 30: return '16 a 30 dias'
+            elif dias <= 60: return '31 a 60 dias'
+            else: return '+60 dias'
+            
+        df_vencidos['Faixa'] = df_vencidos['Dias Atraso'].apply(faixa_atraso)
+        df_aging = df_vencidos.groupby('Faixa')['Saldo Atual'].sum().reset_index()
+        
+        ordem = {'1 a 15 dias': 1, '16 a 30 dias': 2, '31 a 60 dias': 3, '+60 dias': 4}
+        df_aging['Ordem'] = df_aging['Faixa'].map(ordem)
+        df_aging = df_aging.sort_values('Ordem')
+        
+        fig2 = px.bar(df_aging, x='Faixa', y='Saldo Atual', color_discrete_sequence=['#ef4444'], text_auto='.2s')
+        fig2.update_traces(textposition='outside')
+        fig2.update_layout(height=230, margin=dict(l=0, r=0, t=20, b=0), xaxis_title="", yaxis_title="")
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.success("🎉 Nenhum título vencido neste período!")
+
+with c_tab:
+    st.markdown("<div class='section-title'>SALDO DEVEDOR CONSOLIDADO FORNECEDORES</div>", unsafe_allow_html=True)
+    df_consolidado = df_abertos.groupby('Beneficiário').agg(
+        Qtd_Títulos=('Nr. Nota', 'count'),
+        Saldo_Aberto=('Saldo Atual', 'sum')
+    ).reset_index().sort_values('Saldo_Aberto', ascending=False)
     
-    # Cálculos PMP Efetivo e Negociado
+    df_consolidado['Saldo_Aberto'] = df_consolidado['Saldo_Aberto'].apply(formata_brl)
+    df_consolidado.columns = ['Fornecedor', 'Nº de Títulos', 'Total em Aberto']
+    
+    st.dataframe(df_consolidado, hide_index=True, use_container_width=True, height=520)
+
+st.markdown("<hr style='margin: 20px 0;'>", unsafe_allow_html=True)
+
+# ==============================================================================
+# VISÃO MICRO: MÓDULO DE NEGOCIAÇÃO E ANÁLISE INDIVIDUAL
+# ==============================================================================
+st.markdown("""
+<div style='background-color: #e0e7ff; padding: 12px 20px; border-radius: 8px; border-left: 5px solid #3157d5; margin-bottom: 20px;'>
+    <h3 style='margin: 0; color: #1e40af; font-size: 16px;'>🔍 ANÁLISE DE FORNECEDOR E MOTOR DE ACORDOS</h3>
+    <p style='margin: 3px 0 0; color: #3730a3; font-size: 12px;'>Selecione um fornecedor na barra abaixo para auditar os títulos individuais, verificar o prazo médio e simular renegociações.</p>
+</div>
+""", unsafe_allow_html=True)
+
+lista_fornecedores = sorted([f for f in df_base['Beneficiário'].unique() if f and f != 'NAN'])
+fornecedor_sel = st.selectbox(
+    "Pesquise ou selecione o fornecedor:", 
+    ["(Selecione um fornecedor para expandir)"] + lista_fornecedores,
+    label_visibility="collapsed"
+)
+
+if fornecedor_sel != "(Selecione um fornecedor para expandir)":
     df_forn = df_base[df_base['Beneficiário'] == fornecedor_sel].copy()
     
     df_forn['Prazo_Negociado'] = (df_forn['Vencimento'] - df_forn['Dt. Emissão']).dt.days
@@ -208,45 +257,35 @@ if fornecedor_sel != "TODOS":
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["📋 Títulos & Gráficos", "🤝 Motor de Acordos"])
+    tab1, tab2 = st.tabs(["📋 Títulos do Fornecedor", "🤝 Simular Motor de Acordos"])
     
     with tab1:
-        c_graf, c_tab = st.columns([1, 1.5])
-        with c_graf:
-            st.markdown("<div class='section-title'>PROJEÇÃO DE DESEMBOLSOS (A Vencer)</div>", unsafe_allow_html=True)
-            df_proj = df_abertos[df_abertos['Status Real'] == 'A VENCER'].groupby('Vencimento')['Saldo Atual'].sum().reset_index()
-            if not df_proj.empty:
-                fig = px.bar(df_proj, x='Vencimento', y='Saldo Atual', color_discrete_sequence=['#d53157'])
-                fig.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), xaxis_title="", yaxis_title="")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Nenhum título a vencer neste período.")
-        
-        with c_tab:
-            st.markdown("<div class='section-title'>LISTA DE TÍTULOS (FILTRADOS)</div>", unsafe_allow_html=True)
-            df_view = df_filtro[['Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Status Real', 'Saldo Atual']].copy()
-            df_view['Dt. Emissão'] = df_view['Dt. Emissão'].dt.strftime('%d/%m/%Y')
-            df_view['Vencimento'] = df_view['Vencimento'].dt.strftime('%d/%m/%Y')
-            df_view['Saldo Atual'] = df_view['Saldo Atual'].apply(formata_brl)
-            st.dataframe(df_view, hide_index=True, use_container_width=True, height=280)
+        st.markdown("<div class='section-title'>RELAÇÃO DE TÍTULOS</div>", unsafe_allow_html=True)
+        # Mostrar apenas os abertos ou todos? É melhor exibir os abertos para a gestão atual
+        df_view_forn = df_forn[df_forn['Status Real'].isin(['A VENCER', 'VENCIDO'])].copy()
+        if df_view_forn.empty:
+            st.success("Não existem títulos pendentes para este fornecedor.")
+        else:
+            df_view_forn = df_view_forn[['Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Status Real', 'Saldo Atual']].sort_values('Vencimento')
+            df_view_forn['Dt. Emissão'] = df_view_forn['Dt. Emissão'].dt.strftime('%d/%m/%Y')
+            df_view_forn['Vencimento'] = df_view_forn['Vencimento'].dt.strftime('%d/%m/%Y')
+            df_view_forn['Saldo Atual'] = df_view_forn['Saldo Atual'].apply(formata_brl)
+            st.dataframe(df_view_forn, hide_index=True, use_container_width=True)
 
     with tab2:
-        st.markdown("<div class='section-title'>SIMULADOR DE RENEGOCIAÇÃO</div>", unsafe_allow_html=True)
-        
         df_abertos_forn = df_forn[df_forn['Status Real'].isin(['A VENCER', 'VENCIDO'])].copy()
         
         if df_abertos_forn.empty:
             st.success("Não há títulos em aberto para este fornecedor para realizar acordos.")
         else:
-            st.write("1. Selecione os títulos que farão parte do acordo:")
+            st.write("**Passo 1:** Selecione os títulos que farão parte do pacote de negociação:")
             df_abertos_forn['Selecionar'] = False
             
-            # Editor de dados interativo
             edited_df = st.data_editor(
-                df_abertos_forn[['Selecionar', 'Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Status Real', 'Saldo Atual']],
+                df_abertos_forn[['Selecionar', 'Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Status Real', 'Saldo Atual']].sort_values('Vencimento'),
                 column_config={
-                    "Selecionar": st.column_config.CheckboxColumn("Add", default=False),
-                    "Saldo Atual": st.column_config.NumberColumn(format="R$ %.2f")
+                    "Selecionar": st.column_config.CheckboxColumn("Incluir", default=False),
+                    "Saldo Atual": st.column_config.NumberColumn("Valor R$", format="%.2f")
                 },
                 disabled=["Nr. Nota", "Dt. Emissão", "Vencimento", "Status Real", "Saldo Atual"],
                 hide_index=True,
@@ -259,7 +298,7 @@ if fornecedor_sel != "TODOS":
             if valor_original_acordo > 0:
                 st.markdown(f"**Total Selecionado:** `{formata_brl(valor_original_acordo)}` ({len(titulos_selecionados)} notas)")
                 st.markdown("---")
-                st.write("2. Configure as condições do novo acordo:")
+                st.write("**Passo 2:** Parâmetros do Novo Acordo:")
                 
                 col_param1, col_param2, col_param3, col_param4 = st.columns(4)
                 juros_pct = col_param1.number_input("Juros (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.1)
@@ -269,7 +308,6 @@ if fornecedor_sel != "TODOS":
                 
                 data_primeira_parc = st.date_input("Data da 1ª Parcela", value=hoje + timedelta(days=1))
                 
-                # Matemática do Acordo
                 fator_juros = 1 + (juros_pct/100)
                 fator_desc = 1 - (desconto_pct/100)
                 valor_final_acordo = valor_original_acordo * fator_juros * fator_desc
@@ -277,7 +315,6 @@ if fornecedor_sel != "TODOS":
                 
                 passo_dias = 30 if "Mensal" in recorrencia else (15 if "Quinzenal" in recorrencia else 7)
                 
-                # Gera Cronograma
                 cronograma = []
                 data_atual = pd.to_datetime(data_primeira_parc)
                 hoje_pd = pd.to_datetime(hoje)
@@ -289,7 +326,6 @@ if fornecedor_sel != "TODOS":
                         "Vencimento": data_atual.strftime('%d/%m/%Y'),
                         "Valor (R$)": valor_parcela
                     })
-                    # Calculo do novo prazo médio a partir de hoje
                     dias_pra_frente = (data_atual - hoje_pd).days
                     soma_dias_peso += (valor_parcela * dias_pra_frente)
                     
@@ -298,16 +334,14 @@ if fornecedor_sel != "TODOS":
                 df_cronograma = pd.DataFrame(cronograma)
                 novo_prazo_medio = soma_dias_peso / valor_final_acordo if valor_final_acordo > 0 else 0
                 
-                # Layout Resultado
                 st.markdown("<br>", unsafe_allow_html=True)
                 r1, r2, r3 = st.columns(3)
                 r1.markdown(f"<div class='mini-kpi'><div class='mini-kpi-title'>Total do Acordo</div><div class='mini-kpi-val'>{formata_brl(valor_final_acordo)}</div></div>", unsafe_allow_html=True)
                 r2.markdown(f"<div class='mini-kpi'><div class='mini-kpi-title'>Valor da Parcela</div><div class='mini-kpi-val'>{formata_brl(valor_parcela)}</div></div>", unsafe_allow_html=True)
-                r3.markdown(f"<div class='mini-kpi'><div class='mini-kpi-title'>Novo Prazo Médio (a partir de hoje)</div><div class='mini-kpi-val' style='color:#3157d5;'>{novo_prazo_medio:.0f} dias</div></div>", unsafe_allow_html=True)
+                r3.markdown(f"<div class='mini-kpi'><div class='mini-kpi-title'>Novo Prazo Médio (a partir de hj)</div><div class='mini-kpi-val' style='color:#3157d5;'>{novo_prazo_medio:.0f} dias</div></div>", unsafe_allow_html=True)
                 
                 st.dataframe(df_cronograma, hide_index=True, use_container_width=True)
                 
-                # Exportação para Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_origens_export = df_abertos_forn.loc[df_abertos_forn['Selecionar']][['Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Saldo Atual']].copy()
@@ -324,30 +358,4 @@ if fornecedor_sel != "TODOS":
                     type="primary"
                 )
 
-# ==============================================================================
-# VISÃO MACRO (TODOS OS FORNECEDORES)
-# ==============================================================================
-else:
-    c_graf, c_tab = st.columns([1.5, 1])
-    with c_graf:
-        st.markdown("<div class='section-title'>LINHA DO TEMPO DE VENCIMENTOS (Geral)</div>", unsafe_allow_html=True)
-        df_proj = df_abertos[df_abertos['Status Real'] == 'A VENCER'].groupby('Vencimento')['Saldo Atual'].sum().reset_index()
-        if not df_proj.empty:
-            fig = px.area(df_proj, x='Vencimento', y='Saldo Atual', color_discrete_sequence=['#d53157'], markers=True)
-            fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), xaxis_title="", yaxis_title="R$ a Pagar")
-            st.plotly_chart(fig, use_container_width=True)
-            
-    with c_tab:
-        st.markdown("<div class='section-title'>MAIORES EXPOSIÇÕES (Top Fornecedores em Aberto)</div>", unsafe_allow_html=True)
-        df_top = df_abertos.groupby('Beneficiário')['Saldo Atual'].sum().reset_index().sort_values('Saldo Atual', ascending=False).head(10)
-        df_top['Saldo Atual'] = df_top['Saldo Atual'].apply(formata_brl)
-        st.dataframe(df_top, hide_index=True, use_container_width=True, height=320)
-        
-    st.markdown("<div class='section-title'>TABELA OPERACIONAL DE TÍTULOS</div>", unsafe_allow_html=True)
-    df_view = df_filtro[['Beneficiário', 'Nr. Nota', 'Dt. Emissão', 'Vencimento', 'Status Real', 'Saldo Atual']].copy()
-    df_view['Dt. Emissão'] = df_view['Dt. Emissão'].dt.strftime('%d/%m/%Y')
-    df_view['Vencimento'] = df_view['Vencimento'].dt.strftime('%d/%m/%Y')
-    df_view['Saldo Atual'] = df_view['Saldo Atual'].apply(formata_brl)
-    st.dataframe(df_view, hide_index=True, use_container_width=True)
-
-st.markdown(f"<div style='font-size:9px; color:gray; margin-top:20px; text-align:right;'>Módulo Contas a Pagar | Dados atualizados em {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='font-size:9px; color:gray; margin-top:30px; text-align:right;'>Módulo Contas a Pagar | Dados atualizados em {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>", unsafe_allow_html=True)
