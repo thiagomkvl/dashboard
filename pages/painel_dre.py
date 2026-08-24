@@ -197,11 +197,13 @@ pivot = df_filtro.groupby(['Macro', 'Grupo', 'Subgrupo', 'Conta', 'Mês_Ano'])['
 relatorio = []
 meses_str = [str(m) for m in meses_filtrados]
 
-def buscar_soma(macro=None, grupo=None, subgrupo=None):
+def buscar_soma(macro=None, grupo=None, subgrupo=None, conta=None):
     df_temp = df_filtro.copy()
     if macro: df_temp = df_temp[df_temp['Macro'] == macro]
     if grupo: df_temp = df_temp[df_temp['Grupo'] == grupo]
     if subgrupo: df_temp = df_temp[df_temp['Subgrupo'] == subgrupo]
+    if conta: df_temp = df_temp[df_temp['Conta'] == conta] # <--- CORREÇÃO AQUI
+    
     somas = df_temp.groupby('Mês_Ano')['Valor Líquido'].sum()
     return {str(m): somas.get(m, 0.0) for m in meses_filtrados}
 
