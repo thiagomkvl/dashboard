@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import re
+import difflib
 import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -256,6 +257,67 @@ def carregar_dados(data_inicio, data_fim):
                 df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
         except Exception as e:
             print("Aviso ao ler Saldo_Inicial:", e)
+            # =========================================================
+        # LEITURA DO CADASTRO E MOTOR DE MATCH DA CONTA CONTÁBIL
+        # =========================================================
+        dicionario_contas = {}
+        try:
+            df_cad = conn.read(worksheet="Cadastro Fornecedores", ttl=0)
+            if not df_cad.empty:
+                # Pega a Coluna B (Razão Social = índice 1) e Coluna C (Conta = índice 2)
+                col_razao = df_cad.columns[1]
+                col_conta = df_cad.columns[2]
+                
+                # Monta um dicionário com todos os fornecedores do seu cadastro
+                for _, row in df_cad.iterrows():
+                    razao = str(row[col_razao]).strip().upper()
+                    conta = str(row[col_conta]).strip()
+                    if razao != 'NAN' and razao != '':
+                        dicionario_contas[razao] = conta
+        except Exception as e:
+            print("Erro ao ler Cadastro de Fornecedores:", e)
+
+        # Lógica de Inteligência Artificial para o Match (Fuzzy Match)
+        def achar_conta_fuzzy(lancamento):
+            if not dicionario_contas: 
+                return "Não Mapeado"
+                
+            lanc = str(lancamento).upper()
+            nome_extrato = lanc
+            
+            # Tenta pescar o nome depois da barra "/"
+            match = re.search(r'/\s*([^)]+)', lanc)
+            if match:
+                nome_extrato = match.group(1).strip()
+                
+            # Limpa palavras genéricas que atrapalham o cruzamento
+            lixos = [' LTDA', ' S.A.', ' S.A', ' S/A', ' COMERCIO', ' COM.', ' DE ', ' PRODUTOS', ' PROD.', ' HOSPITALARES', ' HOSP.']
+            for lixo in lixos:
+                nome_extrato = nome_extrato.replace(lixo, '')
+            nome_extrato = nome_extrato.strip()
+
+            # Pega as chaves do seu cadastro e limpa da mesma forma para comparar
+            chaves_cadastro = list(dicionario_contas.keys())
+            chaves_limpas = []
+            for chave in chaves_cadastro:
+                chave_tmp = chave
+                for lixo in lixos:
+                    chave_tmp = chave_tmp.replace(lixo, '')
+                chaves_limpas.append(chave_tmp.strip())
+
+            # Usa o algoritmo matemático para achar o nome mais parecido (exige 40% de semelhança mínima)
+            matches = difflib.get_close_matches(nome_extrato, chaves_limpas, n=1, cutoff=0.4)
+            
+            if matches:
+                # Se achou um match, localiza qual era a chave original e retorna a Conta Contábil
+                idx_match = chaves_limpas.index(matches[0])
+                chave_original = chaves_cadastro[idx_match]
+                return dicionario_contas[chave_original]
+                
+            return "Não Mapeado"
+
+        # (Exemplo) Supondo que 'df_ext' seja a base do seu extrato e a descrição esteja na coluna 'Lançamento'
+        # df_ext['Conta Contábil'] = df_ext['Lançamento'].apply(achar_conta_fuzzy)
 
         # =========================================================
         # 2. EXTRATOS (Com Aplicação do Filtro de Datas)
