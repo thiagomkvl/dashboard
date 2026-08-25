@@ -8,6 +8,7 @@ import difflib
 import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+import textwrap
 
 # Tente importar a conexão
 try:
@@ -23,6 +24,14 @@ st.set_page_config(
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="expanded"
+)
+
+render_html(
+    f"""
+    <div class="dashboard-header">
+        ...
+    </div>
+    """
 )
 
 # ==============================================================================
