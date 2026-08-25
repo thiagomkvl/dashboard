@@ -6,71 +6,100 @@ from datetime import datetime
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="DRE e Fluxo de Caixa Gerencial", layout="wide", page_icon="📈")
 
-# --- CUSTOM CSS (Design Moderno & Tabela Expansível) ---
+# ==============================================================================
+# CUSTOM CSS — VISUAL CORPORATIVO (Igual ao Painel de Saldos)
+# ==============================================================================
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
     
     :root {
-        --bg-color: #f4f7f9;
-        --card-bg: #ffffff;
-        --border-color: #e2e8f0;
-        --text-main: #1e293b;
-        --text-muted: #64748b;
-        --primary: #2563eb;
-        --success: #10b981;
-        --danger: #ef4444;
+        --bg: #f4f6f8;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --border: #dfe4ea;
+        --border-strong: #cbd3dc;
+        --text: #17212b;
+        --text-secondary: #44515f;
+        --muted: #6b7785;
+        --primary: #234a78;
+        --primary-dark: #193754;
+        --primary-soft: #eef4fa;
+        --success: #157a5b;
+        --success-soft: #eef8f4;
+        --danger: #b74242;
+        --danger-soft: #fdf1f1;
+        --warning: #996b10;
+        --warning-soft: #fcf7ea;
+        --info: #2f657a;
+        --shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
     }
     
-    .main .block-container { max-width: 98%; padding-top: 1.5rem; font-family: 'Inter', sans-serif; }
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    .main { background: var(--bg); }
+    .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 1rem; }
     
-    /* Top Header */
-    .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; padding: 15px 25px; background: var(--card-bg); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--border-color); }
-    .dash-header h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--text-main); }
-    .dash-header p { margin: 0; font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    /* Cabeçalho */
+    .dashboard-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 64px; padding: 5px 0 11px; margin-bottom: 20px; border-bottom: 1px solid var(--border-strong); }
+    .header-period { min-width: 210px; text-align: left; }
+    .header-period .date { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.15px; }
+    .header-period .label { margin-top: 3px; font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.75px; }
+    .header-center { text-align: center; padding: 0 25px; }
+    .header-center h1 { margin: 0; color: var(--primary-dark); font-size: 20px; line-height: 1.2; font-weight: 850; letter-spacing: 0.4px; text-transform: uppercase; }
+    .header-center p { margin: 4px 0 0; color: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: 0.45px; text-transform: uppercase; }
     
-    /* KPI Cards Modernos */
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
-    .kpi-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); transition: transform 0.2s; }
-    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
-    .kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .kpi-val { font-size: 24px; font-weight: 700; color: var(--text-main); line-height: 1.2; }
+    /* KPI Cards Corporativos */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; }
+    .kpi-card { position: relative; min-height: 92px; padding: 13px 16px 12px 17px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; box-shadow: var(--shadow); overflow: hidden; }
+    .kpi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
+    .kpi-card.receita::before { background: var(--success); }
+    .kpi-card.custo::before { background: var(--danger); }
+    .kpi-card.pct::before { background: var(--warning); }
+    .kpi-card.ebitda::before { background: #5d66a8; }
+    .kpi-card.lucro::before { background: var(--primary); }
+    .kpi-card.margem::before { background: var(--info); }
+    
+    .kpi-title { font-size: 9px; line-height: 1.2; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.72px; margin-bottom: 6px; }
+    .kpi-value { font-size: 23px; line-height: 1.15; font-weight: 850; color: var(--text); letter-spacing: -0.4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
     
     /* Tabela DRE Grid Customizada */
-    .dre-wrapper { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); overflow: hidden; font-size: 13px; }
-    .dre-row { display: grid; border-bottom: 1px solid #f1f5f9; align-items: center; }
-    .dre-row:hover { background-color: #f8fafc; }
-    .col-name { padding: 12px 15px; font-weight: 600; color: var(--text-main); }
-    .col-val { padding: 12px 10px; text-align: right; font-variant-numeric: tabular-nums; }
+    .dre-wrapper { background: var(--surface); border-radius: 4px; border: 1px solid var(--border-strong); box-shadow: var(--shadow); overflow: hidden; font-size: 11px; margin-bottom: 15px; }
+    .dre-row { display: grid; border-bottom: 1px solid #edf0f3; align-items: center; }
+    .dre-row:hover { background-color: var(--surface-soft); }
+    .col-name { padding: 10px 15px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .col-val { padding: 10px 10px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: #2d3742; }
     
     /* Cabeçalhos da Tabela */
-    .dre-header { background: #f8fafc; border-bottom: 2px solid var(--border-color); font-weight: 700; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .dre-subheader { background: #ffffff; border-bottom: 1px solid var(--border-color); font-weight: 700; color: #94a3b8; font-size: 10px; text-transform: uppercase; }
-    .month-title { text-align: center; border-left: 1px solid #f1f5f9; padding: 8px; font-size: 12px; color: var(--text-main); }
+    .dre-header { background: #edf1f5; border-bottom: 1px solid var(--border-strong); font-weight: 850; color: #46525f; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .dre-subheader { background: #ffffff; border-bottom: 1px solid var(--border-strong); font-weight: 800; color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .month-title { text-align: center; border-left: 1px solid #dfe4ea; padding: 8px; font-size: 10px; color: var(--text); font-weight: 800; }
     
     /* Hierarquia e Cores de Linha */
-    .row-macro { background-color: #e0e7ff; color: #1e3a8a !important; border-bottom: 2px solid #c7d2fe; font-size: 14px; }
-    .row-macro .col-name { font-weight: 800; color: #1e3a8a; text-transform: uppercase; }
-    .row-grupo { background-color: #f1f5f9; }
-    .row-grupo .col-name { padding-left: 25px; color: #334155; }
+    .row-macro { background-color: #eef2f6; border-bottom: 2px solid var(--border-strong); font-size: 12px; }
+    .row-macro .col-name { font-weight: 850; color: var(--text); text-transform: uppercase; }
+    .row-macro .col-val { font-weight: 850; color: var(--text); }
+    
+    .row-grupo { background-color: #f8fafc; }
+    .row-grupo .col-name { padding-left: 25px; color: var(--text-secondary); font-weight: 700; text-transform: uppercase; font-size: 10px;}
     
     /* Mágica do Expandir/Recolher (HTML5 Details) */
     details { margin: 0; padding: 0; }
     details summary { list-style: none; cursor: pointer; outline: none; }
     details summary::-webkit-details-marker { display: none; }
     
-    .row-subgrupo .col-name { padding-left: 45px; position: relative; color: #475569; }
-    .row-subgrupo .col-name::before { content: '▶'; position: absolute; left: 25px; font-size: 9px; top: 15px; color: #94a3b8; transition: transform 0.2s; }
+    .row-subgrupo .col-name { padding-left: 45px; position: relative; color: var(--text-secondary); font-weight: 600; font-size: 11px;}
+    .row-subgrupo .col-name::before { content: '▶'; position: absolute; left: 25px; font-size: 8px; top: 13px; color: var(--muted); transition: transform 0.2s; }
     details[open] > summary .row-subgrupo .col-name::before { transform: rotate(90deg); color: var(--primary); }
     
-    .details-content { border-left: 3px solid #e2e8f0; margin-left: 15px; background: #ffffff; }
-    .row-item .col-name { padding-left: 65px; font-weight: 400; color: #64748b; font-size: 12px; }
+    .details-content { border-left: 2px solid var(--border); margin-left: 15px; background: #ffffff; }
+    .row-item .col-name { padding-left: 65px; font-weight: 500; color: var(--muted); font-size: 10px; }
+    .row-item .col-val { font-weight: 500; }
     
     /* Setas e Cores AH/AV */
-    .val-up { color: var(--success); font-weight: 600; }
-    .val-down { color: var(--danger); font-weight: 600; }
-    .arrow-up::before { content: '↑ '; }
-    .arrow-down::before { content: '↓ '; }
+    .val-up { color: var(--success); font-weight: 700; }
+    .val-down { color: var(--danger); font-weight: 700; }
+    .arrow-up::before { content: '↑ '; font-size: 9px; }
+    .arrow-down::before { content: '↓ '; font-size: 9px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -126,12 +155,12 @@ def classificar_conta(nome_conta):
     if any(c in conta for c in ["ADMINISTRATIV", "INFRAESTRUTURA", "ALUGUEL", "ENERGIA", "ÁGUA", "INTERNET", "CONTABILIDADE"]): return "FCO", "SAÍDAS OPERACIONAIS", "Despesas administrativas e de infraestrutura", conta
     
     # FCI E FCF
-    if any(c in conta for c in ["OBRAS", "REFORMAS", "MÁQUINAS", "EQUIPAMENTOS"]): return "FCI", "FLUXO DE CAIXA DE INVESTIMENTO", "Obras e reformas", conta
-    if any(c in conta for c in ["APLICAÇÕES", "RENDIMENTO", "RESGATE"]): return "FCI", "FLUXO DE CAIXA DE INVESTIMENTO", "Movimentação aplicações", conta
-    if any(c in conta for c in ["CAPTAÇÕES", "EMPRÉSTIMO"]): return "FCF", "FLUXO DE CAIXA DE FINANCIAMENTO", "Captações", conta
-    if any(c in conta for c in ["PMT", "PARCELA FINANCIAMENTO"]): return "FCF", "FLUXO DE CAIXA DE FINANCIAMENTO", "PMT por banco", conta
-    if any(c in conta for c in ["IMPOSTOS PARCELADOS", "PARCELAMENTO"]): return "FCF", "FLUXO DE CAIXA DE FINANCIAMENTO", "Saídas – Impostos parcelados", conta
-    if any(c in conta for c in ["JUROS", "TARIFAS", "IOF", "TAXA"]): return "FCF", "FLUXO DE CAIXA DE FINANCIAMENTO", "Despesas financeiras - Juros e Tarifas", conta
+    if any(c in conta for c in ["OBRAS", "REFORMAS", "MÁQUINAS", "EQUIPAMENTOS"]): return "FCI", "FLUXO DE INVESTIMENTO (FCI)", "Obras e reformas", conta
+    if any(c in conta for c in ["APLICAÇÕES", "RENDIMENTO", "RESGATE"]): return "FCI", "FLUXO DE INVESTIMENTO (FCI)", "Movimentação aplicações", conta
+    if any(c in conta for c in ["CAPTAÇÕES", "EMPRÉSTIMO"]): return "FCF", "FLUXO DE FINANCIAMENTO (FCF)", "Captações", conta
+    if any(c in conta for c in ["PMT", "PARCELA FINANCIAMENTO"]): return "FCF", "FLUXO DE FINANCIAMENTO (FCF)", "PMT por banco", conta
+    if any(c in conta for c in ["IMPOSTOS PARCELADOS", "PARCELAMENTO"]): return "FCF", "FLUXO DE FINANCIAMENTO (FCF)", "Saídas – Impostos parcelados", conta
+    if any(c in conta for c in ["JUROS", "TARIFAS", "IOF", "TAXA"]): return "FCF", "FLUXO DE FINANCIAMENTO (FCF)", "Despesas financeiras - Juros e Tarifas", conta
 
     return "OUTROS", "OUTROS", "Não Classificado", conta
 
@@ -175,6 +204,7 @@ if df_base.empty: st.stop()
 # ==============================================================================
 # BARRA LATERAL (FILTROS)
 # ==============================================================================
+hoje = datetime.now().date()
 with st.sidebar:
     st.markdown("### Filtros da DRE")
     meses_disponiveis = sorted(df_base['Mês_Ano'].unique())
@@ -214,7 +244,7 @@ fcf = buscar_soma(macro="FCF")
 geracao_liquida = {m: fco.get(m, 0) + fci.get(m, 0) + fcf.get(m, 0) for m in meses_str}
 
 # ==============================================================================
-# 5. HEADER & KPIs MODERNOS
+# 5. CABEÇALHO & KPIs CORPORATIVOS
 # ==============================================================================
 mes_atual = meses_str[-1]
 receita_atual = entradas_op.get(mes_atual, 0)
@@ -225,39 +255,51 @@ lucro_atual = geracao_liquida.get(mes_atual, 0)
 pct_custos = (abs(custos_atual) / receita_atual * 100) if receita_atual != 0 else 0
 pct_lucro = (lucro_atual / receita_atual * 100) if receita_atual != 0 else 0
 
+# Cabeçalho Superior
+periodo_str = f"{pd.Period(meses_str[0]).strftime('%m/%Y')} - {pd.Period(mes_atual).strftime('%m/%Y')}"
+
 st.markdown(f"""
-<div class="dash-header">
-    <div>
-        <h1>DRE & Fluxo de Caixa Gerencial</h1>
+<div class="dashboard-header">
+    <div class="header-period">
+        <div class="date">{periodo_str}</div>
+        <div class="label">Período de Análise</div>
+    </div>
+    <div class="header-center">
+        <h1>DRE GERENCIAL E FLUXO DE CAIXA</h1>
         <p>Análise Vertical, Horizontal e Detalhamento de Contas</p>
     </div>
-    <div style="text-align: right;">
-        <span style="background: #eff6ff; color: #2563eb; padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 13px; border: 1px solid #bfdbfe;">
-            Referência: {pd.Period(mes_atual).strftime('%B %Y').capitalize()}
-        </span>
+    <div class="update-wrapper">
+        <div class="update-badge" style="border-left-color: var(--primary);">
+            <span>Mês de Referência</span>
+            <b>{pd.Period(mes_atual).strftime('%B %Y').upper()}</b>
+        </div>
     </div>
 </div>
 
 <div class="kpi-grid">
-    <div class="kpi-card" style="border-top: 4px solid #10b981;">
+    <div class="kpi-card receita">
         <div class="kpi-title">Entradas Operacionais</div>
-        <div class="kpi-val" style="color: #059669;">{formata_moeda(receita_atual)}</div>
+        <div class="kpi-value" style="color: var(--success);">{formata_moeda(receita_atual)}</div>
     </div>
-    <div class="kpi-card" style="border-top: 4px solid #ef4444;">
+    <div class="kpi-card custo">
         <div class="kpi-title">Saídas Operacionais</div>
-        <div class="kpi-val" style="color: #dc2626;">{formata_moeda(custos_atual)}</div>
+        <div class="kpi-value" style="color: var(--danger);">{formata_moeda(custos_atual)}</div>
     </div>
-    <div class="kpi-card" style="border-top: 4px solid #f59e0b;">
-        <div class="kpi-title">% Custos e Despesas</div>
-        <div class="kpi-val" style="color: #d97706;">-{formata_pct(pct_custos)}</div>
+    <div class="kpi-card pct">
+        <div class="kpi-title">% Custos / Despesas</div>
+        <div class="kpi-value" style="color: var(--warning);">-{formata_pct(pct_custos)}</div>
     </div>
-    <div class="kpi-card" style="border-top: 4px solid #3b82f6;">
-        <div class="kpi-title">EBITDA (Geração Operacional)</div>
-        <div class="kpi-val" style="color: #2563eb;">{formata_moeda(ebitda_atual)}</div>
+    <div class="kpi-card ebitda">
+        <div class="kpi-title">EBITDA (FCO)</div>
+        <div class="kpi-value" style="color: #5d66a8;">{formata_moeda(ebitda_atual)}</div>
     </div>
-    <div class="kpi-card" style="border-top: 4px solid #6366f1;">
+    <div class="kpi-card lucro">
         <div class="kpi-title">Geração Líquida (Caixa)</div>
-        <div class="kpi-val" style="color: #4f46e5;">{formata_moeda(lucro_atual)}</div>
+        <div class="kpi-value" style="color: var(--primary);">{formata_moeda(lucro_atual)}</div>
+    </div>
+    <div class="kpi-card margem">
+        <div class="kpi-title">% Margem Líquida</div>
+        <div class="kpi-value" style="color: var(--info);">{formata_pct(pct_lucro)}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -284,10 +326,10 @@ def gerar_linha_html(nome, tipo, valores):
         # Realizado
         html += f"<div class='col-val'>{formata_moeda(val)}</div>"
         # AV
-        html += f"<div class='col-val' style='color:#64748b;'>{formata_pct(av)}</div>"
+        html += f"<div class='col-val' style='color:var(--muted); font-weight:500;'>{formata_pct(av)}</div>"
         # AH com setas
         ah_class = "val-up arrow-up" if ah > 0 else ("val-down arrow-down" if ah < 0 else "")
-        if tipo == "macro": ah_class = "" # Não põe seta vermelha/verde na linha Macro
+        if tipo == "macro": ah_class = "" # Não põe seta na linha Macro
         html += f"<div class='col-val {ah_class}'>{formata_pct(ah)}</div>"
         
     html += "</div>"
@@ -305,7 +347,7 @@ html_grid += "</div>"
 html_grid += f"<div class='dre-row dre-subheader' style='grid-template-columns: {grid_template};'>"
 html_grid += "<div></div>"
 for m in meses_str:
-    html_grid += "<div style='text-align:right; padding:8px 10px;'>Realizado</div><div style='text-align:right; padding:8px 10px;'>AV</div><div style='text-align:right; padding:8px 10px;'>AH</div>"
+    html_grid += "<div style='text-align:right; padding:8px 10px;'>REALIZADO</div><div style='text-align:right; padding:8px 10px;'>AV</div><div style='text-align:right; padding:8px 10px;'>AH</div>"
 html_grid += "</div>"
 
 # === MONTAGEM DA HIERARQUIA COM <DETAILS> ===
@@ -349,11 +391,23 @@ for subg in ["Pessoal", "Honorários Médicos", "Fornecedores assistenciais", "I
         html_grid += "</div></details>"
 
 html_grid += gerar_linha_html("FLUXO DE INVESTIMENTO (FCI)", "macro", fci)
+# Adiciona detalhamento do FCI
+for subg in ["Obras e reformas", "Movimentação aplicações"]:
+    somas_sub = buscar_soma(macro="FCI", subgrupo=subg)
+    if any(v != 0 for v in somas_sub.values()):
+        html_grid += gerar_linha_html(subg, "subgrupo", somas_sub)
+
 html_grid += gerar_linha_html("FLUXO DE FINANCIAMENTO (FCF)", "macro", fcf)
+# Adiciona detalhamento do FCF
+for subg in ["Captações", "PMT por banco", "Saídas – Impostos parcelados", "Despesas financeiras - Juros e Tarifas"]:
+    somas_sub = buscar_soma(macro="FCF", subgrupo=subg)
+    if any(v != 0 for v in somas_sub.values()):
+        html_grid += gerar_linha_html(subg, "subgrupo", somas_sub)
+
 html_grid += gerar_linha_html("GERAÇÃO LÍQUIDA DE CAIXA", "macro", geracao_liquida)
 
 html_grid += "</div>" # Fecha o dre-wrapper
 
 # Renderiza a tabela sanfona
 st.markdown(html_grid, unsafe_allow_html=True)
-st.markdown("<br><p style='text-align:right; font-size:11px; color:#94a3b8;'>*Clique nas setas (▶) nas linhas de convênios/despesas para abrir o detalhamento das contas.<br>AV = Análise Vertical (Base: Entradas Op.) | AH = Análise Horizontal (Var. Mês a Mês)</p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align:right; font-size:10px; color:var(--muted);'>*Clique nas setas (▶) nas linhas de convênios/despesas para abrir o detalhamento.<br>AV = Análise Vertical (Base: Entradas Op.) | AH = Análise Horizontal (Var. Mês a Mês)</p>", unsafe_allow_html=True)
