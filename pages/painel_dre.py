@@ -8,97 +8,85 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="DRE e Fluxo de Caixa", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# CUSTOM CSS — IDENTIDADE CORPORATIVA + TABELA EXPANSÍVEL
+# CUSTOM CSS — DARK MODE (BASEADO NA IMAGEM DE REFERÊNCIA)
 # ==============================================================================
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;600;700;800&display=swap');
     
     :root {
-        --bg: #f4f6f8;
-        --surface: #ffffff;
-        --surface-soft: #f8fafc;
-        --border: #dfe4ea;
-        --border-strong: #cbd3dc;
-        --text: #17212b;
-        --text-secondary: #44515f;
-        --muted: #6b7785;
-        --primary: #234a78;
-        --primary-dark: #193754;
-        --success: #157a5b;
-        --danger: #b74242;
-        --warning: #996b10;
-        --info: #2f657a;
-        --shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
+        --bg: #151e27; /* Fundo escuro */
+        --surface: #1c2836; /* Fundo dos painéis */
+        --surface-soft: #233446;
+        --border: #2d3e50;
+        --text: #ffffff;
+        --text-secondary: #aab6c4;
+        --gold: #d8992b; /* Linha dourada/laranja dos KPIs */
+        --success: #0cd12c; /* Verde neon */
+        --danger: #e73c3c; /* Vermelho neon */
     }
     
-    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
-    .main { background: var(--bg); }
+    html, body, [class*="css"] { font-family: "Segoe UI", Arial, sans-serif; color: var(--text); }
+    .stApp { background-color: var(--bg); }
     .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 1rem; }
+    header[data-testid="stHeader"] { display: none !important; }
     
-    /* Cabeçalho */
-    .dashboard-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 64px; padding: 5px 0 11px; margin-bottom: 15px; border-bottom: 1px solid var(--border-strong); }
-    .header-period { min-width: 210px; text-align: left; }
-    .header-period .date { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.15px; }
-    .header-period .label { margin-top: 3px; font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.75px; }
-    .header-center { text-align: center; padding: 0 25px; }
-    .header-center h1 { margin: 0; color: var(--primary-dark); font-size: 20px; line-height: 1.2; font-weight: 850; letter-spacing: 0.4px; text-transform: uppercase; }
-    .header-center p { margin: 4px 0 0; color: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: 0.45px; text-transform: uppercase; }
+    /* =========================================================
+       KPIs TOP (Minimalista com borda laranja)
+       ========================================================= */
+    .kpi-wrapper { display: flex; justify-content: space-between; margin-bottom: 25px; padding: 10px 20px; }
+    .kpi-box { border-left: 2px solid var(--gold); padding-left: 15px; flex: 1; margin-right: 15px; }
+    .kpi-box:last-child { margin-right: 0; }
+    .kpi-val { font-size: 32px; font-weight: 300; color: #fff; letter-spacing: 1px; line-height: 1.1; }
+    .kpi-title { font-size: 13px; color: var(--text-secondary); font-weight: 600; }
     
-    .update-wrapper { display: flex; justify-content: flex-end; }
-    .update-badge { min-width: 122px; padding: 6px 11px; text-align: left; border-left: 3px solid var(--primary); background: #f8fafc; }
-    .update-badge span { display: block; font-size: 8px; font-weight: 800; color: var(--muted); text-transform: uppercase; }
-    .update-badge b { display: block; margin-top: 2px; font-size: 11px; font-weight: 800; color: var(--text); }
-    
-    /* KPI Cards no Topo */
-    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 20px; }
-    .kpi-card { position: relative; min-height: 92px; padding: 13px 16px 12px 17px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; box-shadow: var(--shadow); overflow: hidden; }
-    .kpi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
-    .kpi-card.receita::before { background: var(--success); }
-    .kpi-card.despesa::before { background: var(--danger); }
-    .kpi-card.ebitda::before { background: var(--info); }
-    
-    .kpi-title { font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-    .kpi-value { font-size: 22px; font-weight: 850; color: var(--text); letter-spacing: -0.4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    
-    /* Tabela DRE Estilo Grid (HTML5 Details) */
-    .dre-container { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; box-shadow: var(--shadow); font-size: 12px; margin-bottom: 20px; overflow-x: auto; }
+    /* =========================================================
+       GRÁFICO CONTAINER
+       ========================================================= */
+    .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 15px 15px 5px 15px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+    .chart-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: -10px; }
+
+    /* =========================================================
+       TABELA DRE DARK
+       ========================================================= */
+    .dre-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); font-size: 12px; overflow-x: auto; margin-bottom: 30px;}
     
     .dre-row { display: grid; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.2s; }
-    .dre-row:hover { background-color: var(--surface-soft); }
+    .dre-row:hover { background-color: rgba(255,255,255,0.03); }
     
-    .dre-col-name { padding: 8px 15px; font-weight: 600; color: var(--text); white-space: nowrap; }
-    .dre-col-val { padding: 8px 10px; text-align: right; font-variant-numeric: tabular-nums; color: #2d3742; font-weight: 600; }
+    .dre-col-name { padding: 8px 12px; font-weight: 600; color: #fff; white-space: nowrap; }
+    .dre-col-val { padding: 8px 8px; text-align: right; font-variant-numeric: tabular-nums; color: #d4e0ed; font-weight: 600; }
     
     /* Cabeçalhos */
-    .dre-header { background: #edf1f5; border-bottom: 2px solid var(--border-strong); font-weight: 800; color: #46525f; text-transform: uppercase; font-size: 11px; }
-    .dre-header .dre-col-val { text-align: center; font-weight: 800; }
+    .dre-header { background: #233446; font-weight: 700; color: #fff; }
+    .dre-subheader { background: #1c2836; border-bottom: 2px solid var(--gold); }
+    .dre-subheader .dre-col-name { color: #6fb0d2; font-weight: 700; text-transform: uppercase; font-size: 11px; }
+    .dre-subheader .dre-col-val { color: var(--gold); font-size: 10px; text-transform: uppercase; font-weight: 700; }
+    .border-left { border-left: 1px solid var(--border); }
     
     /* Hierarquia */
-    .lvl-macro { background-color: #eef2f6; font-size: 13px; }
-    .lvl-macro .dre-col-name { font-weight: 850; color: var(--primary-dark); text-transform: uppercase; }
-    .lvl-macro .dre-col-val { font-weight: 850; color: var(--primary-dark); }
+    .lvl-macro { background-color: rgba(255,255,255,0.04); font-size: 13px; }
+    .lvl-macro .dre-col-name { font-weight: 800; color: var(--gold); text-transform: uppercase; }
+    .lvl-macro .dre-col-val { font-weight: 800; color: #fff; }
     
-    .lvl-grupo { background-color: #f8fafc; border-bottom: 1px solid var(--border); }
-    .lvl-grupo .dre-col-name { padding-left: 20px; color: var(--text); font-weight: 700; font-size: 11px; }
-    
-    .lvl-subgrupo .dre-col-name { padding-left: 35px; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
-    
-    .lvl-item .dre-col-name { padding-left: 55px; color: var(--muted); font-size: 10px; font-weight: 500; }
-    .lvl-item .dre-col-val { font-weight: 500; font-size: 11px; color: var(--muted); }
+    .lvl-grupo .dre-col-name { padding-left: 12px; color: #fff; font-weight: 700; }
+    .lvl-subgrupo .dre-col-name { padding-left: 30px; color: #aab6c4; font-size: 11px; font-weight: 600; }
+    .lvl-item .dre-col-name { padding-left: 45px; color: #7f8c9a; font-size: 11px; font-weight: 400; }
+    .lvl-item .dre-col-val { font-weight: 400; color: #aab6c4; }
     
     /* Expansão com Details/Summary */
     details { width: 100%; display: block; }
     details summary { list-style: none; cursor: pointer; outline: none; }
     details summary::-webkit-details-marker { display: none; }
     
-    /* Ícones de [+] e [-] */
-    .icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 6px; font-size: 12px; }
-    details:not([open]) > summary .icon-expand::before { content: "[+]"; }
-    details[open] > summary .icon-expand::before { content: "[-]"; }
+    /* Ícones de [+] e [-] (Amarelos como na imagem) */
+    .icon-expand { font-family: monospace; font-weight: 800; color: var(--gold); margin-right: 6px; font-size: 13px; }
+    details:not([open]) > summary .icon-expand::before { content: "⊞"; }
+    details[open] > summary .icon-expand::before { content: "⊟"; }
     
-    /* Gráficos Containers */
-    .chart-box { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 15px 10px 5px; box-shadow: var(--shadow); }
+    /* Cores Setas */
+    .txt-up { color: var(--success) !important; font-weight: 700; }
+    .txt-down { color: var(--danger) !important; font-weight: 700; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -123,20 +111,15 @@ def limpa_valor(valor):
 
 def formata_num(valor):
     if pd.isna(valor) or valor == 0: return "-"
-    # Formata número com separador de milhar
     return f"{valor:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def formata_kpi(valor):
-    if pd.isna(valor): return "R$ 0"
-    abs_val = abs(valor)
-    prefix = "-" if valor < 0 else ""
-    if abs_val >= 1_000_000: return f"{prefix}R$ {abs_val/1_000_000:.1f} M".replace('.', ',')
-    elif abs_val >= 1_000: return f"{prefix}R$ {abs_val/1_000:.1f} K".replace('.', ',')
-    else: return f"{prefix}R$ {abs_val:.0f}"
+    if pd.isna(valor): return "0"
+    return f"{valor:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def formata_pct(valor):
-    if pd.isna(valor) or valor == 0: return "0,0%"
-    return f"{valor:.1f}%".replace('.', ',')
+    if pd.isna(valor) or valor == 0: return "0%"
+    return f"{valor:.0f}%"
 
 # ==============================================================================
 # 2. MAPEAMENTO HIERÁRQUICO DA DRE
@@ -146,27 +129,23 @@ def classificar_conta(nome_conta):
     
     # ENTRADAS
     convênios = ["UNIMED", "SC SAÚDE", "TEMPOMED", "CASSI", "BRADESCO SAÚDE", "GEAP", "CORREIOS", "POSTAL", "CASACARESC", "CAIXA", "FUNCEF", "CELOS", "AMIL", "FUSEX", "SULAMÉRICA", "MARINHA", "PETROBRÁS", "SEGURADORAS", "CAPESAUDE", "SIM SAÚDE", "EMBRATEL", "SAUDES", "CONAB"]
-    if any(c in conta for c in convênios): return "(+) RECEITAS OPERACIONAIS", "Receitas Convênios", conta
-    
+    if any(c in conta for c in convênios): return "RECEITA OPERACIONAL", "Receitas Convênios", conta
     particulares = ["CARTÃO", "DINHEIRO", "PARTICULAR", "DEVOLUÇÃO"]
-    if any(c in conta for c in particulares): return "(+) RECEITAS OPERACIONAIS", "Receitas Particulares", conta
-    
+    if any(c in conta for c in particulares): return "RECEITA OPERACIONAL", "Receitas Particulares", conta
     outras_receitas = ["ALUGUÉIS", "UNIVERSIDADE", "OUTRAS RECEITAS"]
-    if any(c in conta for c in outras_receitas): return "(+) RECEITAS OPERACIONAIS", "Outras Receitas Operacionais", conta
+    if any(c in conta for c in outras_receitas): return "RECEITA OPERACIONAL", "Outras Receitas Operacionais", conta
 
     # SAÍDAS
-    if any(c in conta for c in ["PESSOAL", "SALÁRIO", "FÉRIAS", "INSS", "FGTS"]): return "(-) DESPESAS OPERACIONAIS", "Despesas Pessoal", conta
-    if any(c in conta for c in ["HONORÁRIOS MÉDICOS", "MÉDICO"]): return "(-) DESPESAS OPERACIONAIS", "Honorários Médicos", conta
-    if any(c in conta for c in ["FORNECEDORES", "CUSTO", "MEDICAMENTOS", "OPME", "ESTOQUE"]): return "(-) DESPESAS OPERACIONAIS", "Fornecedores Assistenciais", conta
-    if any(c in conta for c in ["IMPOSTOS", "DAS", "COFINS", "PIS", "IRPJ", "CSLL"]): return "(-) DESPESAS OPERACIONAIS", "Impostos Correntes", conta
-    if any(c in conta for c in ["ADMINISTRATIV", "INFRAESTRUTURA", "ALUGUEL", "ENERGIA", "ÁGUA", "INTERNET", "CONTABILIDADE"]): return "(-) DESPESAS OPERACIONAIS", "Despesas Administrativas", conta
+    if any(c in conta for c in ["PESSOAL", "SALÁRIO", "FÉRIAS", "INSS", "FGTS"]): return "(-) DESPESAS FIXAS", "Despesas Pessoal", conta
+    if any(c in conta for c in ["HONORÁRIOS MÉDICOS", "MÉDICO"]): return "(-) CUSTOS VARIÁVEIS", "Honorários Médicos", conta
+    if any(c in conta for c in ["FORNECEDORES", "CUSTO", "MEDICAMENTOS", "OPME", "ESTOQUE"]): return "(-) CUSTOS VARIÁVEIS", "Fornecedores Assistenciais", conta
+    if any(c in conta for c in ["IMPOSTOS", "DAS", "COFINS", "PIS", "IRPJ", "CSLL"]): return "(-) DEDUÇÕES SOBRE VENDAS", "Impostos Correntes", conta
+    if any(c in conta for c in ["ADMINISTRATIV", "INFRAESTRUTURA", "ALUGUEL", "ENERGIA", "ÁGUA", "INTERNET", "CONTABILIDADE"]): return "(-) DESPESAS FIXAS", "Despesas Administrativas", conta
     
-    # INVESTIMENTOS E FINANCIAMENTOS (Agrupados em "Outras Despesas e Receitas" para simplificar DRE Clássica)
     if any(c in conta for c in ["APLICAÇÕES", "RENDIMENTO", "RESGATE"]): return "(+) RECEITAS FINANCEIRAS", "Rendimentos e Aplicações", conta
-    if any(c in conta for c in ["JUROS", "TARIFAS", "IOF", "TAXA"]): return "(-) DESPESAS FINANCEIRAS", "Juros e Tarifas Bancárias", conta
+    if any(c in conta for c in ["JUROS", "TARIFAS", "IOF", "TAXA", "PMT", "PARCELAMENTO"]): return "(-) DESPESAS FINANCEIRAS", "Financeiro e Empréstimos", conta
     
-    # Restante (Obras, PMT, Captações)
-    return "(=) OUTRAS DESPESAS E RECEITAS", "Outras Movimentações (Capex/Financ)", conta
+    return "(=) OUTRAS DESPESAS E RECEITAS", "Outras Movimentações", conta
 
 # ==============================================================================
 # 3. PREPARAR DADOS
@@ -203,9 +182,9 @@ if df_base.empty: st.stop()
 # BARRA LATERAL (FILTROS)
 # ==============================================================================
 with st.sidebar:
-    st.markdown("### Filtros da DRE")
+    st.markdown("<h3 style='color:white;'>Configurações</h3>", unsafe_allow_html=True)
     meses_disponiveis = sorted(df_base['Mês_Ano'].unique())
-    mes_padrao_ini = meses_disponiveis[0] if len(meses_disponiveis) <= 6 else meses_disponiveis[-6]
+    mes_padrao_ini = meses_disponiveis[0] if len(meses_disponiveis) <= 8 else meses_disponiveis[-8]
     mes_padrao_fim = meses_disponiveis[-1] if meses_disponiveis else pd.Period.now('M')
 
     periodo_selecionado = st.select_slider(
@@ -219,7 +198,7 @@ df_filtro = df_base[df_base['Mês_Ano'].isin(meses_filtrados)].copy()
 meses_str = [str(m) for m in meses_filtrados]
 
 # ==============================================================================
-# 4. MOTOR MATEMÁTICO
+# 4. MOTOR MATEMÁTICO (DRE STRUTURE)
 # ==============================================================================
 def buscar_soma(grupo=None, subgrupo=None, conta=None):
     df_temp = df_filtro.copy()
@@ -229,109 +208,144 @@ def buscar_soma(grupo=None, subgrupo=None, conta=None):
     somas = df_temp.groupby('Mês_Ano')['Valor Líquido'].sum()
     return {str(m): somas.get(m, 0.0) for m in meses_filtrados}
 
-# Totais das Linhas Macros
-rec_op = buscar_soma(grupo="(+) RECEITAS OPERACIONAIS")
-desp_op = buscar_soma(grupo="(-) DESPESAS OPERACIONAIS")
-ebitda = {m: rec_op.get(m,0) + desp_op.get(m,0) for m in meses_str}
+# Blocos
+rec_op = buscar_soma(grupo="RECEITA OPERACIONAL")
+deducoes = buscar_soma(grupo="(-) DEDUÇÕES SOBRE VENDAS")
+rec_liq = {m: rec_op.get(m,0) + deducoes.get(m,0) for m in meses_str}
 
-rec_fin = buscar_soma(grupo="(+) RECEITAS FINANCEIRAS")
-desp_fin = buscar_soma(grupo="(-) DESPESAS FINANCEIRAS")
-outros = buscar_soma(grupo="(=) OUTRAS DESPESAS E RECEITAS")
+custos_var = buscar_soma(grupo="(-) CUSTOS VARIÁVEIS")
+margem_contrib = {m: rec_liq.get(m,0) + custos_var.get(m,0) for m in meses_str}
 
-geracao_liquida = {m: ebitda.get(m,0) + rec_fin.get(m,0) + desp_fin.get(m,0) + outros.get(m,0) for m in meses_str}
+desp_fixas = buscar_soma(grupo="(-) DESPESAS FIXAS")
+lucro_operacional = {m: margem_contrib.get(m,0) + desp_fixas.get(m,0) for m in meses_str}
 
 # ==============================================================================
-# 5. CABEÇALHO E KPIs (TOPO)
+# 5. KPIs SUPERIORES
 # ==============================================================================
 mes_atual = meses_str[-1]
-val_receitas = rec_op.get(mes_atual, 0)
-val_despesas = desp_op.get(mes_atual, 0)
-val_ebitda = ebitda.get(mes_atual, 0)
-val_superavit = geracao_liquida.get(mes_atual, 0)
-val_margem = (val_superavit / val_receitas * 100) if val_receitas != 0 else 0
-
-periodo_str = f"{pd.Period(meses_str[0]).strftime('%m/%Y')} - {pd.Period(mes_atual).strftime('%m/%Y')}"
+val_rec = rec_op.get(mes_atual, 0)
+val_cv = abs(custos_var.get(mes_atual, 0))
+val_df = abs(desp_fixas.get(mes_atual, 0))
+val_lucro = lucro_operacional.get(mes_atual, 0)
+pct_lucro = (val_lucro / val_rec * 100) if val_rec != 0 else 0
 
 st.markdown(f"""
-<div class="dashboard-header">
-    <div class="header-period">
-        <div class="date">{periodo_str}</div>
-        <div class="label">Período de Análise</div>
+<div class="kpi-wrapper">
+    <div class="kpi-box">
+        <div class="kpi-val">{formata_kpi(val_rec)}</div>
+        <div class="kpi-title">Receita operacional</div>
     </div>
-    <div class="header-center">
-        <h1>DRE GERENCIAL E RESULTADO</h1>
-        <p>Acompanhamento de Receitas, Custos e Superávit Líquido</p>
+    <div class="kpi-box">
+        <div class="kpi-val">{formata_kpi(val_cv)}</div>
+        <div class="kpi-title">Custos Variáveis</div>
     </div>
-    <div class="update-wrapper">
-        <div class="update-badge">
-            <span>Mês Referência</span>
-            <b>{pd.Period(mes_atual).strftime('%B %Y').upper()}</b>
-        </div>
+    <div class="kpi-box">
+        <div class="kpi-val">{formata_kpi(val_df)}</div>
+        <div class="kpi-title">Despesas fixas</div>
     </div>
-</div>
-
-<div class="kpi-grid">
-    <div class="kpi-card receita">
-        <div class="kpi-title">Receitas Operacionais</div>
-        <div class="kpi-value" style="color: var(--success);">{formata_kpi(val_receitas)}</div>
+    <div class="kpi-box">
+        <div class="kpi-val">{formata_kpi(val_lucro)}</div>
+        <div class="kpi-title">Lucro operacional</div>
     </div>
-    <div class="kpi-card despesa">
-        <div class="kpi-title">Despesas Operacionais</div>
-        <div class="kpi-value" style="color: var(--danger);">{formata_kpi(val_despesas)}</div>
-    </div>
-    <div class="kpi-card ebitda">
-        <div class="kpi-title">EBITDA (Ger. Caixa)</div>
-        <div class="kpi-value" style="color: var(--info);">{formata_kpi(val_ebitda)}</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-title">Superávit/Déficit Líquido</div>
-        <div class="kpi-value" style="color: var(--primary-dark);">{formata_kpi(val_superavit)}</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-title">Margem Superávit</div>
-        <div class="kpi-value" style="color: var(--primary);">{formata_pct(val_margem)}</div>
+    <div class="kpi-box">
+        <div class="kpi-val">{formata_pct(pct_lucro)}</div>
+        <div class="kpi-title">% do lucro</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. TABELA DRE HTML5 (ACORDEÃO CORPORATIVO)
+# 6. GRÁFICO CASCATA (WATERFALL)
 # ==============================================================================
-grid_template = f"minmax(300px, 1.5fr) repeat({len(meses_str)}, minmax(100px, 1fr))"
+x_grafico = [pd.Period(m).strftime('%b').upper() for m in meses_str] + ["Total"]
+y_grafico = [lucro_operacional.get(m, 0) for m in meses_str] + [0]
+medidas = ["relative"] * len(meses_str) + ["total"]
+
+textos_grafico = [formata_num(v) for v in y_grafico[:-1]] + [formata_num(sum(y_grafico[:-1]))]
+
+fig_waterfall = go.Figure(go.Waterfall(
+    orientation="v",
+    measure=medidas,
+    x=x_grafico,
+    textposition="outside",
+    text=textos_grafico,
+    textfont=dict(color="white", size=10),
+    y=y_grafico,
+    connector={"line": {"color": "rgba(255,255,255,0.2)", "width": 1}},
+    increasing={"marker": {"color": "#0cd12c"}},
+    decreasing={"marker": {"color": "#e73c3c"}},
+    totals={"marker": {"color": "#0cd12c"}} # Total assumido positivo na cor base
+))
+
+fig_waterfall.update_layout(
+    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+    xaxis=dict(showgrid=False, tickfont=dict(color='#aab6c4', weight='bold')),
+    yaxis=dict(showgrid=False, showticklabels=False, zeroline=True, zerolinecolor='rgba(255,255,255,0.1)'),
+    margin=dict(t=10, b=20, l=10, r=10),
+    height=260
+)
+
+st.markdown("<div class='chart-container'><div class='chart-title'>Lucro operacional por Mês</div>", unsafe_allow_html=True)
+st.plotly_chart(fig_waterfall, use_container_width=True, config={'displayModeBar': False})
+st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ==============================================================================
+# 7. TABELA DRE HTML5 (ACORDEÃO E COLUNAS AV/AH)
+# ==============================================================================
+grid_template = f"minmax(250px, 1.5fr) repeat({len(meses_str)}, 75px 50px 60px)"
 
 def render_linha(nome, classe, valores, icone=""):
-    cor_texto = ""
-    if "RECEITAS" in nome: cor_texto = "color: var(--success);"
-    elif "DESPESAS" in nome: cor_texto = "color: var(--danger);"
-    
     html = f"<div class='dre-row {classe}' style='grid-template-columns: {grid_template};'>"
     html += f"<div class='dre-col-name'>{icone}{nome}</div>"
     
-    for m in meses_str:
+    for i, m in enumerate(meses_str):
         val = valores.get(m, 0)
-        # Aplica cor no valor das linhas MACRO
-        cor_val = cor_texto if classe == 'lvl-macro' else ""
-        html += f"<div class='dre-col-val' style='{cor_val}'>{formata_num(val)}</div>"
-    
+        
+        # Base de cálculo para Análise Vertical (AV)
+        base_av = rec_op.get(m, 1)
+        base_av = base_av if base_av != 0 else 1
+        av = (val / base_av) * 100
+        
+        # Análise Horizontal (AH)
+        ah = 0
+        if i > 0:
+            val_ant = valores.get(meses_str[i-1], 0)
+            if val_ant != 0: ah = ((val / val_ant) - 1) * 100
+            
+        # Cor AH (Seta e Classe)
+        seta = ""
+        cor_ah = ""
+        if ah > 0:
+            seta = "↗"
+            cor_ah = "txt-up" if "DESPESA" not in nome and "CUSTO" not in nome else "txt-down"
+        elif ah < 0:
+            seta = "↘"
+            cor_ah = "txt-down" if "DESPESA" not in nome and "CUSTO" not in nome else "txt-up"
+            
+        html += f"<div class='dre-col-val border-left' style='color:#fff;'>{formata_num(val)}</div>"
+        html += f"<div class='dre-col-val' style='color:var(--gold);'>{formata_pct(av)}</div>"
+        
+        if i == 0 or classe == 'lvl-macro': # Esconde seta no primeiro mês e na linha totalizadora Macro
+            html += f"<div class='dre-col-val'>-</div>"
+        else:
+            html += f"<div class='dre-col-val {cor_ah}'><span style='margin-right:2px;'>{seta}</span>{formata_pct(abs(ah))}</div>"
+            
     html += "</div>"
     return html
 
-def render_bloco(nome_grupo, func_soma):
-    somas_grupo = func_soma(grupo=nome_grupo)
-    if all(v == 0 for v in somas_grupo.values()): return ""
+def render_bloco(nome_grupo, dict_valores, func_soma):
+    if all(v == 0 for v in dict_valores.values()): return ""
     
-    block = "<details><summary>" + render_linha(nome_grupo, "lvl-grupo", somas_grupo, "<span class='icon-expand'></span>") + "</summary>"
+    block = "<details><summary>" + render_linha(nome_grupo, "lvl-grupo", dict_valores, "<span class='icon-expand'></span>") + "</summary>"
     
     df_g = df_filtro[df_filtro['Grupo'] == nome_grupo]
     for subg in sorted(df_g['Subgrupo'].unique()):
         somas_sub = func_soma(grupo=nome_grupo, subgrupo=subg)
         if any(v != 0 for v in somas_sub.values()):
             
-            # Se for linha de receita ou despesa, formata o texto sutilmente
-            prefixo = "(+) " if "RECEITA" in nome_grupo else "(-) " if "DESPESA" in nome_grupo else ""
-            block += "<details><summary>" + render_linha(f"{prefixo}{subg}", "lvl-subgrupo", somas_sub, "<span class='icon-expand'></span>") + "</summary>"
+            block += "<details><summary>" + render_linha(f"{subg}", "lvl-subgrupo", somas_sub, "<span class='icon-expand'></span>") + "</summary>"
             
-            # Contas finais
             df_s = df_g[df_g['Subgrupo'] == subg]
             for conta in sorted(df_s['Conta'].unique()):
                 somas_c = func_soma(grupo=nome_grupo, subgrupo=subg, conta=conta)
@@ -345,84 +359,28 @@ def render_bloco(nome_grupo, func_soma):
 # Construção do Quadro DRE
 html_dre = f"<div class='dre-container'>"
 html_dre += f"<div class='dre-row dre-header' style='grid-template-columns: {grid_template};'>"
-html_dre += "<div class='dre-col-name'>CONTA GERENCIAL / GRUPO</div>"
+html_dre += "<div class='dre-col-name' style='text-align:center;'>Mês / ano</div>"
 for m in meses_str:
-    html_dre += f"<div class='dre-col-val'>{pd.Period(m).strftime('%b/%Y').lower()}</div>"
+    html_dre += f"<div class='dre-col-val border-left' style='grid-column: span 3; text-align:center; color:#d8992b;'>{pd.Period(m).strftime('%b/%y').lower()}</div>"
+html_dre += "</div>"
+
+html_dre += f"<div class='dre-row dre-subheader' style='grid-template-columns: {grid_template};'>"
+html_dre += "<div class='dre-col-name'>Conta Superior</div>"
+for m in meses_str:
+    html_dre += "<div class='dre-col-val border-left' style='text-align:center;'>DRE</div><div class='dre-col-val' style='text-align:center;'>% AV</div><div class='dre-col-val' style='text-align:center;'>AH</div>"
 html_dre += "</div>"
 
 # Anexando os blocos
-html_dre += render_bloco("(+) RECEITAS OPERACIONAIS", buscar_soma)
-html_dre += render_bloco("(-) DESPESAS OPERACIONAIS", buscar_soma)
-html_dre += render_linha("(=) RESULTADO OPERACIONAL (EBITDA)", "lvl-macro", ebitda)
-html_dre += render_bloco("(+) RECEITAS FINANCEIRAS", buscar_soma)
-html_dre += render_bloco("(-) DESPESAS FINANCEIRAS", buscar_soma)
-html_dre += render_bloco("(=) OUTRAS DESPESAS E RECEITAS", buscar_soma)
-html_dre += render_linha("(=) SUPERÁVIT / DÉFICIT LÍQUIDO", "lvl-macro", geracao_liquida)
+html_dre += render_bloco("RECEITA OPERACIONAL", rec_op, buscar_soma)
+html_dre += render_bloco("(-) DEDUÇÕES SOBRE VENDAS", deducoes, buscar_soma)
+html_dre += render_linha("(=) RECEITA LÍQUIDA", "lvl-macro", rec_liq)
+
+html_dre += render_bloco("(-) CUSTOS VARIÁVEIS", custos_var, buscar_soma)
+html_dre += render_linha("(=) MARGEM DE CONTRIBUIÇÃO", "lvl-macro", margem_contrib)
+
+html_dre += render_bloco("(-) DESPESAS FIXAS", desp_fixas, buscar_soma)
+html_dre += render_linha("(=) LUCRO OPERACIONAL", "lvl-macro", lucro_operacional)
 
 html_dre += "</div>"
 
 st.markdown(html_dre, unsafe_allow_html=True)
-st.markdown("<p style='text-align:right; font-size:10px; color:#6b7785; margin-top:-10px;'>*Clique no <b>[+]</b> para expandir o detalhamento das contas.</p>", unsafe_allow_html=True)
-
-# ==============================================================================
-# 7. GRÁFICOS NO RODAPÉ
-# ==============================================================================
-c_graf1, c_graf2 = st.columns(2)
-
-eixos_x = [pd.Period(m).strftime('%b/%Y').lower() for m in meses_str]
-y_superavit = [geracao_liquida.get(m, 0) for m in meses_str]
-y_margem = [(geracao_liquida.get(m,0)/rec_op.get(m,1))*100 if rec_op.get(m,0) != 0 else 0 for m in meses_str]
-
-cores_barra = ['#157a5b' if v >= 0 else '#b74242' for v in y_superavit]
-
-# Gráfico 1: Barras de Superávit
-fig1 = go.Figure(data=[
-    go.Bar(
-        x=eixos_x, y=y_superavit, 
-        marker_color=cores_barra,
-        text=[formata_kpi(v) for v in y_superavit],
-        textposition='outside',
-        textfont=dict(color='#17212b', size=11, weight='bold')
-    )
-])
-fig1.update_layout(
-    title=dict(text="Evolução do Superávit/Déficit (R$)", font=dict(color='#193754', size=14, weight='bold')),
-    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-    xaxis=dict(showgrid=False, tickfont=dict(color='#6b7785')),
-    yaxis=dict(showgrid=True, gridcolor='#edf0f3', showticklabels=False, zeroline=True, zerolinecolor='#cbd3dc'),
-    margin=dict(t=35, b=10, l=10, r=10),
-    height=240,
-    bargap=0.3
-)
-
-with c_graf1:
-    st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
-    st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# Gráfico 2: Linha de Margem
-cores_texto_margem = ['#157a5b' if v >= 0 else '#b74242' for v in y_margem]
-fig2 = go.Figure(data=[
-    go.Scatter(
-        x=eixos_x, y=y_margem, 
-        mode='lines+markers+text',
-        line=dict(color='#234a78', width=3),
-        marker=dict(size=8, color='#234a78'),
-        text=[formata_pct(v) for v in y_margem],
-        textposition='top center',
-        textfont=dict(color=cores_texto_margem, size=11, weight='bold')
-    )
-])
-fig2.update_layout(
-    title=dict(text="Margem de Superávit (%)", font=dict(color='#193754', size=14, weight='bold')),
-    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-    xaxis=dict(showgrid=False, tickfont=dict(color='#6b7785')),
-    yaxis=dict(showgrid=True, gridcolor='#edf0f3', showticklabels=False, zeroline=True, zerolinecolor='#cbd3dc'),
-    margin=dict(t=35, b=10, l=10, r=10),
-    height=240
-)
-
-with c_graf2:
-    st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
-    st.plotly_chart(fig2, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("</div>", unsafe_allow_html=True)
