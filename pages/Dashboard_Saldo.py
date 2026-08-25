@@ -8,7 +8,6 @@ import difflib
 import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-import textwrap
 
 # Tente importar a conexão
 try:
@@ -24,14 +23,6 @@ st.set_page_config(
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="expanded"
-)
-
-render_html(
-    f"""
-    <div class="dashboard-header">
-        ...
-    </div>
-    """
 )
 
 # ==============================================================================
@@ -2370,7 +2361,9 @@ with col_tab:
         .drop(columns=['Ordem'])
     )
 
-    # Separação da lógica
+    # =========================================================
+    # SEPARAÇÃO DA LÓGICA DE BANCOS x LIMITES (GETNET)
+    # =========================================================
     df_bancos = (
         df_view[
             df_view['Tipo'] != 'Limite'
@@ -2383,6 +2376,7 @@ with col_tab:
         ]
     )
 
+    # O totalizador calcula APENAS os bancos normais
     totais = {
         col: df_bancos[col].sum()
         for col in [
@@ -2414,7 +2408,7 @@ with col_tab:
         '<tbody>'
     )
 
-    # Bancos normais
+    # Renderiza os bancos normais
     for idx, row in enumerate(
         df_bancos.itertuples()
     ):
@@ -2495,7 +2489,7 @@ with col_tab:
         </tr>
         """
 
-    # Total
+    # Linha Total (apenas bancos normais)
     html_tabela += f"""
     <tr class="linha-total">
 
@@ -2540,7 +2534,7 @@ with col_tab:
     </tr>
     """
 
-    # Getnet / Limite
+    # Renderiza Limites/Getnet fora do total com classe CSS 'linha-limite'
     if not df_getnet.empty:
 
         for idx, row in enumerate(
