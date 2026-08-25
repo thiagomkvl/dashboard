@@ -2,14 +2,13 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="DRE Gerencial Executivo", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# 1. CUSTOM CSS — AZUL MAIS CLARO E BLINDADO CONTRA QUEBRAS
+# 1. CUSTOM CSS — IDENTIDADE EXECUTIVA
 # ==============================================================================
 css = """
 <style>
@@ -18,10 +17,10 @@ css = """
 :root {
     --bg: #f4f6f9;
     --surface: #ffffff;
-    --primary-dark: #1e40af; /* Azul mais claro e moderno */
-    --primary: #3b82f6;      /* Azul vibrante */
-    --success: #10b981;      /* Verde equilibrado */
-    --danger: #ef4444;       /* Vermelho suave */
+    --primary-dark: #1e40af;
+    --primary: #3b82f6;
+    --success: #10b981;
+    --danger: #ef4444;
     --text-main: #1e293b;
     --text-muted: #64748b;
     --border: #e2e8f0;
@@ -64,37 +63,23 @@ header[data-testid="stHeader"] { display: none !important; }
 .var-up { color: var(--success); }
 .var-down { color: var(--danger); }
 
-/* GRÁFICOS BOX */
-.chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; box-shadow: var(--shadow); height: 100%; margin-bottom: 25px;}
-.chart-title { font-size: 16px; font-weight: 800; color: var(--primary-dark); margin-bottom: 2px; }
-.chart-subtitle { font-size: 12px; color: var(--text-muted); font-weight: 500; margin-bottom: 15px; }
-
 /* MATRIZ DRE EXECUTIVA */
 .matrix-container { background: var(--surface); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border);}
 .matrix-header { background: var(--primary-dark); color: #fff; padding: 12px 20px; font-size: 15px; font-weight: 800; display:flex; align-items:center; gap:8px;}
-.dre-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.dre-table th { background: #f8fafc; color: var(--primary-dark); font-weight: 700; text-align: right; padding: 10px 15px; border-bottom: 2px solid var(--border); border-left: 1px solid var(--border); }
+.dre-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dre-table th { background: #f8fafc; color: var(--primary-dark); font-weight: 700; text-align: right; padding: 12px 15px; border-bottom: 2px solid var(--border); border-left: 1px solid var(--border); }
 .dre-table th:first-child { text-align: left; border-left: none; }
-.dre-table td { padding: 10px 15px; text-align: right; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-main); }
+.dre-table td { padding: 12px 15px; text-align: right; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-main); }
 .dre-table td:first-child { text-align: left; }
 .dre-table tr:nth-child(even) td { background-color: #f8fafc; }
 .dre-table tr:hover td { background-color: #f1f5f9; }
-.row-macro td { font-weight: 800 !important; background-color: #eff6ff !important; color: var(--primary-dark) !important; font-size: 13px;}
-
-/* ANÁLISE GERENCIAL */
-.bottom-grid { display: grid; grid-template-columns: 2.3fr 1fr; gap: 20px; }
-.insight-box { background: var(--surface); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border);}
-.insight-header { background: var(--primary-dark); color: #fff; padding: 12px 20px; font-size: 15px; font-weight: 800; display:flex; align-items:center; gap:8px;}
-.insight-item { display: flex; gap: 15px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
-.insight-item:last-child { border-bottom: none; }
-.insight-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; font-weight: bold;}
-.i-green { background: #ecfdf5; color: var(--success); }
-.i-blue { background: #eff6ff; color: var(--primary); }
-.insight-text h4 { margin: 0 0 4px 0; font-size: 13px; font-weight: 800; color: var(--text-main); }
-.insight-text p { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.4; font-weight:500;}
+.row-macro td { font-weight: 800 !important; background-color: #eff6ff !important; color: var(--primary-dark) !important; font-size: 14px;}
 </style>
 """
-st.markdown(css, unsafe_allow_html=True)
+st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+
+def injetar_html(codigo_html):
+    st.markdown(codigo_html.replace('\n', ''), unsafe_allow_html=True)
 
 # ==============================================================================
 # 2. LÓGICA E MATEMÁTICA
@@ -122,6 +107,10 @@ def formata_num(valor):
 def formata_kpi(valor):
     if pd.isna(valor): return "0"
     return f"{valor:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+def formata_pct(valor):
+    if pd.isna(valor) or valor == 0: return "0%"
+    return f"{valor:.1f}%".replace('.', ',')
 
 def calc_var(atual, anterior):
     if anterior == 0: return 0
@@ -191,7 +180,7 @@ ant_mg_bruta = (ant_lucro_bruto / ant_rec_bruta * 100) if ant_rec_bruta else 0
 ant_mg_ebitda = (ant_ebitda / ant_rec_bruta * 100) if ant_rec_bruta else 0
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO HTML EM LINHA ÚNICA (SEM INDENTAÇÃO)
+# 3. CONSTRUÇÃO DO HTML (HEADER E KPIs)
 # ==============================================================================
 nome_mes_atual = pd.Period(mes_atual).strftime('%B/%Y').capitalize()
 nome_mes_anterior = pd.Period(mes_anterior).strftime('%B/%Y').capitalize()
@@ -209,67 +198,38 @@ def html_var(atual, ant, is_margin=False):
 st.markdown(f"<div class='kpi-row'><div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-icon'>💰</div><div class='kpi-info'><div class='kpi-title'>Receita Bruta</div><div class='kpi-val'>R$ {formata_kpi(rec_bruta)}</div></div></div><div class='kpi-meta-box'><span>Mês Anterior: R$ {formata_kpi(ant_rec_bruta)}</span>{html_var(rec_bruta, ant_rec_bruta)}</div></div><div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-icon'>%</div><div class='kpi-info'><div class='kpi-title'>Margem Bruta</div><div class='kpi-val'>{mg_bruta:.1f}%</div></div></div><div class='kpi-meta-box'><span>Mês Anterior: {ant_mg_bruta:.1f}%</span>{html_var(mg_bruta, ant_mg_bruta, True)}</div></div><div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-icon'>📊</div><div class='kpi-info'><div class='kpi-title'>EBITDA</div><div class='kpi-val'>R$ {formata_kpi(ebitda)}</div></div></div><div class='kpi-meta-box'><span>Mês Anterior: R$ {formata_kpi(ant_ebitda)}</span>{html_var(ebitda, ant_ebitda)}</div></div><div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-icon'>📈</div><div class='kpi-info'><div class='kpi-title'>Margem EBITDA</div><div class='kpi-val'>{mg_ebitda:.1f}%</div></div></div><div class='kpi-meta-box'><span>Mês Anterior: {ant_mg_ebitda:.1f}%</span>{html_var(mg_ebitda, ant_mg_ebitda, True)}</div></div><div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-icon'>$</div><div class='kpi-info'><div class='kpi-title'>Lucro Líquido</div><div class='kpi-val'>R$ {formata_kpi(lucro_liq)}</div></div></div><div class='kpi-meta-box'><span>Mês Anterior: R$ {formata_kpi(ant_lucro_liq)}</span>{html_var(lucro_liq, ant_lucro_liq)}</div></div></div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 4. GRÁFICOS
+# 4. MATRIZ DRE FULL WIDTH
 # ==============================================================================
-col_g1, col_g2 = st.columns([1.6, 1])
-
-with col_g1:
-    st.markdown("<div class='chart-box'><div class='chart-title'>Decomposição do Resultado</div><div class='chart-subtitle'>Como a Receita Bruta se transforma em Lucro Líquido</div>", unsafe_allow_html=True)
-    x_water = ["Receita Bruta", "Deduções", "Receita Líquida", "CPV / CSP", "Lucro Bruto", "OPEX", "EBITDA", "Depreciação/Outros", "Lucro Líquido"]
-    y_water = [rec_bruta, deducoes, 0, cpv, 0, opex, 0, outros, 0]
-    medidas = ["relative", "relative", "total", "relative", "total", "relative", "total", "relative", "total"]
-    textos = [f"R$ {formata_num(rec_bruta)}", f"-R$ {formata_num(abs(deducoes))}", f"R$ {formata_num(rec_liq)}", f"-R$ {formata_num(abs(cpv))}", f"R$ {formata_num(lucro_bruto)}", f"-R$ {formata_num(abs(opex))}", f"R$ {formata_num(ebitda)}", f"-R$ {formata_num(abs(outros))}", f"R$ {formata_num(lucro_liq)}"]
-    fig_w = go.Figure(go.Waterfall(x=x_water, y=y_water, measure=medidas, text=textos, textposition="outside", textfont=dict(color="#1e40af", size=10, weight="bold"), connector={"line": {"color": "#cbd3dc", "width": 1, "dash": "dot"}}, increasing={"marker": {"color": "#1e40af"}}, decreasing={"marker": {"color": "#ef4444"}}, totals={"marker": {"color": "#1e40af"}}))
-    fig_w.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(showgrid=False, tickfont=dict(size=10, color="#64748b", weight="bold")), yaxis=dict(showgrid=True, gridcolor="#f1f5f9", tickfont=dict(size=10)), margin=dict(t=20, b=10, l=0, r=0), height=300)
-    st.plotly_chart(fig_w, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with col_g2:
-    st.markdown("<div class='chart-box'><div class='chart-title'>Tendência Mensal</div><div class='chart-subtitle'>Evolução dos Principais Indicadores</div>", unsafe_allow_html=True)
-    meses_str_hist = [str(m) for m in meses_disponiveis[-6:]]
-    hist_meses = [pd.Period(m).strftime('%b').capitalize() for m in meses_str_hist]
-    hist_rec = [get_val("Receita Bruta", m) for m in meses_str_hist]
-    hist_ebitda = [get_val("Receita Bruta", m) + get_val("Deduções", m) + get_val("CPV/CSP", m) + get_val("OPEX", m) for m in meses_str_hist]
-    hist_mg = [(e/r*100) if r!=0 else 0 for e, r in zip(hist_ebitda, hist_rec)]
-    fig_c = make_subplots(specs=[[{"secondary_y": True}]])
-    fig_c.add_trace(go.Bar(x=hist_meses, y=hist_rec, name="Receita Bruta", marker_color="#1e40af"), secondary_y=False)
-    fig_c.add_trace(go.Bar(x=hist_meses, y=hist_ebitda, name="EBITDA", marker_color="#3b82f6"), secondary_y=False)
-    fig_c.add_trace(go.Scatter(x=hist_meses, y=hist_mg, name="Margem EBITDA (%)", mode="lines+markers", line=dict(color="#ef4444", width=3)), secondary_y=True)
-    fig_c.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(showgrid=False, tickfont=dict(size=10, weight="bold", color="#64748b")), yaxis=dict(showgrid=True, gridcolor="#f1f5f9", showticklabels=False), yaxis2=dict(showgrid=False, showticklabels=False), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)), margin=dict(t=20, b=10, l=0, r=0), height=300, barmode='group')
-    st.plotly_chart(fig_c, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ==============================================================================
-# 5. MATRIZ DRE E ANÁLISE GERENCIAL
-# ==============================================================================
-st.markdown("<div class='bottom-grid'>", unsafe_allow_html=True)
-
-# Tabela
 html_tabela = f"<div class='matrix-container'><div class='matrix-header'><span>🗂️</span> Matriz DRE Gerencial</div><table class='dre-table'><thead><tr><th>Descrição</th><th style='text-align:center;'>Realizado<br>{nome_mes_atual}<br>(R$)</th><th style='text-align:center;'>Realizado<br>{nome_mes_anterior}<br>(R$)</th><th style='text-align:center;'>Var. %<br>(MoM)</th><th style='text-align:center;'>AV %<br>(Rec. Líquida)</th></tr></thead><tbody>"
 
-linhas_dre = [("Receita Bruta", rec_bruta, ant_rec_bruta, False), ("Deduções da Receita", deducoes, ant_deducoes, False), ("Receita Líquida", rec_liq, ant_rec_liq, True), ("Custo dos Serviços (CPV/CSP)", cpv, ant_cpv, False), ("Lucro Bruto", lucro_bruto, ant_lucro_bruto, True), ("Despesas Operacionais (OPEX)", opex, ant_opex, False), ("EBITDA", ebitda, ant_ebitda, True), ("Depreciação e Outros", outros, ant_outros, False), ("Lucro Líquido", lucro_liq, ant_lucro_liq, True)]
+linhas_dre = [
+    ("Receita Bruta", rec_bruta, ant_rec_bruta, False),
+    ("Deduções da Receita", deducoes, ant_deducoes, False),
+    ("Receita Líquida", rec_liq, ant_rec_liq, True),
+    ("Custo dos Serviços (CPV/CSP)", cpv, ant_cpv, False),
+    ("Lucro Bruto", lucro_bruto, ant_lucro_bruto, True),
+    ("Despesas Operacionais (OPEX)", opex, ant_opex, False),
+    ("EBITDA", ebitda, ant_ebitda, True),
+    ("Depreciação e Outros", outros, ant_outros, False),
+    ("Lucro Líquido", lucro_liq, ant_lucro_liq, True)
+]
+
 base_av = rec_liq if rec_liq != 0 else 1
 
 for nome, val_at, val_ant, destaque in linhas_dre:
     var_pct = calc_var(abs(val_at), abs(val_ant))
     av_pct = (val_at / base_av) * 100
     cor_var = "color: #10b981;" if var_pct > 0 else "color: #ef4444;"
+    
     if "Custo" in nome or "Deduções" in nome or "Despesas" in nome or "Depreciação" in nome:
         cor_var = "color: #ef4444;" if var_pct > 0 else "color: #10b981;"
+        
     sinal = "+" if var_pct > 0 else ""
     classe = "row-macro" if destaque else ""
     val_at_str = f"({formata_num(abs(val_at))})" if val_at < 0 else formata_num(val_at)
     val_ant_str = f"({formata_num(abs(val_ant))})" if val_ant < 0 else formata_num(val_ant)
+    
     html_tabela += f"<tr class='{classe}'><td>{nome}</td><td style='text-align:center;'>{val_at_str}</td><td style='text-align:center;'>{val_ant_str}</td><td style='text-align:center; font-weight:800; {cor_var}'>{sinal}{var_pct:.1f}%</td><td style='text-align:center;'>{av_pct:.1f}%</td></tr>"
 
 html_tabela += "</tbody></table></div>"
-st.markdown(html_tabela, unsafe_allow_html=True)
-
-# Insights
-txt_rec = "acima" if rec_bruta > ant_rec_bruta else "abaixo"
-txt_lucro = "em destaque" if lucro_liq > ant_lucro_liq else "em atenção"
-
-html_insights = f"<div class='insight-box'><div class='insight-header'><span>🎯</span> Análise Gerencial</div><div class='insight-item'><div class='insight-icon i-green'>📈</div><div class='insight-text'><h4>Receita Bruta {txt_rec}</h4><p>Variação de {calc_var(rec_bruta, ant_rec_bruta):.1f}% vs. mês anterior, monitorando o crescimento das operações.</p></div></div><div class='insight-item'><div class='insight-icon i-green'>%</div><div class='insight-text'><h4>Margens Operacionais</h4><p>A Margem EBITDA fechou em {mg_ebitda:.1f}%, refletindo a eficiência da operação.</p></div></div><div class='insight-item'><div class='insight-icon i-green'>$</div><div class='insight-text'><h4>Lucro Líquido {txt_lucro}</h4><p>Resultado de R$ {formata_kpi(lucro_liq)} no período, com variação de {calc_var(lucro_liq, ant_lucro_liq):.1f}%.</p></div></div><div class='insight-item'><div class='insight-icon i-blue'>🔍</div><div class='insight-text'><h4>Foco de Ação</h4><p>Manter disciplina de custos operacionais e preservar a evolução das margens.</p></div></div></div>"
-st.markdown(html_insights, unsafe_allow_html=True)
-
-st.markdown("</div>", unsafe_allow_html=True) # Fecha a bottom-grid
+injetar_html(html_tabela)
