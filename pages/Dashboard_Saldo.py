@@ -257,7 +257,8 @@ def carregar_dados(data_inicio, data_fim):
                 df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
         except Exception as e:
             print("Aviso ao ler Saldo_Inicial:", e)
-            # =========================================================
+            
+        # =========================================================
         # LEITURA DO CADASTRO E MOTOR DE MATCH DA CONTA CONTÁBIL
         # =========================================================
         dicionario_contas = {}
@@ -677,15 +678,32 @@ with col_tab:
     df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
     df_view = df_view.sort_values('Ordem').drop(columns=['Ordem'])
 
-    totais = {col: df_view[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
+    # --- SEPARAÇÃO DA LÓGICA (BANCOS x LIMITES/GETNET) ---
+    df_bancos = df_view[df_view['Tipo'] != 'Limite']
+    df_getnet = df_view[df_view['Tipo'] == 'Limite']
+
+    # O TOTAL agora soma APENAS os bancos normais
+    totais = {col: df_bancos[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
     html_tabela = f'<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+f'</th><th>TIPO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
-    for idx, row in enumerate(df_view.itertuples()):
+    
+    # 1. Lista os bancos normais
+    for idx, row in enumerate(df_bancos.itertuples()):
         cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
         cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
         html_tabela += f'<tr><td>{idx+1}</td><td>{row._2}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row.Tipo}</td><td class="valores">{formatar_moeda(row._3)}</td><td class="valores">{formatar_moeda(row._4)}</td><td class="valores">{formatar_moeda(row._5)}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row._6)}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row._7)}</td><td class="valores valor-destaque">{formatar_moeda(row._8)}</td></tr>'
     
+    # 2. Linha de Total apenas para os bancos normais
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores valor-destaque">{formatar_moeda(totais["Saldo Final"])}</td></tr>'
+
+    # 3. Anexa a Getnet (Limite) separada lá no finalzinho (fora do total)
+    if not df_getnet.empty:
+        for idx, row in enumerate(df_getnet.itertuples()):
+            idx_display = len(df_bancos) + idx + 1
+            cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
+            cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
+            html_tabela += f'<tr style="background-color: #fff9f0;"><td style="border-top: 2px dashed #f5c070;">{idx_display}</td><td style="border-top: 2px dashed #f5c070; font-weight:700;">{row._2}</td><td style="border-top: 2px dashed #f5c070; font-size:11px; font-weight:700; color:#c58a16;">{row.Tipo}</td><td class="valores" style="border-top: 2px dashed #f5c070;">{formatar_moeda(row._3)}</td><td class="valores" style="border-top: 2px dashed #f5c070;">{formatar_moeda(row._4)}</td><td class="valores" style="border-top: 2px dashed #f5c070;">{formatar_moeda(row._5)}</td><td class="valores" style="border-top: 2px dashed #f5c070; color:{cor_transf};">{formatar_moeda(row._6)}</td><td class="valores" style="border-top: 2px dashed #f5c070; color:{cor_transf_saida};">{formatar_moeda(row._7)}</td><td class="valores valor-destaque" style="border-top: 2px dashed #f5c070; color:#c58a16;">{formatar_moeda(row._8)}</td></tr>'
+
     html_tabela += '</tbody></table></div>'
     st.markdown(html_tabela, unsafe_allow_html=True)
 
