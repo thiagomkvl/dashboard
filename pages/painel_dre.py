@@ -8,81 +8,85 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="DRE e Fluxo de Caixa", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# CUSTOM CSS — DARK MODE (BASEADO NA IMAGEM DE REFERÊNCIA)
+# CUSTOM CSS — LIGHT MODE CORPORATIVO SUTIL
 # ==============================================================================
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
     
     :root {
-        --bg: #151e27; /* Fundo escuro */
-        --surface: #1c2836; /* Fundo dos painéis */
-        --surface-soft: #233446;
-        --border: #2d3e50;
-        --text: #ffffff;
-        --text-secondary: #aab6c4;
-        --gold: #d8992b; /* Linha dourada/laranja dos KPIs */
-        --success: #0cd12c; /* Verde neon */
-        --danger: #e73c3c; /* Vermelho neon */
+        --bg: #f4f6f8;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --border: #dfe4ea;
+        --border-strong: #cbd3dc;
+        --text: #17212b;
+        --text-secondary: #44515f;
+        --muted: #6b7785;
+        --primary: #234a78;
+        --primary-dark: #193754;
+        --success: #157a5b;
+        --danger: #b74242;
+        --shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
     }
     
-    html, body, [class*="css"] { font-family: "Segoe UI", Arial, sans-serif; color: var(--text); }
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; color: var(--text); }
     .stApp { background-color: var(--bg); }
     .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 1rem; }
     header[data-testid="stHeader"] { display: none !important; }
     
     /* =========================================================
-       KPIs TOP (Minimalista com borda laranja)
+       KPIs TOP (Minimalista, fundo branco, linha sutil)
        ========================================================= */
-    .kpi-wrapper { display: flex; justify-content: space-between; margin-bottom: 25px; padding: 10px 20px; }
-    .kpi-box { border-left: 2px solid var(--gold); padding-left: 15px; flex: 1; margin-right: 15px; }
+    .kpi-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); padding: 20px; display: flex; justify-content: space-between; margin-bottom: 20px; }
+    .kpi-box { flex: 1; border-left: 3px solid var(--primary); padding-left: 15px; margin-right: 15px; }
     .kpi-box:last-child { margin-right: 0; }
-    .kpi-val { font-size: 32px; font-weight: 300; color: #fff; letter-spacing: 1px; line-height: 1.1; }
-    .kpi-title { font-size: 13px; color: var(--text-secondary); font-weight: 600; }
+    .kpi-val { font-size: 26px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; line-height: 1.1; }
+    .kpi-title { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.5px; }
     
     /* =========================================================
        GRÁFICO CONTAINER
        ========================================================= */
-    .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 15px 15px 5px 15px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-    .chart-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: -10px; }
+    .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 15px 15px 5px 15px; margin-bottom: 20px; box-shadow: var(--shadow); }
+    .chart-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: -10px; text-transform: uppercase; letter-spacing: 0.5px; }
 
     /* =========================================================
-       TABELA DRE DARK
+       TABELA DRE CORPORATIVA
        ========================================================= */
-    .dre-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); font-size: 12px; overflow-x: auto; margin-bottom: 30px;}
+    .dre-container { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); font-size: 11px; overflow-x: auto; margin-bottom: 30px;}
     
     .dre-row { display: grid; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.2s; }
-    .dre-row:hover { background-color: rgba(255,255,255,0.03); }
+    .dre-row:hover { background-color: var(--surface-soft); }
     
-    .dre-col-name { padding: 8px 12px; font-weight: 600; color: #fff; white-space: nowrap; }
-    .dre-col-val { padding: 8px 8px; text-align: right; font-variant-numeric: tabular-nums; color: #d4e0ed; font-weight: 600; }
+    .dre-col-name { padding: 10px 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .dre-col-val { padding: 10px 6px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     
     /* Cabeçalhos */
-    .dre-header { background: #233446; font-weight: 700; color: #fff; }
-    .dre-subheader { background: #1c2836; border-bottom: 2px solid var(--gold); }
-    .dre-subheader .dre-col-name { color: #6fb0d2; font-weight: 700; text-transform: uppercase; font-size: 11px; }
-    .dre-subheader .dre-col-val { color: var(--gold); font-size: 10px; text-transform: uppercase; font-weight: 700; }
+    .dre-header { background: #edf1f5; font-weight: 800; color: var(--primary-dark); }
+    .dre-subheader { background: var(--surface); border-bottom: 2px solid var(--border-strong); }
+    .dre-subheader .dre-col-name { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
+    .dre-subheader .dre-col-val { color: var(--primary); font-size: 10px; text-transform: uppercase; font-weight: 800; }
     .border-left { border-left: 1px solid var(--border); }
     
     /* Hierarquia */
-    .lvl-macro { background-color: rgba(255,255,255,0.04); font-size: 13px; }
-    .lvl-macro .dre-col-name { font-weight: 800; color: var(--gold); text-transform: uppercase; }
-    .lvl-macro .dre-col-val { font-weight: 800; color: #fff; }
+    .lvl-macro { background-color: #f8fafc; font-size: 12px; border-top: 1px solid var(--border-strong); }
+    .lvl-macro .dre-col-name { font-weight: 850; color: var(--primary-dark); text-transform: uppercase; }
+    .lvl-macro .dre-col-val { font-weight: 850; color: var(--text); }
     
-    .lvl-grupo .dre-col-name { padding-left: 12px; color: #fff; font-weight: 700; }
-    .lvl-subgrupo .dre-col-name { padding-left: 30px; color: #aab6c4; font-size: 11px; font-weight: 600; }
-    .lvl-item .dre-col-name { padding-left: 45px; color: #7f8c9a; font-size: 11px; font-weight: 400; }
-    .lvl-item .dre-col-val { font-weight: 400; color: #aab6c4; }
+    .lvl-grupo .dre-col-name { padding-left: 12px; color: var(--text); font-weight: 700; }
+    .lvl-subgrupo .dre-col-name { padding-left: 30px; color: var(--text-secondary); font-size: 10px; font-weight: 600; }
+    .lvl-item .dre-col-name { padding-left: 45px; color: var(--muted); font-size: 10px; font-weight: 500; }
+    .lvl-item .dre-col-val { font-weight: 500; color: var(--muted); }
     
     /* Expansão com Details/Summary */
     details { width: 100%; display: block; }
     details summary { list-style: none; cursor: pointer; outline: none; }
     details summary::-webkit-details-marker { display: none; }
     
-    /* Ícones de [+] e [-] (Amarelos como na imagem) */
-    .icon-expand { font-family: monospace; font-weight: 800; color: var(--gold); margin-right: 6px; font-size: 13px; }
-    details:not([open]) > summary .icon-expand::before { content: "⊞"; }
-    details[open] > summary .icon-expand::before { content: "⊟"; }
+    /* Ícones de [+] e [-] */
+    .icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 6px; font-size: 13px; }
+    details:not([open]) > summary .icon-expand::before { content: "[+]"; }
+    details[open] > summary .icon-expand::before { content: "[-]"; }
     
     /* Cores Setas */
     .txt-up { color: var(--success) !important; font-weight: 700; }
@@ -182,7 +186,7 @@ if df_base.empty: st.stop()
 # BARRA LATERAL (FILTROS)
 # ==============================================================================
 with st.sidebar:
-    st.markdown("<h3 style='color:white;'>Configurações</h3>", unsafe_allow_html=True)
+    st.markdown("### Configurações")
     meses_disponiveis = sorted(df_base['Mês_Ano'].unique())
     mes_padrao_ini = meses_disponiveis[0] if len(meses_disponiveis) <= 8 else meses_disponiveis[-8]
     mes_padrao_fim = meses_disponiveis[-1] if meses_disponiveis else pd.Period.now('M')
@@ -198,7 +202,7 @@ df_filtro = df_base[df_base['Mês_Ano'].isin(meses_filtrados)].copy()
 meses_str = [str(m) for m in meses_filtrados]
 
 # ==============================================================================
-# 4. MOTOR MATEMÁTICO (DRE STRUTURE)
+# 4. MOTOR MATEMÁTICO (DRE STRUCTURE)
 # ==============================================================================
 def buscar_soma(grupo=None, subgrupo=None, conta=None):
     df_temp = df_filtro.copy()
@@ -230,38 +234,41 @@ val_lucro = lucro_operacional.get(mes_atual, 0)
 pct_lucro = (val_lucro / val_rec * 100) if val_rec != 0 else 0
 
 st.markdown(f"""
-<div class="kpi-wrapper">
+<div class="kpi-container">
     <div class="kpi-box">
         <div class="kpi-val">{formata_kpi(val_rec)}</div>
         <div class="kpi-title">Receita operacional</div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-val">{formata_kpi(val_cv)}</div>
+        <div class="kpi-val" style="color:var(--danger);">{formata_kpi(val_cv)}</div>
         <div class="kpi-title">Custos Variáveis</div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-val">{formata_kpi(val_df)}</div>
+        <div class="kpi-val" style="color:var(--danger);">{formata_kpi(val_df)}</div>
         <div class="kpi-title">Despesas fixas</div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-val">{formata_kpi(val_lucro)}</div>
+        <div class="kpi-val" style="color:var(--primary);">{formata_kpi(val_lucro)}</div>
         <div class="kpi-title">Lucro operacional</div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-val">{formata_pct(pct_lucro)}</div>
+        <div class="kpi-val" style="color:var(--primary);">{formata_pct(pct_lucro)}</div>
         <div class="kpi-title">% do lucro</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. GRÁFICO CASCATA (WATERFALL)
+# 6. GRÁFICO CASCATA (WATERFALL) SUTIL
 # ==============================================================================
-x_grafico = [pd.Period(m).strftime('%b').upper() for m in meses_str] + ["Total"]
+x_grafico = [pd.Period(m).strftime('%b').capitalize() for m in meses_str] + ["Total"]
 y_grafico = [lucro_operacional.get(m, 0) for m in meses_str] + [0]
 medidas = ["relative"] * len(meses_str) + ["total"]
 
 textos_grafico = [formata_num(v) for v in y_grafico[:-1]] + [formata_num(sum(y_grafico[:-1]))]
+
+# Calcula a largura das barras baseado em quantos meses tem (evita barras gigantes se tiver 1 mês)
+width_bar = 0.4 if len(meses_str) <= 3 else None
 
 fig_waterfall = go.Figure(go.Waterfall(
     orientation="v",
@@ -269,31 +276,33 @@ fig_waterfall = go.Figure(go.Waterfall(
     x=x_grafico,
     textposition="outside",
     text=textos_grafico,
-    textfont=dict(color="white", size=10),
+    textfont=dict(color="#44515f", size=10, weight="bold"),
     y=y_grafico,
-    connector={"line": {"color": "rgba(255,255,255,0.2)", "width": 1}},
-    increasing={"marker": {"color": "#0cd12c"}},
-    decreasing={"marker": {"color": "#e73c3c"}},
-    totals={"marker": {"color": "#0cd12c"}} # Total assumido positivo na cor base
+    width=width_bar,
+    connector={"line": {"color": "#cbd3dc", "width": 1, "dash": "dot"}},
+    increasing={"marker": {"color": "#157a5b"}},
+    decreasing={"marker": {"color": "#b74242"}},
+    totals={"marker": {"color": "#234a78"}}
 ))
 
 fig_waterfall.update_layout(
     paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-    xaxis=dict(showgrid=False, tickfont=dict(color='#aab6c4', weight='bold')),
-    yaxis=dict(showgrid=False, showticklabels=False, zeroline=True, zerolinecolor='rgba(255,255,255,0.1)'),
+    xaxis=dict(showgrid=False, tickfont=dict(color='#6b7785', weight='bold')),
+    yaxis=dict(showgrid=True, gridcolor='#edf0f3', showticklabels=False, zeroline=True, zerolinecolor='#cbd3dc'),
     margin=dict(t=10, b=20, l=10, r=10),
-    height=260
+    height=240,
+    bargap=0.3
 )
 
-st.markdown("<div class='chart-container'><div class='chart-title'>Lucro operacional por Mês</div>", unsafe_allow_html=True)
+st.markdown("<div class='chart-container'><div class='chart-title'>Evolução do Lucro Operacional</div>", unsafe_allow_html=True)
 st.plotly_chart(fig_waterfall, use_container_width=True, config={'displayModeBar': False})
 st.markdown("</div>", unsafe_allow_html=True)
 
-
 # ==============================================================================
-# 7. TABELA DRE HTML5 (ACORDEÃO E COLUNAS AV/AH)
+# 7. TABELA DRE HTML5 (ACORDEÃO E COLUNAS AV/AH - AJUSTE DE LARGURAS)
 # ==============================================================================
-grid_template = f"minmax(250px, 1.5fr) repeat({len(meses_str)}, 75px 50px 60px)"
+# Ajustamos o minmax para garantir que as colunas da DRE tenham espaço suficiente para os números e não quebrem
+grid_template = f"minmax(250px, 1.5fr) repeat({len(meses_str)}, minmax(85px, 1fr) 50px 55px)"
 
 def render_linha(nome, classe, valores, icone=""):
     html = f"<div class='dre-row {classe}' style='grid-template-columns: {grid_template};'>"
@@ -318,18 +327,18 @@ def render_linha(nome, classe, valores, icone=""):
         cor_ah = ""
         if ah > 0:
             seta = "↗"
-            cor_ah = "txt-up" if "DESPESA" not in nome and "CUSTO" not in nome else "txt-down"
+            cor_ah = "txt-up" if "DESPESA" not in nome and "CUSTO" not in nome and "DEDUÇÕES" not in nome else "txt-down"
         elif ah < 0:
             seta = "↘"
-            cor_ah = "txt-down" if "DESPESA" not in nome and "CUSTO" not in nome else "txt-up"
+            cor_ah = "txt-down" if "DESPESA" not in nome and "CUSTO" not in nome and "DEDUÇÕES" not in nome else "txt-up"
             
-        html += f"<div class='dre-col-val border-left' style='color:#fff;'>{formata_num(val)}</div>"
-        html += f"<div class='dre-col-val' style='color:var(--gold);'>{formata_pct(av)}</div>"
+        html += f"<div class='dre-col-val border-left' style='color:var(--text);'>{formata_num(val)}</div>"
+        html += f"<div class='dre-col-val' style='color:var(--muted); font-size:10px;'>{formata_pct(av)}</div>"
         
         if i == 0 or classe == 'lvl-macro': # Esconde seta no primeiro mês e na linha totalizadora Macro
             html += f"<div class='dre-col-val'>-</div>"
         else:
-            html += f"<div class='dre-col-val {cor_ah}'><span style='margin-right:2px;'>{seta}</span>{formata_pct(abs(ah))}</div>"
+            html += f"<div class='dre-col-val {cor_ah}' style='font-size:10px;'><span style='margin-right:2px;'>{seta}</span>{formata_pct(abs(ah))}</div>"
             
     html += "</div>"
     return html
@@ -358,12 +367,15 @@ def render_bloco(nome_grupo, dict_valores, func_soma):
 
 # Construção do Quadro DRE
 html_dre = f"<div class='dre-container'>"
+
+# Header Mês
 html_dre += f"<div class='dre-row dre-header' style='grid-template-columns: {grid_template};'>"
-html_dre += "<div class='dre-col-name' style='text-align:center;'>Mês / ano</div>"
+html_dre += "<div class='dre-col-name' style='text-align:center;'>Mês / Ano</div>"
 for m in meses_str:
-    html_dre += f"<div class='dre-col-val border-left' style='grid-column: span 3; text-align:center; color:#d8992b;'>{pd.Period(m).strftime('%b/%y').lower()}</div>"
+    html_dre += f"<div class='dre-col-val border-left' style='grid-column: span 3; text-align:center; font-weight:800; color:var(--primary-dark);'>{pd.Period(m).strftime('%b/%Y').capitalize()}</div>"
 html_dre += "</div>"
 
+# Header Colunas
 html_dre += f"<div class='dre-row dre-subheader' style='grid-template-columns: {grid_template};'>"
 html_dre += "<div class='dre-col-name'>Conta Superior</div>"
 for m in meses_str:
