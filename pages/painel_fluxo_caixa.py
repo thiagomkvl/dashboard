@@ -7,7 +7,7 @@ import textwrap
 st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide")
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL (SEM ESPAÇOS NO INÍCIO)
+# 1. CUSTOM CSS — MINIMALISTA E GRID EXPANSÍVEL
 # ==============================================================================
 css = """
 <style>
@@ -88,7 +88,7 @@ header[data-testid="stHeader"] { display: none !important; }
 .lvl-item .col-name { padding-left: 65px; font-size: 10px; font-weight: 500; color: var(--text-muted); }
 .lvl-item .col-val { font-size: 11px; font-weight: 500; color: var(--text-muted); }
 
-/* Details e Summary (Ocultando a seta padrão e customizando) */
+/* Details e Summary */
 details { width: 100%; display: block; margin: 0; padding: 0; }
 details summary { list-style: none; cursor: pointer; outline: none; margin: 0; padding: 0; }
 details summary::-webkit-details-marker { display: none; }
@@ -138,24 +138,21 @@ def preparar_dados_fluxo():
         
         # Mapeamento Estrito das Colunas Solicitadas
         col_data = df.columns[1]     # B
-        col_desc = df.columns[3]     # D (Histórico/Descrição)
+        col_desc = df.columns[2]     # C -> Agora apontando para a Coluna C da sua planilha
         col_deb = df.columns[4]      # E
         col_cred = df.columns[5]     # F
         col_conta = df.columns[8]    # I (Conta Contábil)
         col_classif = df.columns[9]  # J (Classificação Financeira)
         col_operac = df.columns[10]  # K (Operacionalidade)
 
-        # Tratar Datas e Valores
         df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
         df['Saída'] = df[col_deb].apply(limpa_valor)
         df['Entrada'] = df[col_cred].apply(limpa_valor)
         df['Valor Líquido'] = df['Entrada'] - df['Saída']
         
-        # Filtrar "Transferência Interna Entre Contas" (Blindagem)
         df['Conta_Str'] = df[col_conta].astype(str).str.strip().str.upper()
         df = df[~df['Conta_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
         
-        # Renomear e limpar colunas chave
         df['Conta'] = df[col_conta].fillna('Não Informado').astype(str).str.strip()
         df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
         df['Descricao'] = df[col_desc].fillna('Lançamento S/ Descrição').astype(str).str.strip()
@@ -188,14 +185,12 @@ else:
     dt_ini = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
     dt_fim = dt_ini
 
-# Filtro de Datas (Atual e Anterior)
 mask_atual = (df_base['Data'].dt.date >= dt_ini) & (df_base['Data'].dt.date <= dt_fim)
 dias_periodo = (dt_fim - dt_ini).days + 1
 dt_fim_ant = dt_ini - timedelta(days=1)
 dt_ini_ant = dt_fim_ant - timedelta(days=dias_periodo - 1)
 mask_ant = (df_base['Data'].dt.date >= dt_ini_ant) & (df_base['Data'].dt.date <= dt_fim_ant)
 
-# SEPARAÇÃO OPERACIONAL x NÃO OPERACIONAL
 df_op_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
 df_op_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
 
@@ -215,7 +210,6 @@ tot_saida_ant = df_op_ant['Saída'].sum()
 geracao_liq_ant = tot_entrada_ant - tot_saida_ant
 eficiencia_ant = (tot_saida_ant / tot_entrada_ant * 100) if tot_entrada_ant > 0 else 0
 
-# HEADER
 periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
 header_html = f"""
 <div class='exec-header'>
@@ -249,7 +243,6 @@ injetar_html(kpis_html)
 # ==============================================================================
 # 5. MATRIZ EXPANSÍVEL (GRID HTML5)
 # ==============================================================================
-# Configuração das Colunas do Grid
 grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
 
 def render_linha(nome, classe, val_at, rep_pct, val_ant, var_pct, cor_var, is_item=False):
@@ -273,7 +266,6 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
     html = ""
     if df_at.empty and df_ant.empty: return html
     
-    # 1. Agrupar por Conta Contábil
     contas_at = df_at.groupby('Conta')[col_valor].sum().to_dict()
     contas_ant = df_ant.groupby('Conta')[col_valor].sum().to_dict()
     chaves_conta = sorted(set(list(contas_at.keys()) + list(contas_ant.keys())), key=lambda k: contas_at.get(k, 0), reverse=True)
@@ -291,7 +283,6 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
         html += render_linha(f"<span class='icon-expand'></span>{conta}", "lvl-grupo", v_conta_at, rep_conta, v_conta_ant, var_conta, cor_conta)
         html += "</summary>"
         
-        # 2. Agrupar por Classificação Financeira dentro da Conta
         df_at_c = df_at[df_at['Conta'] == conta]
         df_ant_c = df_ant[df_ant['Conta'] == conta]
         
@@ -312,15 +303,14 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
             html += "</summary>"
             
-            # 3. Renderizar as Transações Individuais (apenas do período atual)
             df_trans = df_at_c[df_at_c['Classificacao'] == classif].sort_values('Data')
             for _, row in df_trans.iterrows():
                 dt_str = row['Data'].strftime('%d/%m')
                 desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
                 html += render_linha(f"↳ {dt_str} - {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
                 
-            html += "</details>" # Fecha Classificação
-        html += "</details>" # Fecha Conta Contábil
+            html += "</details>"
+        html += "</details>"
         
     return html
 
@@ -337,15 +327,13 @@ html_tab = f"""
     </div>
 """
 
-# ENTRADAS OPERACIONAIS
 var_tot_ent = calc_var(tot_entrada_at, tot_entrada_ant)
 cor_tot_ent = "var(--success)" if var_tot_ent >= 0 else "var(--danger)"
 html_tab += render_linha("[+] ENTRADAS OPERACIONAIS", "lvl-macro", tot_entrada_at, 100, tot_entrada_ant, var_tot_ent, cor_tot_ent)
 html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Entrada'] > 0], df_op_ant[df_op_ant['Entrada'] > 0], 'Entrada', tot_entrada_at, is_saida=False)
 
-# SAÍDAS OPERACIONAIS
 var_tot_sai = calc_var(tot_saida_at, tot_saida_ant)
-cor_tot_sai = "var(--danger)" if var_tot_sai >= 0 else "var(--success)" # Aumento de saída é ruim
+cor_tot_sai = "var(--danger)" if var_tot_sai >= 0 else "var(--success)"
 html_tab += render_linha("[-] SAÍDAS OPERACIONAIS", "lvl-macro", tot_saida_at, 100, tot_saida_ant, var_tot_sai, cor_tot_sai)
 html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Saída'] > 0], df_op_ant[df_op_ant['Saída'] > 0], 'Saída', tot_saida_at, is_saida=True)
 
@@ -353,7 +341,6 @@ html_tab += "</div>"
 injetar_html(html_tab)
 
 # ----------------- TABELA NÃO OPERACIONAL -----------------
-# Verifica se existe movimentação não operacional antes de renderizar
 tot_nop_ent_at = df_nop_atual['Entrada'].sum()
 tot_nop_sai_at = df_nop_atual['Saída'].sum()
 
