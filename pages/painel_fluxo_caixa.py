@@ -7,23 +7,23 @@ import textwrap
 st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide")
 
 # ==============================================================================
-# 1. CUSTOM CSS — IDENTIDADE MINIMALISTA E SEM EMOJIS
+# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL (SEM ESPAÇOS NO INÍCIO)
 # ==============================================================================
 css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-    --bg: #f4f6f9;
+    --bg: #f8fafc;
     --surface: #ffffff;
-    --primary-dark: #1e40af;
+    --primary-dark: #0f172a;
     --primary: #3b82f6;
     --success: #10b981;
     --danger: #ef4444;
     --text-main: #1e293b;
     --text-muted: #64748b;
     --border: #e2e8f0;
-    --shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    --shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text-main); }
@@ -31,46 +31,70 @@ html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text
 .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
 header[data-testid="stHeader"] { display: none !important; }
 
-/* HEADER PRINCIPAL MINIMALISTA (Fundo Transparente/Branco) */
-.exec-header { background: transparent; padding: 10px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
-.exec-header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 0.5px; color: var(--primary-dark); }
-.exec-header p { margin: 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+/* HEADER PRINCIPAL MINIMALISTA */
+.exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+.exec-header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: var(--primary-dark); text-transform: uppercase;}
+.exec-header p { margin: 2px 0 0 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .exec-filters { display: flex; gap: 20px; align-items: center; }
 .exec-filter-item { display: flex; flex-direction: column; }
 .exec-filter-item label { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; }
-.exec-filter-item .val { background: var(--surface); color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; min-width: 120px; display: flex; justify-content: space-between; box-shadow: var(--shadow); }
-.exec-update { border-left: 1px solid var(--border); padding-left: 20px; display: flex; align-items: center; gap: 10px; }
+.exec-filter-item .val { background: var(--surface); color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; min-width: 130px; display: flex; justify-content: space-between; box-shadow: var(--shadow); }
+.exec-update { border-left: 1px solid var(--border); padding-left: 20px; display: flex; flex-direction: column; justify-content: center; }
 .exec-update span { font-size: 10px; color: var(--text-muted); display:block; text-transform: uppercase; font-weight: 700; }
-.exec-update b { font-size: 12px; font-weight: 700; color: var(--text-main); display:block;}
+.exec-update b { font-size: 12px; font-weight: 700; color: var(--primary-dark); display:block;}
 
 /* KPI CARDS */
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
-.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; position: relative; box-shadow: var(--shadow); }
-.kpi-card::after { content: ""; position: absolute; bottom: 0; left: 20px; right: 20px; height: 4px; border-radius: 4px 4px 0 0; }
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 20px; position: relative; box-shadow: var(--shadow); }
+.kpi-card::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; border-radius: 0 0 6px 6px; }
 .kpi-card.c-blue::after { background: var(--primary); }
 .kpi-card.c-green::after { background: var(--success); }
 .kpi-card.c-red::after { background: var(--danger); }
-.kpi-top { display: flex; align-items: flex-start; margin-bottom: 15px;}
+.kpi-top { display: flex; align-items: flex-start; margin-bottom: 12px;}
 .kpi-info { flex: 1; }
-.kpi-title { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-.kpi-val { font-size: 26px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; line-height: 1.1; }
-.kpi-meta-box { border-top: 1px solid var(--border); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+.kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px;}
+.kpi-val { font-size: 26px; font-weight: 800; color: var(--primary-dark); letter-spacing: -0.5px; line-height: 1.1; }
+.kpi-meta-box { border-top: 1px dashed var(--border); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
 .kpi-meta-box span { font-size: 11px; color: var(--text-muted); font-weight: 600;}
 .kpi-var { font-size: 12px; font-weight: 800; display:flex; align-items:center; gap:3px;}
 .var-up { color: var(--success); }
 .var-down { color: var(--danger); }
 
-/* MATRIZ FLUXO DE CAIXA */
-.matrix-container { background: var(--surface); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border);}
-.matrix-header { background: var(--primary-dark); color: #fff; padding: 14px 20px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;}
-.dre-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.dre-table th { background: #f8fafc; color: var(--primary-dark); font-weight: 700; text-align: right; padding: 12px 15px; border-bottom: 2px solid var(--border); border-left: 1px solid var(--border); }
-.dre-table th:first-child { text-align: left; border-left: none; }
-.dre-table td { padding: 10px 15px; text-align: right; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-main); }
-.dre-table td:first-child { text-align: left; }
-.dre-table tr:hover td { background-color: #f1f5f9; }
-.row-macro td { font-weight: 800 !important; background-color: #eff6ff !important; color: var(--primary-dark) !important; font-size: 13px;}
-.row-item td { color: var(--text-secondary); font-weight: 500; }
+/* MATRIZ CSS GRID EXPANSÍVEL */
+.matrix-container { background: var(--surface); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 30px;}
+.matrix-header { background: #f8fafc; color: var(--primary-dark); padding: 15px 20px; font-size: 14px; font-weight: 800; text-transform: uppercase; border-bottom: 2px solid var(--border); letter-spacing: 0.5px;}
+.grid-row { display: grid; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.1s; }
+.grid-row:hover { background-color: #f1f5f9; }
+
+.col-name { padding: 10px 15px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-val { padding: 10px 15px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-main); font-weight: 600; white-space: nowrap; }
+
+/* Cabeçalhos da Matriz */
+.grid-header { background: var(--surface); font-weight: 800; color: var(--text-muted); font-size: 10px; text-transform: uppercase; border-bottom: 2px solid var(--border); }
+.grid-header .col-val { text-align: center; }
+.border-left { border-left: 1px solid var(--border); }
+
+/* Níveis da Matriz */
+.lvl-macro { background-color: #f8fafc; font-size: 13px; }
+.lvl-macro .col-name { font-weight: 800; color: var(--primary-dark); text-transform: uppercase; }
+.lvl-macro .col-val { font-weight: 800; color: var(--primary-dark); }
+
+.lvl-grupo .col-name { padding-left: 15px; font-size: 12px; font-weight: 700; color: var(--primary-dark); }
+.lvl-subgrupo .col-name { padding-left: 40px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+
+/* Linha de Transação Final */
+.lvl-item { background-color: #ffffff; }
+.lvl-item:hover { background-color: #fefefe; }
+.lvl-item .col-name { padding-left: 65px; font-size: 10px; font-weight: 500; color: var(--text-muted); }
+.lvl-item .col-val { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+
+/* Details e Summary (Ocultando a seta padrão e customizando) */
+details { width: 100%; display: block; margin: 0; padding: 0; }
+details summary { list-style: none; cursor: pointer; outline: none; margin: 0; padding: 0; }
+details summary::-webkit-details-marker { display: none; }
+.icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 8px; font-size: 14px; display: inline-block; width: 12px; text-align: center;}
+details:not([open]) > summary .icon-expand::before { content: "+"; }
+details[open] > summary .icon-expand::before { content: "-"; }
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
@@ -101,10 +125,6 @@ def formata_num(valor):
     if pd.isna(valor) or valor == 0: return "-"
     return f"{valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-def formata_kpi(valor):
-    if pd.isna(valor): return "0,00"
-    return f"{valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-
 def calc_var(atual, anterior):
     if anterior == 0: return 0
     return ((atual - anterior) / abs(anterior)) * 100
@@ -116,26 +136,33 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
-        # Mapeamento de Colunas
-        col_data = df.columns[1]
-        col_deb = df.columns[4]
-        col_cred = df.columns[5]
-        
-        # I = Conta Contábil, J = Classificação Financeira (ajuste os índices se necessário)
-        col_conta_contabil = df.columns[8] if len(df.columns) > 8 else df.columns[-2]
-        col_classificacao = df.columns[9] if len(df.columns) > 9 else df.columns[-1]
+        # Mapeamento Estrito das Colunas Solicitadas
+        col_data = df.columns[1]     # B
+        col_desc = df.columns[3]     # D (Histórico/Descrição)
+        col_deb = df.columns[4]      # E
+        col_cred = df.columns[5]     # F
+        col_conta = df.columns[8]    # I (Conta Contábil)
+        col_classif = df.columns[9]  # J (Classificação Financeira)
+        col_operac = df.columns[10]  # K (Operacionalidade)
 
-        # 1. Filtro Excludente de Transferência Interna
-        mask_transf = df[col_conta_contabil].astype(str).str.contains("Transferência Interna Entre Contas", case=False, na=False)
-        df = df[~mask_transf].copy()
-
+        # Tratar Datas e Valores
         df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
         df['Saída'] = df[col_deb].apply(limpa_valor)
         df['Entrada'] = df[col_cred].apply(limpa_valor)
+        df['Valor Líquido'] = df['Entrada'] - df['Saída']
         
-        # Preenche vazios na classificação
-        df['Classificação'] = df[col_classificacao].fillna('Não Classificado').astype(str).str.strip()
-        df.loc[df['Classificação'] == '', 'Classificação'] = 'Não Classificado'
+        # Filtrar "Transferência Interna Entre Contas" (Blindagem)
+        df['Conta_Str'] = df[col_conta].astype(str).str.strip().str.upper()
+        df = df[~df['Conta_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
+        
+        # Renomear e limpar colunas chave
+        df['Conta'] = df[col_conta].fillna('Não Informado').astype(str).str.strip()
+        df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
+        df['Descricao'] = df[col_desc].fillna('Lançamento S/ Descrição').astype(str).str.strip()
+        df['Operacionalidade'] = df[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
+        
+        df.loc[df['Conta'] == '', 'Conta'] = 'Não Informado'
+        df.loc[df['Classificacao'] == '', 'Classificacao'] = 'Não Classificado'
         
         return df[df['Data'].notna()]
     except Exception as e:
@@ -146,13 +173,13 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS LATERAIS (PERÍODO DE ANÁLISE)
+# 3. FILTROS E SEPARAÇÃO DE DATAFRAMES
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    st.markdown("### Configurações de Fluxo")
+    st.markdown("### Filtros de Análise")
     data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
 
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
@@ -161,50 +188,44 @@ else:
     dt_ini = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
     dt_fim = dt_ini
 
-# Filtro Atual
+# Filtro de Datas (Atual e Anterior)
 mask_atual = (df_base['Data'].dt.date >= dt_ini) & (df_base['Data'].dt.date <= dt_fim)
-df_atual = df_base[mask_atual].copy()
-
-# Filtro Período Anterior (mesma quantidade de dias para trás)
 dias_periodo = (dt_fim - dt_ini).days + 1
 dt_fim_ant = dt_ini - timedelta(days=1)
 dt_ini_ant = dt_fim_ant - timedelta(days=dias_periodo - 1)
 mask_ant = (df_base['Data'].dt.date >= dt_ini_ant) & (df_base['Data'].dt.date <= dt_fim_ant)
-df_ant = df_base[mask_ant].copy()
+
+# SEPARAÇÃO OPERACIONAL x NÃO OPERACIONAL
+df_op_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
+df_op_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
+
+df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
+df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
 
 # ==============================================================================
-# 4. CÁLCULOS DOS KPIs
+# 4. KPIs (BASEADOS APENAS NO OPERACIONAL)
 # ==============================================================================
-tot_entrada_at = df_atual['Entrada'].sum()
-tot_saida_at = df_atual['Saída'].sum()
+tot_entrada_at = df_op_atual['Entrada'].sum()
+tot_saida_at = df_op_atual['Saída'].sum()
 geracao_liq_at = tot_entrada_at - tot_saida_at
 eficiencia_at = (tot_saida_at / tot_entrada_at * 100) if tot_entrada_at > 0 else 0
 
-tot_entrada_ant = df_ant['Entrada'].sum()
-tot_saida_ant = df_ant['Saída'].sum()
+tot_entrada_ant = df_op_ant['Entrada'].sum()
+tot_saida_ant = df_op_ant['Saída'].sum()
 geracao_liq_ant = tot_entrada_ant - tot_saida_ant
 eficiencia_ant = (tot_saida_ant / tot_entrada_ant * 100) if tot_entrada_ant > 0 else 0
 
-# ==============================================================================
-# 5. HTML HEADER E KPIs
-# ==============================================================================
-data_hoje_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+# HEADER
 periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
-
 header_html = f"""
 <div class='exec-header'>
     <div>
-        <h1>FLUXO DE CAIXA ANALÍTICO</h1>
-        <p>Origem, Destino e Geração Líquida (Regime de Caixa)</p>
+        <h1>Fluxo de Caixa Analítico</h1>
+        <p>Visão Exclusiva de Entradas e Saídas Operacionais (Regime de Caixa)</p>
     </div>
     <div class='exec-filters'>
-        <div class='exec-filter-item'>
-            <label>Período Selecionado</label>
-            <div class='val'>{periodo_str}</div>
-        </div>
-        <div class='exec-update'>
-            <div><span>Última Atualização</span><b>{data_hoje_str}</b></div>
-        </div>
+        <div class='exec-filter-item'><label>Período Selecionado</label><div class='val'>{periodo_str}</div></div>
+        <div class='exec-update'><span>Última Atualização</span><b>{datetime.now().strftime('%d/%m/%Y %H:%M')}</b></div>
     </div>
 </div>
 """
@@ -212,83 +233,152 @@ injetar_html(header_html)
 
 def html_var(atual, ant, is_invertido=False):
     val = calc_var(abs(atual), abs(ant))
-    # Para saídas, aumento é ruim (vermelho). Para entradas, aumento é bom (verde).
-    if is_invertido:
-        cor = "var-down" if val >= 0 else "var-up"
-    else:
-        cor = "var-up" if val >= 0 else "var-down"
-    
+    if is_invertido: cor = "var-down" if val >= 0 else "var-up"
+    else: cor = "var-up" if val >= 0 else "var-down"
     seta = "▲" if val >= 0 else "▼"
     return f"<div class='kpi-var {cor}'><span>{seta}</span> {abs(val):.1f}%</div>"
 
 kpis_html = f"""<div class='kpi-row'>
-<div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Total de Entradas</div><div class='kpi-val'>R$ {formata_kpi(tot_entrada_at)}</div></div></div><div class='kpi-meta-box'><span>Período Ant: R$ {formata_kpi(tot_entrada_ant)}</span>{html_var(tot_entrada_at, tot_entrada_ant)}</div></div>
-<div class='kpi-card c-red'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Total de Saídas</div><div class='kpi-val'>R$ {formata_kpi(tot_saida_at)}</div></div></div><div class='kpi-meta-box'><span>Período Ant: R$ {formata_kpi(tot_saida_ant)}</span>{html_var(tot_saida_at, tot_saida_ant, True)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Geração Líquida (Cash Flow)</div><div class='kpi-val'>R$ {formata_kpi(geracao_liq_at)}</div></div></div><div class='kpi-meta-box'><span>Período Ant: R$ {formata_kpi(geracao_liq_ant)}</span>{html_var(geracao_liq_at, geracao_liq_ant)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo (Saída/Entrada)</div><div class='kpi-val'>{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Período Ant: {eficiencia_ant:.1f}%</span></div></div>
+<div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Entradas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_entrada_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_entrada_ant)}</span>{html_var(tot_entrada_at, tot_entrada_ant)}</div></div>
+<div class='kpi-card c-red'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Saídas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_saida_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_saida_ant)}</span>{html_var(tot_saida_at, tot_saida_ant, True)}</div></div>
+<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Geração Líquida (Cash Flow)</div><div class='kpi-val'>R$ {formata_num(geracao_liq_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(geracao_liq_ant)}</span>{html_var(geracao_liq_at, geracao_liq_ant)}</div></div>
+<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo</div><div class='kpi-val'>{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: {eficiencia_ant:.1f}%</span></div></div>
 </div>"""
-
 injetar_html(kpis_html)
 
 # ==============================================================================
-# 6. MATRIZ DETALHADA DO FLUXO DE CAIXA
+# 5. MATRIZ EXPANSÍVEL (GRID HTML5)
 # ==============================================================================
-html_tabela = f"""
+# Configuração das Colunas do Grid
+grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
+
+def render_linha(nome, classe, val_at, rep_pct, val_ant, var_pct, cor_var, is_item=False):
+    html = f"<div class='grid-row {classe}' style='grid-template-columns: {grid_cols};'>"
+    html += f"<div class='col-name'>{nome}</div>"
+    
+    if is_item:
+        html += f"<div class='col-val'>R$ {formata_num(val_at)}</div>"
+        html += f"<div class='col-val'>-</div><div class='col-val'>-</div><div class='col-val'>-</div>"
+    else:
+        sinal = "+" if var_pct > 0 else ""
+        html += f"<div class='col-val border-left'>R$ {formata_num(val_at)}</div>"
+        html += f"<div class='col-val border-left' style='font-size:11px; color:var(--text-muted); text-align:center;'>{rep_pct:.1f}%</div>"
+        html += f"<div class='col-val border-left' style='color:var(--text-muted);'>R$ {formata_num(val_ant)}</div>"
+        html += f"<div class='col-val border-left' style='color:{cor_var}; font-size:11px; font-weight:800; text-align:center;'>{sinal}{var_pct:.1f}%</div>"
+        
+    html += "</div>"
+    return html
+
+def renderizar_estrutura(df_at, df_ant, col_valor, is_saida=False):
+    html = ""
+    if df_at.empty and df_ant.empty: return html
+    
+    total_periodo = df_at[col_valor].sum()
+    
+    # 1. Agrupar por Conta Contábil
+    contas_at = df_at.groupby('Conta')[col_valor].sum().to_dict()
+    contas_ant = df_ant.groupby('Conta')[col_valor].sum().to_dict()
+    chaves_conta = sorted(set(list(contas_at.keys()) + list(contas_ant.keys())), key=lambda k: contas_at.get(k, 0), reverse=True)
+    
+    for conta in chaves_conta:
+        v_conta_at = contas_at.get(conta, 0)
+        v_conta_ant = contas_ant.get(conta, 0)
+        rep_conta = (v_conta_at / total_periodo * 100) if total_periodo > 0 else 0
+        var_conta = calc_var(v_conta_at, v_conta_ant)
+        
+        if is_saida: cor_conta = "var(--danger)" if var_conta > 0 else "var(--success)"
+        else: cor_conta = "var(--success)" if var_conta > 0 else "var(--danger)"
+            
+        html += "<details><summary>"
+        html += render_linha(f"<span class='icon-expand'></span>{conta}", "lvl-grupo", v_conta_at, rep_conta, v_conta_ant, var_conta, cor_conta)
+        html += "</summary>"
+        
+        # 2. Agrupar por Classificação Financeira dentro da Conta
+        df_at_c = df_at[df_at['Conta'] == conta]
+        df_ant_c = df_ant[df_ant['Conta'] == conta]
+        
+        classif_at = df_at_c.groupby('Classificacao')[col_valor].sum().to_dict()
+        classif_ant = df_ant_c.groupby('Classificacao')[col_valor].sum().to_dict()
+        chaves_classif = sorted(set(list(classif_at.keys()) + list(classif_ant.keys())), key=lambda k: classif_at.get(k, 0), reverse=True)
+        
+        for classif in chaves_classif:
+            v_classif_at = classif_at.get(classif, 0)
+            v_classif_ant = classif_ant.get(classif, 0)
+            rep_classif = (v_classif_at / total_periodo * 100) if total_periodo > 0 else 0
+            var_classif = calc_var(v_classif_at, v_classif_ant)
+            
+            if is_saida: cor_classif = "var(--danger)" if var_classif > 0 else "var(--success)"
+            else: cor_classif = "var(--success)" if var_classif > 0 else "var(--danger)"
+                
+            html += "<details><summary>"
+            html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
+            html += "</summary>"
+            
+            # 3. Renderizar as Transações Individuais (apenas do período atual para não poluir demais)
+            df_trans = df_at_c[df_at_c['Classificacao'] == classif].sort_values('Data')
+            for _, row in df_trans.iterrows():
+                dt_str = row['Data'].strftime('%d/%m')
+                desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
+                html += render_linha(f"↳ {dt_str} - {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
+                
+            html += "</details>" # Fecha Classificação
+        html += "</details>" # Fecha Conta Contábil
+        
+    return html
+
+# ----------------- TABELA OPERACIONAL -----------------
+html_tab = f"""
 <div class='matrix-container'>
-    <div class='matrix-header'>Detalhamento do Fluxo de Caixa por Classificação</div>
-    <table class='dre-table'>
-        <thead>
-            <tr>
-                <th>Classificação Financeira</th>
-                <th style='text-align:center;'>Valor Realizado (R$)</th>
-                <th style='text-align:center;'>% Representatividade</th>
-                <th style='text-align:center;'>Período Anterior (R$)</th>
-                <th style='text-align:center;'>Variação (%)</th>
-            </tr>
-        </thead>
-        <tbody>
+    <div class='matrix-header'>Fluxo Operacional</div>
+    <div class='grid-row grid-header' style='grid-template-columns: {grid_cols};'>
+        <div class='col-name'>Nível (Conta ➔ Classificação ➔ Transação)</div>
+        <div class='col-val border-left'>Realizado ({dt_fim.strftime('%b').capitalize()})</div>
+        <div class='col-val border-left'>% Rep.</div>
+        <div class='col-val border-left'>Período Anterior</div>
+        <div class='col-val border-left'>Var. (MoM)</div>
+    </div>
 """
 
-def renderizar_linhas(df_atual_filtro, df_ant_filtro, coluna_valor, total_periodo, is_saida=False):
-    linhas = ""
-    grupo_atual = df_atual_filtro.groupby('Classificação')[coluna_valor].sum().to_dict()
-    grupo_ant = df_ant_filtro.groupby('Classificação')[coluna_valor].sum().to_dict()
-    
-    todas_chaves = set(list(grupo_atual.keys()) + list(grupo_ant.keys()))
-    chaves_ordenadas = sorted(todas_chaves, key=lambda k: grupo_atual.get(k, 0), reverse=True)
-    
-    for chave in chaves_ordenadas:
-        val_at = grupo_atual.get(chave, 0)
-        val_ant = grupo_ant.get(chave, 0)
-        
-        rep_pct = (val_at / total_periodo * 100) if total_periodo > 0 else 0
-        var_pct = calc_var(val_at, val_ant)
-        
-        if is_saida:
-            cor_var = "color: #ef4444;" if var_pct > 0 else "color: #10b981;" 
-        else:
-            cor_var = "color: #10b981;" if var_pct > 0 else "color: #ef4444;"
-            
-        sinal = "+" if var_pct > 0 else ""
-        
-        linhas += f"<tr class='row-item'><td>{chave}</td><td style='text-align:center;'>R$ {formata_num(val_at)}</td><td style='text-align:center;'>{rep_pct:.1f}%</td><td style='text-align:center; color: #64748b;'>R$ {formata_num(val_ant)}</td><td style='text-align:center; font-weight:800; {cor_var}'>{sinal}{var_pct:.1f}%</td></tr>"
-    return linhas
-
-# Bloco ENTRADAS
+# ENTRADAS OPERACIONAIS
 var_tot_ent = calc_var(tot_entrada_at, tot_entrada_ant)
-cor_tot_ent = "color: #10b981;" if var_tot_ent >= 0 else "color: #ef4444;"
-sinal_ent = "+" if var_tot_ent > 0 else ""
+cor_tot_ent = "var(--success)" if var_tot_ent >= 0 else "var(--danger)"
+html_tab += render_linha("[+] ENTRADAS OPERACIONAIS", "lvl-macro", tot_entrada_at, 100, tot_entrada_ant, var_tot_ent, cor_tot_ent)
+html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Entrada'] > 0], df_op_ant[df_op_ant['Entrada'] > 0], 'Entrada', tot_entrada_at, is_saida=False)
 
-html_tabela += f"<tr class='row-macro'><td>[+] ENTRADAS DE CAIXA</td><td style='text-align:center;'>R$ {formata_num(tot_entrada_at)}</td><td style='text-align:center;'>100.0%</td><td style='text-align:center;'>R$ {formata_num(tot_entrada_ant)}</td><td style='text-align:center; {cor_tot_ent}'>{sinal_ent}{var_tot_ent:.1f}%</td></tr>"
-html_tabela += renderizar_linhas(df_atual[df_atual['Entrada'] > 0], df_ant[df_ant['Entrada'] > 0], 'Entrada', tot_entrada_at, is_saida=False)
-
-# Bloco SAÍDAS
+# SAÍDAS OPERACIONAIS
 var_tot_sai = calc_var(tot_saida_at, tot_saida_ant)
-cor_tot_sai = "color: #ef4444;" if var_tot_sai >= 0 else "color: #10b981;"
-sinal_sai = "+" if var_tot_sai > 0 else ""
+cor_tot_sai = "var(--danger)" if var_tot_sai >= 0 else "var(--success)" # Aumento de saída é ruim
+html_tab += render_linha("[-] SAÍDAS OPERACIONAIS", "lvl-macro", tot_saida_at, 100, tot_saida_ant, var_tot_sai, cor_tot_sai)
+html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Saída'] > 0], df_op_ant[df_op_ant['Saída'] > 0], 'Saída', tot_saida_at, is_saida=True)
 
-html_tabela += f"<tr class='row-macro'><td>[-] SAÍDAS DE CAIXA</td><td style='text-align:center;'>R$ {formata_num(tot_saida_at)}</td><td style='text-align:center;'>100.0%</td><td style='text-align:center;'>R$ {formata_num(tot_saida_ant)}</td><td style='text-align:center; {cor_tot_sai}'>{sinal_sai}{var_tot_sai:.1f}%</td></tr>"
-html_tabela += renderizar_linhas(df_atual[df_atual['Saída'] > 0], df_ant[df_ant['Saída'] > 0], 'Saída', tot_saida_at, is_saida=True)
+html_tab += "</div>"
+injetar_html(html_tab)
 
-html_tabela += "</tbody></table></div>"
-injetar_html(html_tabela)
+# ----------------- TABELA NÃO OPERACIONAL -----------------
+# Verifica se existe movimentação não operacional antes de renderizar
+tot_nop_ent_at = df_nop_atual['Entrada'].sum()
+tot_nop_sai_at = df_nop_atual['Saída'].sum()
+
+if tot_nop_ent_at > 0 or tot_nop_sai_at > 0:
+    tot_nop_ent_ant = df_nop_ant['Entrada'].sum()
+    tot_nop_sai_ant = df_nop_ant['Saída'].sum()
+    
+    html_nop = f"""
+    <div class='matrix-container'>
+        <div class='matrix-header' style='background: #f1f5f9; color: var(--text-muted); border-bottom: 2px solid var(--border);'>Fluxo Não Operacional (Financeiro/Investimentos)</div>
+    """
+    
+    if tot_nop_ent_at > 0 or tot_nop_ent_ant > 0:
+        var_nop_ent = calc_var(tot_nop_ent_at, tot_nop_ent_ant)
+        cor_nop_ent = "var(--success)" if var_nop_ent >= 0 else "var(--danger)"
+        html_nop += render_linha("[+] ENTRADAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_ent_at, 100, tot_nop_ent_ant, var_nop_ent, cor_nop_ent)
+        html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Entrada'] > 0], df_nop_ant[df_nop_ant['Entrada'] > 0], 'Entrada', tot_nop_ent_at, is_saida=False)
+        
+    if tot_nop_sai_at > 0 or tot_nop_sai_ant > 0:
+        var_nop_sai = calc_var(tot_nop_sai_at, tot_nop_sai_ant)
+        cor_nop_sai = "var(--danger)" if var_nop_sai >= 0 else "var(--success)"
+        html_nop += render_linha("[-] SAÍDAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_sai_at, 100, tot_nop_sai_ant, var_nop_sai, cor_nop_sai)
+        html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Saída'] > 0], df_nop_ant[df_nop_ant['Saída'] > 0], 'Saída', tot_nop_sai_at, is_saida=True)
+
+    html_nop += "</div>"
+    injetar_html(html_nop)
