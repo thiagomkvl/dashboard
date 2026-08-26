@@ -269,11 +269,9 @@ def render_linha(nome, classe, val_at, rep_pct, val_ant, var_pct, cor_var, is_it
     html += "</div>"
     return html
 
-def renderizar_estrutura(df_at, df_ant, col_valor, is_saida=False):
+def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False):
     html = ""
     if df_at.empty and df_ant.empty: return html
-    
-    total_periodo = df_at[col_valor].sum()
     
     # 1. Agrupar por Conta Contábil
     contas_at = df_at.groupby('Conta')[col_valor].sum().to_dict()
@@ -314,7 +312,7 @@ def renderizar_estrutura(df_at, df_ant, col_valor, is_saida=False):
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
             html += "</summary>"
             
-            # 3. Renderizar as Transações Individuais (apenas do período atual para não poluir demais)
+            # 3. Renderizar as Transações Individuais (apenas do período atual)
             df_trans = df_at_c[df_at_c['Classificacao'] == classif].sort_values('Data')
             for _, row in df_trans.iterrows():
                 dt_str = row['Data'].strftime('%d/%m')
