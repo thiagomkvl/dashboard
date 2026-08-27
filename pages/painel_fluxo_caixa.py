@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
+# initial_sidebar_state="expanded" garante que ela sempre carregue aberta
 st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL E IMPRESSÃO (PDF)
+# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL, MENU FIXO E IMPRESSÃO (PDF)
 # ==============================================================================
 css = """
 <style>
@@ -31,9 +32,12 @@ html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text
 .stApp { background-color: var(--bg); }
 .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
 
-/* 🔴 CORREÇÃO DO MENU LATERAL: Deixa o cabeçalho transparente e oculta apenas as ferramentas da direita, preservando a setinha de expandir */
-header[data-testid="stHeader"] { background: transparent !important; }
-[data-testid="stToolbar"] { display: none !important; }
+/* 🔴 LIMPEZA DO TOPO E TRAVA DO MENU LATERAL (FIXO) */
+header[data-testid="stHeader"] { display: none !important; }
+/* Remove o botão de fechar dentro do menu lateral */
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
+/* Remove qualquer controle de colapso residual */
+[data-testid="collapsedControl"] { display: none !important; }
 
 /* HEADER PRINCIPAL MINIMALISTA */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -187,7 +191,7 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS LATERAIS E NAVEGAÇÃO
+# 3. FILTROS LATERAIS E NAVEGAÇÃO FIXA
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
