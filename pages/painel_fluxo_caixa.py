@@ -30,7 +30,10 @@ css = """
 html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text-main); }
 .stApp { background-color: var(--bg); }
 .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
-header[data-testid="stHeader"] { display: none !important; }
+
+/* 🔴 CORREÇÃO DO MENU LATERAL: Deixa o cabeçalho transparente e oculta apenas as ferramentas da direita, preservando a setinha de expandir */
+header[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stToolbar"] { display: none !important; }
 
 /* HEADER PRINCIPAL MINIMALISTA */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -150,6 +153,7 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
+        # Mapeamento Estrito das Colunas Solicitadas
         col_data = df.columns[1]     # B
         col_desc = df.columns[2]     # C
         col_deb = df.columns[4]      # E
