@@ -18,6 +18,34 @@ except ImportError as e:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cockpit Financeiro - SOS Cardio", page_icon="🎛️", layout="wide")
 
+# ==============================================================================
+# 0. TELA DE LOGIN (AUTENTICAÇÃO)
+# ==============================================================================
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    # Layout centralizado para a tela de login
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #1e40af;'>🔒 Acesso Restrito</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #64748b;'>Insira a credencial de segurança para acessar o Cockpit Financeiro.</p>", unsafe_allow_html=True)
+        
+        senha_input = st.text_input("Senha", type="password", placeholder="Digite a senha...")
+        
+        if st.button("Entrar no Sistema", type="primary", use_container_width=True):
+            if senha_input == "@SOS2025":
+                st.session_state["autenticado"] = True
+                st.rerun() # Recarrega a página para liberar o dashboard
+            else:
+                st.error("❌ Senha incorreta. Acesso negado.")
+    
+    # st.stop() trava a execução do código aqui. Nada abaixo desta linha será renderizado sem a senha.
+    st.stop() 
+
+
 # --- CUSTOM CSS (Magia do UI/UX) ---
 st.markdown("""
     <style>
