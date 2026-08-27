@@ -1,13 +1,14 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from datetime import datetime, timedelta
 import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide")
+st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA E GRID EXPANSÍVEL
+# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL E IMPRESSÃO (PDF)
 # ==============================================================================
 css = """
 <style>
@@ -95,6 +96,19 @@ details summary::-webkit-details-marker { display: none; }
 .icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 8px; font-size: 14px; display: inline-block; width: 12px; text-align: center;}
 details:not([open]) > summary .icon-expand::before { content: "+"; }
 details[open] > summary .icon-expand::before { content: "-"; }
+
+/* =========================================================
+   MODO IMPRESSÃO (PDF DE ALTA QUALIDADE VETORIAL)
+   ========================================================= */
+@media print {
+    [data-testid="stSidebar"] { display: none !important; }
+    header[data-testid="stHeader"] { display: none !important; }
+    .main .block-container { max-width: 100% !important; padding: 10px !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+    .kpi-card, .matrix-container { break-inside: avoid; }
+    details[open] summary ~ * { display: block; }
+    details summary { list-style: none; }
+}
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
@@ -138,7 +152,7 @@ def preparar_dados_fluxo():
         
         # Mapeamento Estrito das Colunas Solicitadas
         col_data = df.columns[1]     # B
-        col_desc = df.columns[2]     # C -> Agora apontando para a Coluna C da sua planilha
+        col_desc = df.columns[2]     # C
         col_deb = df.columns[4]      # E
         col_cred = df.columns[5]     # F
         col_conta = df.columns[8]    # I (Conta Contábil)
@@ -170,14 +184,39 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS E SEPARAÇÃO DE DATAFRAMES
+# 3. FILTROS LATERAIS E NAVEGAÇÃO
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    st.markdown("### Filtros de Análise")
+    # --- NOVIDADE: Menu de Navegação ---
+    st.markdown("### 🧭 Navegação")
+    st.markdown("""
+    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom: 20px;">
+        <a href="/" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">🏢 Portal Executivo</a>
+        <a href="Dashboard_Saldo" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">🏦 Dashboard de Saldos</a>
+        <a href="painel_fluxo_caixa" target="_self" style="text-decoration:none; color:#3b82f6; font-weight:800; font-size:14px;">💸 Fluxo de Caixa</a>
+        <a href="painel_pagar" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">📉 Painel de Pagamentos</a>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+
+    # --- Filtros ---
+    st.markdown("### 📅 Filtros de Análise")
     data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
+    
+    # --- NOVIDADE: Botão de Impressão PDF ---
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### 🖨️ Relatório")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
+    components.html("""
+        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
+        style="width:100%; background:linear-gradient(135deg, #3b82f6, #1e40af); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(30, 64, 175, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Dashboard (PDF)
+        </button>
+    """, height=55)
 
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
     dt_ini, dt_fim = data_selecionada
