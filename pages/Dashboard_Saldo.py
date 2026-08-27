@@ -19,7 +19,11 @@ except ImportError:
         return None
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
+
+# Renderiza o menu definindo qual página está ativa ("active")
+menu_html = render_sidebar_menu().replace("{active_saldo}", "active").replace("{active_fluxo}", "").replace("{active_pagar}", "")
+st.markdown(textwrap.dedent(menu_html), unsafe_allow_html=True)
 
 # --- CUSTOM CSS ---
 css = """
