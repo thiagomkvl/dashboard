@@ -1,5 +1,4 @@
 import streamlit as st
-import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
@@ -27,14 +26,14 @@ html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text
 .stApp { background-color: var(--bg); }
 .main .block-container { max-width: 1000px; padding-top: 3rem; padding-bottom: 2rem; }
 header[data-testid="stHeader"] { display: none !important; }
-[data-testid="stSidebar"] { display: none !important; } /* Opcional: Esconde a barra lateral na home */
+[data-testid="stSidebar"] { display: none !important; }
 
 /* CABEÇALHO DO HUB */
 .hub-header { text-align: center; margin-bottom: 40px; }
 .hub-header h1 { font-size: 32px; font-weight: 800; color: var(--primary-dark); margin-bottom: 8px; letter-spacing: -0.5px; }
 .hub-header p { font-size: 15px; color: var(--text-muted); font-weight: 500; }
 
-/* GRID DE CARTÕES (POWER BI STYLE) */
+/* GRID DE CARTÕES */
 .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -59,7 +58,6 @@ header[data-testid="stHeader"] { display: none !important; }
     overflow: hidden;
 }
 
-/* Barrinha superior invisível que aparece no hover */
 .hub-card::before {
     content: "";
     position: absolute;
@@ -109,7 +107,6 @@ header[data-testid="stHeader"] { display: none !important; }
     font-weight: 500;
 }
 
-/* Ícone de Seta no canto inferior direito */
 .card-arrow {
     position: absolute;
     bottom: 20px;
@@ -124,69 +121,25 @@ header[data-testid="stHeader"] { display: none !important; }
 }
 </style>
 """
-st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+st.markdown(css, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. CONSTRUÇÃO DO HTML (CARTÕES)
+# 2. CONSTRUÇÃO DO HTML (BLINDADO CONTRA QUEBRAS DO STREAMLIT)
 # ==============================================================================
-# ATENÇÃO: O 'href' deve ter exatamente o nome do arquivo que está na pasta 'pages' 
-# Exemplo: se o arquivo é 'painel_dre.py', o href é 'painel_dre'
-# Se tiver espaços, use o nome exato do arquivo sem o '.py'
+# Juntamos as tags para garantir que o motor Markdown não interprete como código
 
 html_hub = """
 <div class="hub-header">
-    <h1>Portal Financeiro Executivo</h1>
-    <p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
+<h1>Portal Financeiro Executivo</h1>
+<p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
 </div>
-
 <div class="card-grid">
-    <!-- CARD 1: SALDOS -->
-    <a href="Dashboard_Saldo" target="_self" class="hub-card">
-        <div class="card-icon">🏦</div>
-        <div class="card-title">Dashboard de Saldos</div>
-        <div class="card-desc">Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>
-        <div class="card-arrow">➔</div>
-    </a>
-
-    <!-- CARD 2: DRE GERENCIAL -->
-    <a href="painel_dre" target="_self" class="hub-card">
-        <div class="card-icon">📊</div>
-        <div class="card-title">DRE Gerencial</div>
-        <div class="card-desc">Análise de Receitas, Custos, Margens e Superávit Líquido sob a ótica de competência e performance.</div>
-        <div class="card-arrow">➔</div>
-    </a>
-
-    <!-- CARD 3: FLUXO DE CAIXA -->
-    <a href="painel_fluxo_caixa" target="_self" class="hub-card">
-        <div class="card-icon">💸</div>
-        <div class="card-title">Fluxo de Caixa Analítico</div>
-        <div class="card-desc">Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>
-        <div class="card-arrow">➔</div>
-    </a>
-
-    <!-- CARD 4: CONTAS A PAGAR -->
-    <a href="painel_pagar" target="_self" class="hub-card">
-        <div class="card-icon">📉</div>
-        <div class="card-title">Painel de Pagamentos</div>
-        <div class="card-desc">Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>
-        <div class="card-arrow">➔</div>
-    </a>
-
-    <!-- CARD 5: LEITURA DE VARREDURA -->
-    <a href="leitura_varredura" target="_self" class="hub-card">
-        <div class="card-icon">🧾</div>
-        <div class="card-title">Varredura de Sacado</div>
-        <div class="card-desc">Leitura inteligente de arquivos bancários CNAB 240 (DDA) para auditoria e conciliação de pagamentos.</div>
-        <div class="card-arrow">➔</div>
-    </a>
-
-    <!-- CARD 6: UPLOAD DE DADOS -->
-    <a href="upload" target="_self" class="hub-card">
-        <div class="card-icon">☁️</div>
-        <div class="card-title">Upload de Bases</div>
-        <div class="card-desc">Área dedicada para atualização manual de planilhas, extratos e inserção de novos dados no sistema.</div>
-        <div class="card-arrow">➔</div>
-    </a>
+<a href="Dashboard_Saldo" target="_self" class="hub-card"><div class="card-icon">🏦</div><div class="card-title">Dashboard de Saldos</div><div class="card-desc">Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div><div class="card-arrow">➔</div></a>
+<a href="painel_dre" target="_self" class="hub-card"><div class="card-icon">📊</div><div class="card-title">DRE Gerencial</div><div class="card-desc">Análise de Receitas, Custos, Margens e Superávit Líquido sob a ótica de competência e performance.</div><div class="card-arrow">➔</div></a>
+<a href="painel_fluxo_caixa" target="_self" class="hub-card"><div class="card-icon">💸</div><div class="card-title">Fluxo de Caixa Analítico</div><div class="card-desc">Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div><div class="card-arrow">➔</div></a>
+<a href="painel_pagar" target="_self" class="hub-card"><div class="card-icon">📉</div><div class="card-title">Painel de Pagamentos</div><div class="card-desc">Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div><div class="card-arrow">➔</div></a>
+<a href="leitura_varredura" target="_self" class="hub-card"><div class="card-icon">🧾</div><div class="card-title">Varredura de Sacado</div><div class="card-desc">Leitura inteligente de arquivos bancários CNAB 240 (DDA) para auditoria e conciliação de pagamentos.</div><div class="card-arrow">➔</div></a>
+<a href="upload" target="_self" class="hub-card"><div class="card-icon">☁️</div><div class="card-title">Upload de Bases</div><div class="card-desc">Área dedicada para atualização manual de planilhas, extratos e inserção de novos dados no sistema.</div><div class="card-arrow">➔</div></a>
 </div>
 """
 
