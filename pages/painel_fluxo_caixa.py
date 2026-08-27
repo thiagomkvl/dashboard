@@ -5,15 +5,12 @@ from datetime import datetime, timedelta
 import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide")
+st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 1. CUSTOM CSS — GLASSMORPHISM MENU E IMPRESSÃO
+# 1. CUSTOM CSS — MINIMALISTA E IMPRESSÃO (PDF)
 # ==============================================================================
 css = """
-<!-- Importação dos Ícones Elegantes (Bootstrap Icons) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -32,102 +29,9 @@ css = """
 
 html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
 .stApp { background-color: var(--bg); }
+.main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
 
-/* OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
-[data-testid="stSidebar"] { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
-header[data-testid="stHeader"] { display: none !important; }
-
-/* MARGEM DINÂMICA: Afasta o painel principal na largura exata do menu (70px fechado, 250px aberto) */
-.main .block-container { 
-    max-width: calc(100% - 70px) !important; 
-    margin-left: 70px !important;
-    padding-top: 1.5rem; 
-    padding-bottom: 2rem; 
-    padding-right: 2rem !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* =========================================
-   GLASSMORPHISM SIDEBAR (MENU LATERAL FIXO)
-   ========================================= */
-.glass-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100vh;
-    width: 70px;
-    background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
-    display: flex;
-    flex-direction: column;
-    padding-top: 25px;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 999999;
-    overflow: hidden;
-    box-shadow: 4px 0 15px rgba(0,0,0,0.15);
-    font-family: 'Inter', sans-serif;
-}
-
-.glass-sidebar:hover {
-    width: 250px;
-    background: rgba(15, 23, 42, 0.99);
-}
-
-.glass-logo {
-    padding: 0 24px 30px;
-    display: flex;
-    align-items: center;
-    color: white;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    margin-bottom: 15px;
-    white-space: nowrap;
-}
-
-.glass-item {
-    display: flex;
-    align-items: center;
-    padding: 16px 24px;
-    color: rgba(255, 255, 255, 0.45);
-    text-decoration: none !important;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-    border-left: 3px solid transparent;
-}
-
-.glass-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ffffff;
-}
-
-.glass-item.active {
-    background: rgba(59, 130, 246, 0.15); 
-    color: #ffffff;
-    border-left: 3px solid #3b82f6;
-}
-
-.glass-icon {
-    min-width: 20px;
-    font-size: 18px !important;
-    margin-right: 18px;
-}
-
-.glass-text {
-    opacity: 0;
-    font-weight: 500;
-    font-size: 13px;
-    transition: opacity 0.2s ease;
-    letter-spacing: 0.3px;
-}
-
-.glass-sidebar:hover .glass-text {
-    opacity: 1;
-    transition-delay: 0.1s;
-}
-
-/* Restante do CSS do Fluxo de Caixa */
+/* HEADER PRINCIPAL MINIMALISTA */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
 .exec-header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: var(--primary-dark); text-transform: uppercase;}
 .exec-header p { margin: 2px 0 0 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
@@ -139,6 +43,7 @@ header[data-testid="stHeader"] { display: none !important; }
 .exec-update span { font-size: 10px; color: var(--text-muted); display:block; text-transform: uppercase; font-weight: 700; }
 .exec-update b { font-size: 12px; font-weight: 700; color: var(--primary-dark); display:block;}
 
+/* KPI CARDS */
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
 .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 20px; position: relative; box-shadow: var(--shadow); }
 .kpi-card::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; border-radius: 0 0 6px 6px; }
@@ -155,6 +60,7 @@ header[data-testid="stHeader"] { display: none !important; }
 .var-up { color: var(--success); }
 .var-down { color: var(--danger); }
 
+/* MATRIZ CSS GRID EXPANSÍVEL */
 .matrix-container { background: var(--surface); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 30px;}
 .matrix-header { background: #f8fafc; color: var(--primary-dark); padding: 15px 20px; font-size: 14px; font-weight: 800; text-transform: uppercase; border-bottom: 2px solid var(--border); letter-spacing: 0.5px;}
 .grid-row { display: grid; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.1s; }
@@ -163,20 +69,26 @@ header[data-testid="stHeader"] { display: none !important; }
 .col-name { padding: 10px 15px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-val { padding: 10px 15px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-main); font-weight: 600; white-space: nowrap; }
 
+/* Cabeçalhos da Matriz */
 .grid-header { background: var(--surface); font-weight: 800; color: var(--text-muted); font-size: 10px; text-transform: uppercase; border-bottom: 2px solid var(--border); }
 .grid-header .col-val { text-align: center; }
 .border-left { border-left: 1px solid var(--border); }
 
+/* Níveis da Matriz */
 .lvl-macro { background-color: #f8fafc; font-size: 13px; }
 .lvl-macro .col-name { font-weight: 800; color: var(--primary-dark); text-transform: uppercase; }
 .lvl-macro .col-val { font-weight: 800; color: var(--primary-dark); }
+
 .lvl-grupo .col-name { padding-left: 15px; font-size: 12px; font-weight: 700; color: var(--primary-dark); }
 .lvl-subgrupo .col-name { padding-left: 40px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+
+/* Linha de Transação Final */
 .lvl-item { background-color: #ffffff; }
 .lvl-item:hover { background-color: #fefefe; }
 .lvl-item .col-name { padding-left: 65px; font-size: 10px; font-weight: 500; color: var(--text-muted); }
 .lvl-item .col-val { font-size: 11px; font-weight: 500; color: var(--text-muted); }
 
+/* Details e Summary */
 details { width: 100%; display: block; margin: 0; padding: 0; }
 details summary { list-style: none; cursor: pointer; outline: none; margin: 0; padding: 0; }
 details summary::-webkit-details-marker { display: none; }
@@ -184,46 +96,19 @@ details summary::-webkit-details-marker { display: none; }
 details:not([open]) > summary .icon-expand::before { content: "+"; }
 details[open] > summary .icon-expand::before { content: "-"; }
 
+/* =========================================================
+   MODO IMPRESSÃO (PDF DE ALTA QUALIDADE VETORIAL)
+   ========================================================= */
 @media print {
-    .glass-sidebar { display: none !important; }
-    .main .block-container { max-width: 100% !important; margin-left: 0 !important; padding: 10px !important; }
+    [data-testid="stSidebar"] { display: none !important; }
+    header[data-testid="stHeader"] { display: none !important; }
+    .main .block-container { max-width: 100% !important; padding: 10px !important; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     .kpi-card, .matrix-container { break-inside: avoid; }
     details[open] summary ~ * { display: block; }
     details summary { list-style: none; }
 }
 </style>
-
-<!-- =========================================
-   INJEÇÃO DO MENU HTML LATERAL (FIXO)
-   ========================================= -->
-<div class="glass-sidebar">
-    <div class="glass-logo">
-        <i class="bi bi-hexagon-fill glass-icon" style="color: #3b82f6;"></i>
-        <span class="glass-text" style="font-size: 15px; font-weight: 800; letter-spacing: 1px;">COCKPIT</span>
-    </div>
-    
-    <a href="/" class="glass-item" target="_self">
-        <i class="bi bi-grid-1x2 glass-icon"></i>
-        <span class="glass-text">Portal Executivo</span>
-    </a>
-    
-    <a href="Dashboard_Saldo" class="glass-item" target="_self">
-        <i class="bi bi-bank glass-icon"></i>
-        <span class="glass-text">Dashboard Saldo</span>
-    </a>
-    
-    <!-- TELA ATIVA (FLUXO DE CAIXA) -->
-    <a href="painel_fluxo_caixa" class="glass-item active" target="_self">
-        <i class="bi bi-cash-stack glass-icon"></i>
-        <span class="glass-text">Fluxo de Caixa</span>
-    </a>
-    
-    <a href="painel_pagar" class="glass-item" target="_self">
-        <i class="bi bi-graph-down-arrow glass-icon"></i>
-        <span class="glass-text">Painel a Pagar</span>
-    </a>
-</div>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
@@ -297,24 +182,24 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS E BOTÃO DE PDF (TOPO DA TELA)
+# 3. FILTROS LATERAIS (MENU NATIVO PADRÃO)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
-col_f1, col_f2, col_f3 = st.columns([1.5, 1.5, 5])
-with col_f1:
-    data_selecionada = st.date_input("📅 Período de Análise:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
-with col_f2:
-    st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+with st.sidebar:
+    st.markdown("### Filtros de Análise")
+    data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
+    
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### Relatório")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #3b82f6, #1e40af); color:white; border:none; padding:8px 12px; border-radius:6px; font-family:sans-serif; font-weight:bold; font-size:13px; cursor:pointer; box-shadow: 0 4px 6px rgba(30, 64, 175, 0.2); transition: transform 0.2s;">
-        🖨️ Exportar PDF
+        style="width:100%; background:linear-gradient(135deg, #3b82f6, #1e40af); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(30, 64, 175, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Dashboard (PDF)
         </button>
-    """, height=40)
-
-st.markdown("<hr style='margin-top:0px; margin-bottom:20px;'>", unsafe_allow_html=True)
+    """, height=55)
 
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
     dt_ini, dt_fim = data_selecionada
