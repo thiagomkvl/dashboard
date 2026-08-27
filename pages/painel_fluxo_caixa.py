@@ -5,11 +5,10 @@ from datetime import datetime, timedelta
 import textwrap
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-# initial_sidebar_state="expanded" garante que ela sempre carregue aberta
 st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA, GRID EXPANSÍVEL, MENU FIXO E IMPRESSÃO (PDF)
+# 1. CUSTOM CSS — MINIMALISTA E IMPRESSÃO (PDF)
 # ==============================================================================
 css = """
 <style>
@@ -32,12 +31,10 @@ html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text
 .stApp { background-color: var(--bg); }
 .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
 
-/* 🔴 LIMPEZA DO TOPO E TRAVA DO MENU LATERAL (FIXO) */
-header[data-testid="stHeader"] { display: none !important; }
-/* Remove o botão de fechar dentro do menu lateral */
-[data-testid="stSidebarCollapseButton"] { display: none !important; }
-/* Remove qualquer controle de colapso residual */
-[data-testid="collapsedControl"] { display: none !important; }
+/* 🔴 O SEGREDO DO MENU: O cabeçalho fica transparente, assim a setinha (>) não some quando o menu é recolhido! */
+header[data-testid="stHeader"] { background-color: transparent !important; }
+/* Esconde apenas os 3 pontinhos e botão de deploy da direita */
+[data-testid="stToolbar"] { display: none !important; }
 
 /* HEADER PRINCIPAL MINIMALISTA */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -157,14 +154,14 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
-        # Mapeamento Estrito das Colunas Solicitadas
-        col_data = df.columns[1]     # B
-        col_desc = df.columns[2]     # C
-        col_deb = df.columns[4]      # E
-        col_cred = df.columns[5]     # F
-        col_conta = df.columns[8]    # I (Conta Contábil)
-        col_classif = df.columns[9]  # J (Classificação Financeira)
-        col_operac = df.columns[10]  # K (Operacionalidade)
+        # Mapeamento Estrito
+        col_data = df.columns[1]
+        col_desc = df.columns[2]
+        col_deb = df.columns[4]
+        col_cred = df.columns[5]
+        col_conta = df.columns[8]
+        col_classif = df.columns[9]
+        col_operac = df.columns[10]
 
         df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
         df['Saída'] = df[col_deb].apply(limpa_valor)
@@ -191,17 +188,17 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS LATERAIS E NAVEGAÇÃO FIXA
+# 3. FILTROS LATERAIS E BOTÃO DE PDF (MENU NATIVO)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    st.markdown("### Filtros de Análise")
+    st.markdown("### 📅 Filtros de Análise")
     data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
     
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
-    st.markdown("### Relatório")
+    st.markdown("### 🖨️ Relatório")
     st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
