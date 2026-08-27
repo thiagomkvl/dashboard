@@ -21,14 +21,10 @@ def get_img_b64(filepath):
         # Se a imagem não for encontrada, exibe um degradê azul corporativo como "placeholder"
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-# --- CAMINHOS DAS IMAGENS (Ajuste para o nome das suas fotos) ---
-# Crie uma pasta chamada "assets" e coloque as fotos dos dashboards lá dentro.
+# --- CAMINHOS DAS IMAGENS (Apenas painéis ativos) ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
-img_dre = get_img_b64("assets/preview_dre.png")
 img_fluxo = get_img_b64("assets/preview_fluxo.png")
 img_pagar = get_img_b64("assets/preview_pagar.png")
-img_varredura = get_img_b64("assets/preview_varredura.png")
-img_upload = get_img_b64("assets/preview_upload.png")
 
 # Função auxiliar para renderizar a propriedade "background-image" ou "background"
 def bg_style(img_data):
@@ -180,15 +176,6 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="painel_dre" target="_self" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_dre)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">DRE Gerencial</div>
-        <div class="card-desc">Análise de Receitas, Custos, Margens e Superávit Líquido sob a ótica de competência e performance.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
-
 <a href="painel_fluxo_caixa" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
     <div class="card-content">
@@ -203,24 +190,6 @@ html_hub = f"""
     <div class="card-content">
         <div class="card-title">Painel de Pagamentos</div>
         <div class="card-desc">Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
-
-<a href="leitura_varredura" target="_self" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_varredura)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">Varredura de Sacado</div>
-        <div class="card-desc">Leitura inteligente de arquivos bancários CNAB 240 (DDA) para auditoria e conciliação de pagamentos.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
-
-<a href="upload" target="_self" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_upload)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">Upload de Bases</div>
-        <div class="card-desc">Área dedicada para atualização manual de planilhas, extratos e inserção de novos dados no sistema.</div>
         <div class="card-arrow">➔</div>
     </div>
 </a>
