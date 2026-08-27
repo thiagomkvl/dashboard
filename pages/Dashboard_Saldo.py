@@ -8,7 +8,7 @@ import difflib
 import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-
+import textwrap
 # Tente importar a conexão
 try:
     from database import conectar_sheets
