@@ -33,22 +33,23 @@ css = """
 html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
 .stApp { background-color: var(--bg); }
 
-/* 🔴 OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
+/* OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
 [data-testid="stSidebar"] { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 header[data-testid="stHeader"] { display: none !important; }
 
-/* Afastando o conteúdo principal para não bater no menu novo */
+/* MARGEM DINÂMICA: Afasta o painel principal na largura exata do menu (70px fechado, 250px aberto) */
 .main .block-container { 
-    max-width: 100% !important; 
-    padding-top: 2rem; 
+    max-width: calc(100% - 70px) !important; 
+    margin-left: 70px !important;
+    padding-top: 1.5rem; 
     padding-bottom: 2rem; 
-    padding-left: 95px !important; /* Espaço do menu recolhido */
-    transition: padding-left 0.3s ease;
+    padding-right: 2rem !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* =========================================
-   GLASSMORPHISM SIDEBAR (MENU LATERAL)
+   GLASSMORPHISM SIDEBAR (MENU LATERAL FIXO)
    ========================================= */
 .glass-sidebar {
     position: fixed;
@@ -56,7 +57,7 @@ header[data-testid="stHeader"] { display: none !important; }
     left: 0;
     height: 100vh;
     width: 70px;
-    background: rgba(15, 23, 42, 0.92); /* Azul marinho quase preto translucido */
+    background: rgba(15, 23, 42, 0.95);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-right: 1px solid rgba(255, 255, 255, 0.05);
@@ -67,11 +68,12 @@ header[data-testid="stHeader"] { display: none !important; }
     z-index: 999999;
     overflow: hidden;
     box-shadow: 4px 0 15px rgba(0,0,0,0.15);
+    font-family: 'Inter', sans-serif;
 }
 
 .glass-sidebar:hover {
     width: 250px;
-    background: rgba(15, 23, 42, 0.98);
+    background: rgba(15, 23, 42, 0.99);
 }
 
 .glass-logo {
@@ -101,7 +103,7 @@ header[data-testid="stHeader"] { display: none !important; }
 }
 
 .glass-item.active {
-    background: rgba(59, 130, 246, 0.15); /* Destaque sutil */
+    background: rgba(59, 130, 246, 0.15); 
     color: #ffffff;
     border-left: 3px solid #3b82f6;
 }
@@ -125,7 +127,7 @@ header[data-testid="stHeader"] { display: none !important; }
     transition-delay: 0.1s;
 }
 
-/* Restante do CSS do Dash */
+/* Restante do CSS do Fluxo de Caixa */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
 .exec-header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: var(--primary-dark); text-transform: uppercase;}
 .exec-header p { margin: 2px 0 0 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
@@ -183,9 +185,8 @@ details:not([open]) > summary .icon-expand::before { content: "+"; }
 details[open] > summary .icon-expand::before { content: "-"; }
 
 @media print {
-    /* No modo de impressão o menu de vidro e a margem extra somem! */
     .glass-sidebar { display: none !important; }
-    .main .block-container { padding-left: 10px !important; }
+    .main .block-container { max-width: 100% !important; margin-left: 0 !important; padding: 10px !important; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     .kpi-card, .matrix-container { break-inside: avoid; }
     details[open] summary ~ * { display: block; }
@@ -194,7 +195,7 @@ details[open] > summary .icon-expand::before { content: "-"; }
 </style>
 
 <!-- =========================================
-   INJEÇÃO DO MENU HTML LATERAL
+   INJEÇÃO DO MENU HTML LATERAL (FIXO)
    ========================================= -->
 <div class="glass-sidebar">
     <div class="glass-logo">
@@ -212,7 +213,7 @@ details[open] > summary .icon-expand::before { content: "-"; }
         <span class="glass-text">Dashboard Saldo</span>
     </a>
     
-    <!-- Este é o ativo pois estamos no Fluxo de Caixa -->
+    <!-- TELA ATIVA (FLUXO DE CAIXA) -->
     <a href="painel_fluxo_caixa" class="glass-item active" target="_self">
         <i class="bi bi-cash-stack glass-icon"></i>
         <span class="glass-text">Fluxo de Caixa</span>
@@ -296,7 +297,7 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS E BOTÃO DE PDF (Agora organizados no topo da tela principal!)
+# 3. FILTROS E BOTÃO DE PDF (TOPO DA TELA)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
