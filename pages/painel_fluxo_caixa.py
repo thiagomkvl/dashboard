@@ -150,7 +150,6 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
-        # Mapeamento Estrito das Colunas Solicitadas
         col_data = df.columns[1]     # B
         col_desc = df.columns[2]     # C
         col_deb = df.columns[4]      # E
@@ -190,26 +189,11 @@ hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    # --- NOVIDADE: Menu de Navegação ---
-    st.markdown("### 🧭 Navegação")
-    st.markdown("""
-    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom: 20px;">
-        <a href="/" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">🏢 Portal Executivo</a>
-        <a href="Dashboard_Saldo" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">🏦 Dashboard de Saldos</a>
-        <a href="painel_fluxo_caixa" target="_self" style="text-decoration:none; color:#3b82f6; font-weight:800; font-size:14px;">💸 Fluxo de Caixa</a>
-        <a href="painel_pagar" target="_self" style="text-decoration:none; color:#64748b; font-weight:600; font-size:14px;">📉 Painel de Pagamentos</a>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-
-    # --- Filtros ---
-    st.markdown("### 📅 Filtros de Análise")
+    st.markdown("### Filtros de Análise")
     data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
     
-    # --- NOVIDADE: Botão de Impressão PDF ---
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
-    st.markdown("### 🖨️ Relatório")
+    st.markdown("### Relatório")
     st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
