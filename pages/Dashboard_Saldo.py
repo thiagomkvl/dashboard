@@ -19,232 +19,120 @@ except ImportError:
         return None
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
 
-# --- CUSTOM CSS (MIX DASHBOARD SALDO + MENU GLASSMORPHISM FIXO) ---
+# --- CUSTOM CSS ---
 css = """
-<!-- Importação dos Ícones Elegantes (Bootstrap Icons) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --border: #e7ebf2;
+        --text: #172033;
+        --muted: #6b7280;
+        --primary: #3157d5;
+        --success: #159570;
+        --danger: #d94a4a;
+        --warning: #c58a16;
+        --info: #2388a7;
+        --purple: #7654c8;
+        --shadow: 0 4px 15px rgba(24, 39, 75, 0.08);
+    }
 
-:root {
-    --bg: #f5f7fb;
-    --surface: #ffffff;
-    --surface-soft: #f8fafc;
-    --border: #e7ebf2;
-    --text: #172033;
-    --muted: #6b7280;
-    --primary: #3157d5;
-    --success: #159570;
-    --danger: #d94a4a;
-    --warning: #c58a16;
-    --info: #2388a7;
-    --purple: #7654c8;
-    --shadow: 0 4px 15px rgba(24, 39, 75, 0.08);
-}
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    .main { background: var(--bg); }
+    .main .block-container { padding-top: 0.8rem; padding-bottom: 0.7rem; max-width: 97%; }
+    div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
+    .stPlotlyChart { background: transparent !important; }
+    .js-plotly-plot, .plot-container { margin: 0 auto; }
 
-html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; color: var(--text); }
-.stApp { background-color: var(--bg); }
+    /* Cabeçalho */
+    .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .header-period { min-width: 200px; }
+    .header-period .date { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.25px; }
+    .header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+    .header-center { text-align: center; }
+    .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
+    .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
+    .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
+    .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .update-badge b { font-size: 12px; font-weight: 800; }
 
-/* OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
-[data-testid="stSidebar"] { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
-header[data-testid="stHeader"] { display: none !important; }
+    /* KPIs */
+    .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
+    .kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
+    .kpi-card.disponivel { background: linear-gradient(135deg, rgba(21, 149, 112, 0.95), rgba(28, 200, 138, 0.75)); }
+    .kpi-card.aplicacoes { background: linear-gradient(135deg, rgba(118, 84, 200, 0.95), rgba(143, 104, 228, 0.75)); }
+    .kpi-card.limites { background: linear-gradient(135deg, rgba(35, 136, 167, 0.95), rgba(54, 185, 204, 0.75)); }
+    
+    .kpi-icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px; border-radius: 7px; background: rgba(255,255,255,0.2); font-size: 14px; color: white; }
+    .kpi-title { font-size: 10px; line-height: 1; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 4px; }
+    .kpi-value { font-size: 24px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.35px; white-space: nowrap; }
 
-/* 🔴 MARGEM DINÂMICA: Afasta o painel principal na largura exata do menu (70px fechado, 250px aberto) */
-.main .block-container { 
-    max-width: calc(100% - 70px) !important; 
-    margin-left: 70px !important;
-    padding-top: 1.5rem; 
-    padding-bottom: 2rem; 
-    padding-right: 2rem !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
+    /* Seções */
+    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
+    .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
+    .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
+    .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 
-div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
-.stPlotlyChart { background: transparent !important; }
-.js-plotly-plot, .plot-container { margin: 0 auto; }
+    /* Tabelas */
+    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.03); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
+    .tabela-financeira tbody tr:hover td { background: #fafbfe; }
+    .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
+    .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
+    
+    .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
+    .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
+    
+    hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
 
-/* =========================================
-   GLASSMORPHISM SIDEBAR (MENU LATERAL FIXO)
-   ========================================= */
-.glass-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100vh;
-    width: 70px;
-    background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
-    display: flex;
-    flex-direction: column;
-    padding-top: 25px;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 999999;
-    overflow: hidden;
-    box-shadow: 4px 0 15px rgba(0,0,0,0.15);
-    font-family: 'Inter', sans-serif;
-}
-
-.glass-sidebar:hover {
-    width: 250px;
-    background: rgba(15, 23, 42, 0.99);
-}
-
-.glass-logo {
-    padding: 0 24px 30px;
-    display: flex;
-    align-items: center;
-    color: white;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    margin-bottom: 15px;
-    white-space: nowrap;
-}
-
-.glass-item {
-    display: flex;
-    align-items: center;
-    padding: 16px 24px;
-    color: rgba(255, 255, 255, 0.45);
-    text-decoration: none !important;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-    border-left: 3px solid transparent;
-}
-
-.glass-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ffffff;
-}
-
-.glass-item.active {
-    background: rgba(59, 130, 246, 0.15); 
-    color: #ffffff;
-    border-left: 3px solid #3b82f6;
-}
-
-.glass-icon {
-    min-width: 20px;
-    font-size: 18px !important;
-    margin-right: 18px;
-}
-
-.glass-text {
-    opacity: 0;
-    font-weight: 500;
-    font-size: 13px;
-    transition: opacity 0.2s ease;
-    letter-spacing: 0.3px;
-}
-
-.glass-sidebar:hover .glass-text {
-    opacity: 1;
-    transition-delay: 0.1s;
-}
-
-/* =========================================
-   CABEÇALHOS, KPIS E TABELAS DO SALDO
-   ========================================= */
-.dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
-.header-period { min-width: 200px; }
-.header-period .date { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.25px; }
-.header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
-.header-center { text-align: center; }
-.header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
-.header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
-.update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
-.update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-.update-badge b { font-size: 12px; font-weight: 800; }
-
-.kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
-.kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
-.kpi-card.disponivel { background: linear-gradient(135deg, rgba(21, 149, 112, 0.95), rgba(28, 200, 138, 0.75)); }
-.kpi-card.aplicacoes { background: linear-gradient(135deg, rgba(118, 84, 200, 0.95), rgba(143, 104, 228, 0.75)); }
-.kpi-card.limites { background: linear-gradient(135deg, rgba(35, 136, 167, 0.95), rgba(54, 185, 204, 0.75)); }
-.kpi-icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px; border-radius: 7px; background: rgba(255,255,255,0.2); font-size: 14px; color: white; }
-.kpi-title { font-size: 10px; line-height: 1; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 4px; }
-.kpi-value { font-size: 24px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.35px; white-space: nowrap; }
-
-.section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
-.section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
-.section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
-.movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
-
-.tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.03); font-size: 12px; width: 100%; margin-bottom: 8px; }
-.tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
-.tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
-.tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
-.tabela-financeira tbody tr:hover td { background: #fafbfe; }
-.tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
-.tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
-.tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
-.tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
-hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
-
-@media print {
-    .glass-sidebar { display: none !important; }
-    .main .block-container { max-width: 100% !important; margin-left: 0 !important; padding: 10px !important; }
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-    .kpi-card, .tabela-container, .movement-card { break-inside: avoid; }
-}
+    /* MODO IMPRESSÃO (PDF) */
+    @media print {
+        [data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        .main .block-container { max-width: 100% !important; padding: 10px !important; }
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+        .kpi-card, .tabela-container, .movement-card { break-inside: avoid; }
+    }
 </style>
-
-<!-- =========================================
-   INJEÇÃO DO MENU HTML LATERAL (FIXO)
-   ========================================= -->
-<div class="glass-sidebar">
-    <div class="glass-logo">
-        <i class="bi bi-hexagon-fill glass-icon" style="color: #3b82f6;"></i>
-        <span class="glass-text" style="font-size: 15px; font-weight: 800; letter-spacing: 1px;">COCKPIT</span>
-    </div>
-    
-    <a href="/" class="glass-item" target="_self">
-        <i class="bi bi-grid-1x2 glass-icon"></i>
-        <span class="glass-text">Portal Executivo</span>
-    </a>
-    
-    <!-- TELA ATIVA (DASHBOARD SALDO) -->
-    <a href="Dashboard_Saldo" class="glass-item active" target="_self">
-        <i class="bi bi-bank glass-icon"></i>
-        <span class="glass-text">Dashboard Saldo</span>
-    </a>
-    
-    <a href="painel_fluxo_caixa" class="glass-item" target="_self">
-        <i class="bi bi-cash-stack glass-icon"></i>
-        <span class="glass-text">Fluxo de Caixa</span>
-    </a>
-    
-    <a href="painel_pagar" class="glass-item" target="_self">
-        <i class="bi bi-graph-down-arrow glass-icon"></i>
-        <span class="glass-text">Painel a Pagar</span>
-    </a>
-</div>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO DOS FILTROS E PDF (TOPO DA TELA)
+# 0. CONFIGURAÇÃO DA BARRA LATERAL (MENU ORIGINAL)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
-col_f1, col_f2, col_f3 = st.columns([1.5, 1.5, 5])
-with col_f1:
-    data_selecionada = st.date_input("📅 Período de Análise:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
-with col_f2:
-    st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+with st.sidebar:
+    st.markdown("### Filtros do Painel")
+    
+    data_selecionada = st.date_input(
+        "Selecione o Período:",
+        value=(primeiro_dia_mes, hoje),
+        min_value=datetime(2020, 1, 1).date(),
+        max_value=hoje,
+        format="DD/MM/YYYY"
+    )
+    
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### Relatório")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
+    
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #3b82f6, #1e40af); color:white; border:none; padding:8px 12px; border-radius:6px; font-family:sans-serif; font-weight:bold; font-size:13px; cursor:pointer; box-shadow: 0 4px 6px rgba(30, 64, 175, 0.2); transition: transform 0.2s;">
-        🖨️ Exportar PDF
+        style="width:100%; background:linear-gradient(135deg, #3157d5, #4e73df); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(49, 87, 213, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Dashboard (PDF)
         </button>
-    """, height=40)
-
-st.markdown("<hr style='margin-top:0px; margin-bottom:20px;'>", unsafe_allow_html=True)
+    """, height=55)
 
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
     data_inicio_filtro, data_fim_filtro = data_selecionada
