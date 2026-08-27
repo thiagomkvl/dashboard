@@ -10,9 +10,6 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import textwrap
 
-# 🔴 Importação do menu que criamos no arquivo components.py
-from components import render_sidebar_menu
-
 # Tente importar a conexão
 try:
     from database import conectar_sheets
@@ -22,11 +19,8 @@ except ImportError:
         return None
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
 
-# --- RENDERIZAÇÃO DO MENU LATERAL FIXO ---
-menu_html = render_sidebar_menu().replace("{active_saldo}", "active").replace("{active_fluxo}", "").replace("{active_pagar}", "")
-st.markdown(textwrap.dedent(menu_html), unsafe_allow_html=True)
 # --- CUSTOM CSS ---
 css = """
 <style>
