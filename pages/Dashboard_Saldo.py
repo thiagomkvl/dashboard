@@ -20,7 +20,7 @@ except ImportError:
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊")
 
-# --- CUSTOM CSS (MIX DASHBOARD SALDO + MENU GLASSMORPHISM) ---
+# --- CUSTOM CSS (MIX DASHBOARD SALDO + MENU GLASSMORPHISM FIXO) ---
 css = """
 <!-- Importação dos Ícones Elegantes (Bootstrap Icons) -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -47,18 +47,19 @@ css = """
 html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; color: var(--text); }
 .stApp { background-color: var(--bg); }
 
-/* 🔴 OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
+/* OCULTANDO O SISTEMA NATIVO DO STREAMLIT */
 [data-testid="stSidebar"] { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 header[data-testid="stHeader"] { display: none !important; }
 
-/* Ajusta o container principal para acomodar o novo menu */
+/* 🔴 MARGEM DINÂMICA: Afasta o painel principal na largura exata do menu (70px fechado, 250px aberto) */
 .main .block-container { 
-    max-width: 100% !important; 
+    max-width: calc(100% - 70px) !important; 
+    margin-left: 70px !important;
     padding-top: 1.5rem; 
     padding-bottom: 2rem; 
-    padding-left: 95px !important; 
-    transition: padding-left 0.3s ease;
+    padding-right: 2rem !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
@@ -66,7 +67,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
 .js-plotly-plot, .plot-container { margin: 0 auto; }
 
 /* =========================================
-   GLASSMORPHISM SIDEBAR (MENU LATERAL)
+   GLASSMORPHISM SIDEBAR (MENU LATERAL FIXO)
    ========================================= */
 .glass-sidebar {
     position: fixed;
@@ -74,7 +75,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
     left: 0;
     height: 100vh;
     width: 70px;
-    background: rgba(15, 23, 42, 0.92);
+    background: rgba(15, 23, 42, 0.95);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-right: 1px solid rgba(255, 255, 255, 0.05);
@@ -90,7 +91,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
 
 .glass-sidebar:hover {
     width: 250px;
-    background: rgba(15, 23, 42, 0.98);
+    background: rgba(15, 23, 42, 0.99);
 }
 
 .glass-logo {
@@ -183,19 +184,16 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
 .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
 hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
 
-/* =========================================================
-   MODO IMPRESSÃO (PDF)
-   ========================================================= */
 @media print {
     .glass-sidebar { display: none !important; }
-    .main .block-container { max-width: 100% !important; padding: 10px !important; }
+    .main .block-container { max-width: 100% !important; margin-left: 0 !important; padding: 10px !important; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     .kpi-card, .tabela-container, .movement-card { break-inside: avoid; }
 }
 </style>
 
 <!-- =========================================
-   INJEÇÃO DO MENU HTML LATERAL
+   INJEÇÃO DO MENU HTML LATERAL (FIXO)
    ========================================= -->
 <div class="glass-sidebar">
     <div class="glass-logo">
@@ -208,7 +206,7 @@ hr { border: 0 !important; border-top: 1px solid var(--border) !important; margi
         <span class="glass-text">Portal Executivo</span>
     </a>
     
-    <!-- ESTE É O ATIVO (DASHBOARD SALDO) -->
+    <!-- TELA ATIVA -->
     <a href="Dashboard_Saldo" class="glass-item active" target="_self">
         <i class="bi bi-bank glass-icon"></i>
         <span class="glass-text">Dashboard Saldo</span>
@@ -225,8 +223,8 @@ hr { border: 0 !important; border-top: 1px solid var(--border) !important; margi
     </a>
 </div>
 """
-st.markdown(css, unsafe_allow_html=True)
-
+# 🔴 ENVOLVENDO CORRETAMENTE COM O UNSAFE_ALLOW_HTML PARA O HTML RENDERIZAR
+st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 # ==============================================================================
 # 0. CONFIGURAÇÃO DOS FILTROS E PDF (MOVIDOS PARA O TOPO DA TELA)
 # ==============================================================================
