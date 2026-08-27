@@ -9,6 +9,7 @@ import unicodedata
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import textwrap
+
 # Tente importar a conexão
 try:
     from database import conectar_sheets
@@ -206,7 +207,7 @@ hr { border: 0 !important; border-top: 1px solid var(--border) !important; margi
         <span class="glass-text">Portal Executivo</span>
     </a>
     
-    <!-- TELA ATIVA -->
+    <!-- TELA ATIVA (DASHBOARD SALDO) -->
     <a href="Dashboard_Saldo" class="glass-item active" target="_self">
         <i class="bi bi-bank glass-icon"></i>
         <span class="glass-text">Dashboard Saldo</span>
@@ -223,10 +224,10 @@ hr { border: 0 !important; border-top: 1px solid var(--border) !important; margi
     </a>
 </div>
 """
-# 🔴 ENVOLVENDO CORRETAMENTE COM O UNSAFE_ALLOW_HTML PARA O HTML RENDERIZAR
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+
 # ==============================================================================
-# 0. CONFIGURAÇÃO DOS FILTROS E PDF (MOVIDOS PARA O TOPO DA TELA)
+# 0. CONFIGURAÇÃO DOS FILTROS E PDF (TOPO DA TELA)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
@@ -245,11 +246,9 @@ with col_f2:
 
 st.markdown("<hr style='margin-top:0px; margin-bottom:20px;'>", unsafe_allow_html=True)
 
-# Validação segura para garantir que o usuário escolheu duas datas no calendário
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
     data_inicio_filtro, data_fim_filtro = data_selecionada
 else:
-    # Se o usuário clicar apenas em 1 dia, ele roda só para aquele dia
     data_inicio_filtro = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
     data_fim_filtro = data_inicio_filtro
 
@@ -309,7 +308,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (BASE ZERO + TIMELINE COM MAPEAMENTO POSICIONAL)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -318,9 +317,6 @@ def carregar_dados(data_inicio, data_fim):
     if conn is None: 
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
     try:
-        # =========================================================
-        # 1. ABA SALDO_INICIAL
-        # =========================================================
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
         try:
             df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
@@ -351,9 +347,6 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Aviso ao ler Saldo_Inicial:", e)
             
-        # =========================================================
-        # LEITURA DO CADASTRO E MOTOR DE MATCH DA CONTA CONTÁBIL
-        # =========================================================
         dicionario_contas = {}
         try:
             df_cad = conn.read(worksheet="Cadastro Fornecedores", ttl=0)
@@ -369,44 +362,7 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Erro ao ler Cadastro de Fornecedores:", e)
 
-        def achar_conta_fuzzy(lancamento):
-            if not dicionario_contas: 
-                return "Não Mapeado"
-                
-            lanc = str(lancamento).upper()
-            nome_extrato = lanc
-            
-            match = re.search(r'/\s*([^)]+)', lanc)
-            if match:
-                nome_extrato = match.group(1).strip()
-                
-            lixos = [' LTDA', ' S.A.', ' S.A', ' S/A', ' COMERCIO', ' COM.', ' DE ', ' PRODUTOS', ' PROD.', ' HOSPITALARES', ' HOSP.']
-            for lixo in lixos:
-                nome_extrato = nome_extrato.replace(lixo, '')
-            nome_extrato = nome_extrato.strip()
-
-            chaves_cadastro = list(dicionario_contas.keys())
-            chaves_limpas = []
-            for chave in chaves_cadastro:
-                chave_tmp = chave
-                for lixo in lixos:
-                    chave_tmp = chave_tmp.replace(lixo, '')
-                chaves_limpas.append(chave_tmp.strip())
-
-            matches = difflib.get_close_matches(nome_extrato, chaves_limpas, n=1, cutoff=0.4)
-            
-            if matches:
-                idx_match = chaves_limpas.index(matches[0])
-                chave_original = chaves_cadastro[idx_match]
-                return dicionario_contas[chave_original]
-                
-            return "Não Mapeado"
-
-        # =========================================================
-        # 2. EXTRATOS (Com Aplicação do Filtro de Datas)
-        # =========================================================
         df_extratos = None
-        
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
@@ -443,9 +399,6 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Aviso ao ler extratos:", e)
 
-        # =========================================================
-        # 3. CONSTRUÇÃO DA TABELA FINAL DE BANCOS
-        # =========================================================
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
@@ -475,12 +428,8 @@ def carregar_dados(data_inicio, data_fim):
             df_fim_mes['Saída Tr'] = 0.0
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
-        
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
-        # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO (Caixa Real = Disponível + Aplicação)
-        # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
@@ -494,10 +443,8 @@ def carregar_dados(data_inicio, data_fim):
             }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-            
             df_graficos['Entrada'] = df_graficos['Cred_Op'].fillna(0)
             df_graficos['Saída'] = df_graficos['Deb_Op'].fillna(0)
-            
             df_graficos['Movimentação Líquida'] = (df_graficos['Cred_Op'] + df_graficos['Cred_Tr']).fillna(0) - (df_graficos['Deb_Op'] + df_graficos['Deb_Tr']).fillna(0)
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
         else:
@@ -508,15 +455,9 @@ def carregar_dados(data_inicio, data_fim):
         else:
             df_graficos['Data_Label'] = pd.Series(dtype='object')
 
-        # =========================================================
-        # 5. KPI OPERACIONAL LÍQUIDO
-        # =========================================================
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
-        # =========================================================
-        # 6. LER A NOVA ABA DE APLICAÇÕES
-        # =========================================================
         df_aplicacoes_nova = pd.DataFrame()
         saldo_aplicado_kpi = 0.0
         
@@ -524,7 +465,6 @@ def carregar_dados(data_inicio, data_fim):
             df_app = conn.read(worksheet="Aplicações", ttl=0)
             if not df_app.empty:
                 df_app.columns = [str(c).strip() for c in df_app.columns]
-                
                 col_banco = df_app.columns[0]
                 for c in df_app.columns:
                     if 'banco' in c.lower() or 'conta' in c.lower():
@@ -551,7 +491,6 @@ def carregar_dados(data_inicio, data_fim):
                     df_app[c] = df_app[c].apply(limpa_valor_bruto)
                     
                 df_aplicacoes_nova = df_app.copy()
-                
                 if c_atual:
                     saldo_aplicado_kpi = df_aplicacoes_nova[c_atual].sum()
         except Exception as e:
@@ -576,12 +515,10 @@ if df_consolidado.empty: st.stop()
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
-# Limites
 saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
 saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
 limites_totais = saldo_getnet + saldo_conta_garantida
 
-# Saldo Total REAL 
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -760,25 +697,20 @@ with col_tab:
     df_view['Ordem'] = df_view[col_conta].apply(get_ordem)
     df_view = df_view.sort_values('Ordem').drop(columns=['Ordem'])
 
-    # --- SEPARAÇÃO DA LÓGICA (BANCOS x LIMITES/GETNET) ---
     df_bancos = df_view[df_view['Tipo'] != 'Limite']
     df_getnet = df_view[df_view['Tipo'] == 'Limite']
 
-    # O TOTAL agora soma APENAS os bancos normais
     totais = {col: df_bancos[col].sum() for col in ['Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']}
     
     html_tabela = f'<div class="tabela-container tabela-bancos"><table class="tabela-financeira"><thead><tr><th>#</th><th>'+col_conta+f'</th><th>TIPO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th><th class="valores">ENTRADA (INT.)</th><th class="valores">SAÍDA (INT.)</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
     
-    # 1. Lista os bancos normais
     for idx, row in enumerate(df_bancos.itertuples()):
         cor_transf = "#858796" if row._6 == 0 else "#1cc88a"
         cor_transf_saida = "#858796" if row._7 == 0 else "#e74a3b"
         html_tabela += f'<tr><td>{idx+1}</td><td>{row._2}</td><td style="font-size:11px; font-weight:700; color:#4b5563;">{row.Tipo}</td><td class="valores">{formatar_moeda(row._3)}</td><td class="valores">{formatar_moeda(row._4)}</td><td class="valores">{formatar_moeda(row._5)}</td><td class="valores" style="color:{cor_transf};">{formatar_moeda(row._6)}</td><td class="valores" style="color:{cor_transf_saida};">{formatar_moeda(row._7)}</td><td class="valores valor-destaque">{formatar_moeda(row._8)}</td></tr>'
     
-    # 2. Linha de Total apenas para os bancos normais
     html_tabela += f'<tr class="linha-total"><td></td><td>TOTAL</td><td></td><td class="valores">{formatar_moeda(totais["Saldo Inicial"])}</td><td class="valores">{formatar_moeda(totais["Entrada Op"])}</td><td class="valores">{formatar_moeda(totais["Saída Op"])}</td><td class="valores" style="color:#858796;">-</td><td class="valores" style="color:#858796;">-</td><td class="valores valor-destaque">{formatar_moeda(totais["Saldo Final"])}</td></tr>'
 
-    # 3. Anexa a Getnet (Limite) separada lá no finalzinho (fora do total)
     if not df_getnet.empty:
         for idx, row in enumerate(df_getnet.itertuples()):
             idx_display = len(df_bancos) + idx + 1
