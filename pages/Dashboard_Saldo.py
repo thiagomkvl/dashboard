@@ -8,7 +8,7 @@ import textwrap
 st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA E IMPRESSÃO (PDF)
+# 1. CUSTOM CSS — MINIMALISTA E MENU LATERAL FORÇADO
 # ==============================================================================
 css = """
 <style>
@@ -30,6 +30,38 @@ css = """
 html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text-main); }
 .stApp { background-color: var(--bg); }
 .main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
+
+/* 🔴 A MÁGICA PARA O MENU FORÇADO FUNCIONAR PERFEITAMENTE */
+/* 1. Mantém o topo transparente para a setinha (>) continuar existindo */
+header[data-testid="stHeader"] { background-color: transparent !important; }
+/* 2. Oculta o menu de deploy (3 pontinhos) inútil */
+[data-testid="stToolbar"] { display: none !important; }
+/* 3. Oculta a lista nativa feia de arquivos do Streamlit */
+[data-testid="stSidebarNav"] { display: none !important; }
+
+/* Estilização do nosso Menu Forçado */
+.custom-menu a {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    margin-bottom: 4px;
+}
+.custom-menu a:hover {
+    background-color: #f1f5f9;
+    color: var(--primary-dark);
+}
+.custom-menu a.active {
+    background-color: #eff6ff;
+    color: var(--primary);
+    font-weight: 800;
+    border-left: 4px solid var(--primary);
+}
 
 /* HEADER PRINCIPAL MINIMALISTA */
 .exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -149,6 +181,7 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
+        # Mapeamento Estrito das Colunas Solicitadas
         col_data = df.columns[1]     # B
         col_desc = df.columns[2]     # C
         col_deb = df.columns[4]      # E
@@ -182,17 +215,30 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS LATERAIS (MENU NATIVO)
+# 3. FILTROS LATERAIS E MENU FORÇADO
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
 with st.sidebar:
-    st.markdown("### Filtros de Análise")
+    # INJETANDO O MENU FORÇADO
+    st.markdown("### 🧭 Navegação")
+    st.markdown("""
+    <div class="custom-menu">
+        <a href="/" target="_self">🏢 Portal Executivo</a>
+        <a href="Dashboard_Saldo" target="_self">🏦 Dashboard de Saldos</a>
+        <a href="painel_fluxo_caixa" target="_self" class="active">💸 Fluxo de Caixa</a>
+        <a href="painel_pagar" target="_self">📉 Painel de Pagamentos</a>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+    
+    st.markdown("### 📅 Filtros de Análise")
     data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
     
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
-    st.markdown("### Relatório")
+    st.markdown("### 🖨️ Relatório")
     st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
@@ -201,7 +247,6 @@ with st.sidebar:
         </button>
     """, height=55)
 
-# Validação segura para as datas selecionadas
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
     dt_ini, dt_fim = data_selecionada
 else:
