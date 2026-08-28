@@ -196,7 +196,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS
+# 2. CARGA DE DADOS (COM FILTRO OPERACIONAL NA COLUNA K)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -205,6 +205,9 @@ def carregar_dados(data_inicio, data_fim):
     if conn is None: 
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
     try:
+        # =========================================================
+        # 1. ABA SALDO_INICIAL
+        # =========================================================
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
         try:
             df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
@@ -235,58 +238,60 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Aviso ao ler Saldo_Inicial:", e)
             
-        dicionario_contas = {}
-        try:
-            df_cad = conn.read(worksheet="Cadastro Fornecedores", ttl=0)
-            if not df_cad.empty:
-                col_razao = df_cad.columns[1]
-                col_conta = df_cad.columns[2]
-                
-                for _, row in df_cad.iterrows():
-                    razao = str(row[col_razao]).strip().upper()
-                    conta = str(row[col_conta]).strip()
-                    if razao != 'NAN' and razao != '':
-                        dicionario_contas[razao] = conta
-        except Exception as e:
-            print("Erro ao ler Cadastro de Fornecedores:", e)
-
+        # =========================================================
+        # 2. EXTRATOS (Com Filtro de Data e Operacionalidade - Coluna K)
+        # =========================================================
         df_extratos = None
+        
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                while len(df_ext.columns) < 8:
+                while len(df_ext.columns) < 11:
                     df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
                 
-                df_ext = df_ext.iloc[:, [0, 1, 4, 5, 7]].copy()
-                df_ext.columns = ['Conta Bancária', 'Data', 'Vl Débito', 'Vl Crédito', 'Tipo de Transação']
+                # Mapeamento estrito das colunas solicitadas
+                col_banco = df_ext.columns[0]
+                col_data = df_ext.columns[1]
+                col_deb = df_ext.columns[4]
+                col_cred = df_ext.columns[5]
+                col_tipo = df_ext.columns[7]
+                col_operac = df_ext.columns[10] # Coluna K (Operacionalidade)
 
-                df_ext['Data'] = pd.to_datetime(df_ext['Data'], dayfirst=True, errors='coerce').dt.normalize()
+                df_process = pd.DataFrame()
+                df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
+                df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
                 
                 dt_ini_pd = pd.to_datetime(data_inicio)
                 dt_fim_pd = pd.to_datetime(data_fim)
                 
-                df_ext = df_ext[(df_ext['Data'] >= dt_ini_pd) & (df_ext['Data'] <= dt_fim_pd)].copy()
+                df_process = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
                 
-                df_ext['Vl Crédito'] = df_ext['Vl Crédito'].apply(limpa_valor_bruto)
-                df_ext['Vl Débito'] = df_ext['Vl Débito'].apply(limpa_valor_bruto)
-                df_ext['Conta Bancária'] = df_ext['Conta Bancária'].astype(str).str.strip()
+                df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
+                df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
                 
                 def normalizar_texto(txt):
                     if pd.isna(txt) or txt is None: return ""
                     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
                 
-                serie_tipo = df_ext['Tipo de Transação'].apply(normalizar_texto)
-                df_ext['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+                serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
+                df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
 
-                df_ext['Cred_Op'] = df_ext['Vl Crédito'].where(~df_ext['É Transf'], 0.0)
-                df_ext['Deb_Op'] = df_ext['Vl Débito'].where(~df_ext['É Transf'], 0.0)
-                df_ext['Cred_Tr'] = df_ext['Vl Crédito'].where(df_ext['É Transf'], 0.0)
-                df_ext['Deb_Tr'] = df_ext['Vl Débito'].where(df_ext['É Transf'], 0.0)
+                # REGRA SOLICITADA: Considerar apenas créditos e débitos com classificação OPERACIONAL (Coluna K)
+                serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
+                is_operacional = (serie_operac == 'OPERACIONAL')
+
+                df_process['Cred_Op'] = df_process['Vl Crédito'].where((~df_process['É Transf']) & is_operacional, 0.0)
+                df_process['Deb_Op'] = df_process['Vl Débito'].where((~df_process['É Transf']) & is_operacional, 0.0)
+                df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
+                df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
                 
-                df_extratos = df_ext
+                df_extratos = df_process
         except Exception as e:
             print("Aviso ao ler extratos:", e)
 
+        # =========================================================
+        # 3. CONSTRUÇÃO DA TABELA FINAL DE BANCOS
+        # =========================================================
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
@@ -318,6 +323,9 @@ def carregar_dados(data_inicio, data_fim):
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
+        # =========================================================
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
+        # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
@@ -346,6 +354,9 @@ def carregar_dados(data_inicio, data_fim):
         entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
         saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
 
+        # =========================================================
+        # 5. LER ABA DE APLICAÇÕES
+        # =========================================================
         df_aplicacoes_nova = pd.DataFrame()
         saldo_aplicado_kpi = 0.0
         
