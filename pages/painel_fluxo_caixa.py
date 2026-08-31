@@ -96,9 +96,9 @@ details summary::-webkit-details-marker { display: none; }
 details:not([open]) > summary .icon-expand::before { content: "+"; }
 details[open] > summary .icon-expand::before { content: "-"; }
 
-/* =========================================================
-   MODO IMPRESSÃO (PDF DE ALTA QUALIDADE VETORIAL)
-   ========================================================= */
+/* =========================================
+   MODO IMPRESSÃO (PDF)
+   ========================================= */
 @media print {
     [data-testid="stSidebar"] { display: none !important; }
     header[data-testid="stHeader"] { display: none !important; }
@@ -149,29 +149,34 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
-        col_data = df.columns[1]     # B
-        col_desc = df.columns[2]     # C
-        col_deb = df.columns[4]      # E
-        col_cred = df.columns[5]     # F
-        col_conta = df.columns[8]    # I (Conta Contábil)
-        col_classif = df.columns[9]  # J (Classificação Financeira)
+        # Garante que existam colunas suficientes para ler J, L e C
+        while len(df.columns) < 12:
+            df[f"Col_Extra_{len(df.columns)}"] = ""
+
+        col_data = df.columns[1]     # B (Data)
+        col_desc = df.columns[2]     # C (Transação / Descrição)
+        col_deb = df.columns[4]      # E (Débito)
+        col_cred = df.columns[5]     # F (Crédito)
+        col_classif = df.columns[9]  # J (Classificação Financeira) -> Linha 1
         col_operac = df.columns[10]  # K (Operacionalidade)
+        col_subgrupo = df.columns[11] # L (SubGrupo) -> Linha 2
 
         df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
         df['Saída'] = df[col_deb].apply(limpa_valor)
         df['Entrada'] = df[col_cred].apply(limpa_valor)
         df['Valor Líquido'] = df['Entrada'] - df['Saída']
         
-        df['Conta_Str'] = df[col_conta].astype(str).str.strip().str.upper()
-        df = df[~df['Conta_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
+        # Filtro de transferências internas
+        df['Desc_Str'] = df[col_desc].astype(str).str.strip().str.upper()
+        df = df[~df['Desc_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
         
-        df['Conta'] = df[col_conta].fillna('Não Informado').astype(str).str.strip()
         df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
+        df['SubGrupo'] = df[col_subgrupo].fillna('Não Informado').astype(str).str.strip()
         df['Descricao'] = df[col_desc].fillna('Lançamento S/ Descrição').astype(str).str.strip()
         df['Operacionalidade'] = df[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
         
-        df.loc[df['Conta'] == '', 'Conta'] = 'Não Informado'
         df.loc[df['Classificacao'] == '', 'Classificacao'] = 'Não Classificado'
+        df.loc[df['SubGrupo'] == '', 'SubGrupo'] = 'Não Informado'
         
         return df[df['Data'].notna()]
     except Exception as e:
@@ -182,7 +187,7 @@ df_base = preparar_dados_fluxo()
 if df_base.empty: st.stop()
 
 # ==============================================================================
-# 3. FILTROS LATERAIS (MENU NATIVO PADRÃO)
+# 3. FILTROS LATERAIS (MENU NATIVO)
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
@@ -220,7 +225,7 @@ df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERAC
 df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
 
 # ==============================================================================
-# 4. KPIs (BASEADOS APENAS NO OPERACIONAL)
+# 4. KPIS (BASEADOS APENAS NO OPERACIONAL)
 # ==============================================================================
 tot_entrada_at = df_op_atual['Entrada'].sum()
 tot_saida_at = df_op_atual['Saída'].sum()
@@ -263,7 +268,7 @@ kpis_html = f"""<div class='kpi-row'>
 injetar_html(kpis_html)
 
 # ==============================================================================
-# 5. MATRIZ EXPANSÍVEL (GRID HTML5)
+# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA (J ➔ L ➔ C)
 # ==============================================================================
 grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
 
@@ -288,44 +293,47 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
     html = ""
     if df_at.empty and df_ant.empty: return html
     
-    contas_at = df_at.groupby('Conta')[col_valor].sum().to_dict()
-    contas_ant = df_ant.groupby('Conta')[col_valor].sum().to_dict()
-    chaves_conta = sorted(set(list(contas_at.keys()) + list(contas_ant.keys())), key=lambda k: contas_at.get(k, 0), reverse=True)
+    # Nível 1: Classificação Financeira (Coluna J)
+    classif_at = df_at.groupby('Classificacao')[col_valor].sum().to_dict()
+    classif_ant = df_ant.groupby('Classificacao')[col_valor].sum().to_dict()
+    chaves_classif = sorted(set(list(classif_at.keys()) + list(classif_ant.keys())), key=lambda k: classif_at.get(k, 0), reverse=True)
     
-    for conta in chaves_conta:
-        v_conta_at = contas_at.get(conta, 0)
-        v_conta_ant = contas_ant.get(conta, 0)
-        rep_conta = (v_conta_at / total_periodo * 100) if total_periodo > 0 else 0
-        var_conta = calc_var(v_conta_at, v_conta_ant)
+    for classif in chaves_classif:
+        v_classif_at = classif_at.get(classif, 0)
+        v_classif_ant = classif_ant.get(classif, 0)
+        rep_classif = (v_classif_at / total_periodo * 100) if total_periodo > 0 else 0
+        var_classif = calc_var(v_classif_at, v_classif_ant)
         
-        if is_saida: cor_conta = "var(--danger)" if var_conta > 0 else "var(--success)"
-        else: cor_conta = "var(--success)" if var_conta > 0 else "var(--danger)"
+        if is_saida: cor_classif = "var(--danger)" if var_classif > 0 else "var(--success)"
+        else: cor_classif = "var(--success)" if var_classif > 0 else "var(--danger)"
             
         html += "<details><summary>"
-        html += render_linha(f"<span class='icon-expand'></span>{conta}", "lvl-grupo", v_conta_at, rep_conta, v_conta_ant, var_conta, cor_conta)
+        html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-grupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
         html += "</summary>"
         
-        df_at_c = df_at[df_at['Conta'] == conta]
-        df_ant_c = df_ant[df_ant['Conta'] == conta]
+        df_at_c = df_at[df_at['Classificacao'] == classif]
+        df_ant_c = df_ant[df_ant['Classificacao'] == classif]
         
-        classif_at = df_at_c.groupby('Classificacao')[col_valor].sum().to_dict()
-        classif_ant = df_ant_c.groupby('Classificacao')[col_valor].sum().to_dict()
-        chaves_classif = sorted(set(list(classif_at.keys()) + list(classif_ant.keys())), key=lambda k: classif_at.get(k, 0), reverse=True)
+        # Nível 2: SubGrupo (Coluna L)
+        sub_at = df_at_c.groupby('SubGrupo')[col_valor].sum().to_dict()
+        sub_ant = df_ant_c.groupby('SubGrupo')[col_valor].sum().to_dict()
+        chaves_sub = sorted(set(list(sub_at.keys()) + list(sub_ant.keys())), key=lambda k: sub_at.get(k, 0), reverse=True)
         
-        for classif in chaves_classif:
-            v_classif_at = classif_at.get(classif, 0)
-            v_classif_ant = classif_ant.get(classif, 0)
-            rep_classif = (v_classif_at / total_periodo * 100) if total_periodo > 0 else 0
-            var_classif = calc_var(v_classif_at, v_classif_ant)
+        for subg in chaves_sub:
+            v_sub_at = sub_at.get(subg, 0)
+            v_sub_ant = sub_ant.get(subg, 0)
+            rep_sub = (v_sub_at / total_periodo * 100) if total_periodo > 0 else 0
+            var_sub = calc_var(v_sub_at, v_sub_ant)
             
-            if is_saida: cor_classif = "var(--danger)" if var_classif > 0 else "var(--success)"
-            else: cor_classif = "var(--success)" if var_classif > 0 else "var(--danger)"
+            if is_saida: cor_sub = "var(--danger)" if var_sub > 0 else "var(--success)"
+            else: cor_sub = "var(--success)" if var_sub > 0 else "var(--danger)"
                 
             html += "<details><summary>"
-            html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
+            html += render_linha(f"<span class='icon-expand'></span>{subg}", "lvl-subgrupo", v_sub_at, rep_sub, v_sub_ant, var_sub, cor_sub)
             html += "</summary>"
             
-            df_trans = df_at_c[df_at_c['Classificacao'] == classif].sort_values('Data')
+            # Nível 3: Transação / Descrição (Coluna C)
+            df_trans = df_at_c[df_at_c['SubGrupo'] == subg].sort_values('Data')
             for _, row in df_trans.iterrows():
                 dt_str = row['Data'].strftime('%d/%m')
                 desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
@@ -339,9 +347,9 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
 # ----------------- TABELA OPERACIONAL -----------------
 html_tab = f"""
 <div class='matrix-container'>
-    <div class='matrix-header'>Fluxo Operacional</div>
+    <div class='matrix-header'>Fluxo Operacional (Hierarquia: Classificação ➔ Subgrupo ➔ Transação)</div>
     <div class='grid-row grid-header' style='grid-template-columns: {grid_cols};'>
-        <div class='col-name'>Nível (Conta ➔ Classificação ➔ Transação)</div>
+        <div class='col-name'>Nível Estrutural</div>
         <div class='col-val border-left'>Realizado ({dt_fim.strftime('%b').capitalize()})</div>
         <div class='col-val border-left'>% Rep.</div>
         <div class='col-val border-left'>Período Anterior</div>
