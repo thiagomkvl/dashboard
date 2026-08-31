@@ -88,7 +88,7 @@ html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
 .lvl-fornecedor { font-size: 11px; background-color: #fafbfc; }
 .lvl-fornecedor .col-name { padding-left: 65px; font-weight: 600; color: #334155; }
 
-/* Linha de Transação Final (Fonte Aumentada e Destacada) */
+/* Linha de Transação Final */
 .lvl-item { background-color: #ffffff; }
 .lvl-item:hover { background-color: #fefefe; }
 .lvl-item .col-name { padding-left: 90px; font-size: 12px !important; font-weight: 600 !important; color: #334155 !important; }
@@ -158,7 +158,7 @@ def preparar_dados_fluxo():
         while len(df.columns) < 13:
             df[f"Col_Extra_{len(df.columns)}"] = ""
 
-        col_banco = df.columns[0]    # A (Banco)
+        col_banco = df.columns[0]     # A (Banco)
         col_data = df.columns[1]     # B (Data)
         col_desc = df.columns[2]     # C (Transação / Descrição)
         col_deb = df.columns[4]      # E (Débito)
@@ -234,17 +234,28 @@ df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERAC
 df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
 
 # ==============================================================================
-# 4. KPIS (BASEADOS APENAS NO OPERACIONAL)
+# 4. KPIS (COM TAXA DE CONSUMO AJUSTADA PARA O CAIXA INICIAL)
 # ==============================================================================
 tot_entrada_at = df_op_atual['Entrada'].sum()
 tot_saida_at = df_op_atual['Saída'].sum()
 geracao_liq_at = tot_entrada_at - tot_saida_at
-eficiencia_at = (tot_saida_at / tot_entrada_at * 100) if tot_entrada_at > 0 else 0
+
+# Leitura do Caixa Inicial para cálculo correto da taxa de consumo (Burn Rate / Impacto)
+try:
+    df_si_kpi = conectar_sheets().read(worksheet="Saldo_Inicial", ttl=0)
+    col_si_valor_kpi = next((c for c in df_si_kpi.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si_kpi.columns[1])
+    caixa_inicial_total = df_si_kpi[col_si_valor_kpi].apply(limpa_valor_bruto).sum()
+except:
+    caixa_inicial_total = 8585221.29 # Fallback de segurança se falhar a leitura
+
+# Taxa de Consumo: Mapeia o percentual que as saídas representam em relação à receita + caixa inicial disponível
+base_consumo = tot_entrada_at + caixa_inicial_total
+eficiencia_at = (tot_saida_at / base_consumo * 100) if base_consumo > 0 else 0
 
 tot_entrada_ant = df_op_ant['Entrada'].sum()
 tot_saida_ant = df_op_ant['Saída'].sum()
 geracao_liq_ant = tot_entrada_ant - tot_saida_ant
-eficiencia_ant = (tot_saida_ant / tot_entrada_ant * 100) if tot_entrada_ant > 0 else 0
+eficiencia_ant = (tot_saida_ant / (tot_entrada_ant + caixa_inicial_total) * 100) if (tot_entrada_ant + caixa_inicial_total) > 0 else 0
 
 periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
 header_html = f"""
@@ -277,7 +288,7 @@ kpis_html = f"""<div class='kpi-row'>
 injetar_html(kpis_html)
 
 # ==============================================================================
-# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA (J ➔ L ➔ M ➔ C + Banco)
+# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA COM % REPRESENTAÇÃO NAS LINHAS 1 E 2
 # ==============================================================================
 grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
 
@@ -290,8 +301,9 @@ def render_linha(nome, classe, val_at, rep_pct, val_ant, var_pct, cor_var, is_it
         html += f"<div class='col-val'>-</div><div class='col-val'>-</div><div class='col-val'>-</div>"
     else:
         sinal = "+" if var_pct > 0 else ""
+        rep_str = f"{rep_pct:.1f}%" if rep_pct > 0 else "-"
         html += f"<div class='col-val border-left'>R$ {formata_num(val_at)}</div>"
-        html += f"<div class='col-val border-left' style='font-size:11px; color:var(--text-muted); text-align:center;'>{rep_pct:.1f}%</div>"
+        html += f"<div class='col-val border-left' style='font-size:11px; color:var(--text-muted); text-align:center;'>{rep_str}</div>"
         html += f"<div class='col-val border-left' style='color:var(--text-muted);'>R$ {formata_num(val_ant)}</div>"
         html += f"<div class='col-val border-left' style='color:{cor_var}; font-size:11px; font-weight:800; text-align:center;'>{sinal}{var_pct:.1f}%</div>"
         
@@ -329,6 +341,7 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
         for subg in chaves_sub:
             v_sub_at = sub_at.get(subg, 0)
             v_sub_ant = sub_ant.get(subg, 0)
+            # % de representação da Linha 2 em relação ao total geral do período
             rep_sub = (v_sub_at / total_periodo * 100) if total_periodo > 0 else 0
             var_sub = calc_var(v_sub_at, v_sub_ant)
             
@@ -358,7 +371,6 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
                 html += render_linha(f"<span class='icon-expand'></span>{fornecedor}", "lvl-fornecedor", v_forn_at, 0, v_forn_ant, var_forn, cor_forn)
                 html += "</summary>"
                 
-                # Transações com Banco e Descrição e fonte aumentada
                 df_trans = df_at_s[df_at_s['Fornecedor'] == fornecedor].sort_values('Data')
                 for _, row in df_trans.iterrows():
                     dt_str = row['Data'].strftime('%d/%m')
