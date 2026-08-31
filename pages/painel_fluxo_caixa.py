@@ -88,11 +88,11 @@ html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
 .lvl-fornecedor { font-size: 11px; background-color: #fafbfc; }
 .lvl-fornecedor .col-name { padding-left: 65px; font-weight: 600; color: #334155; }
 
-/* Linha de Transação Final */
+/* Linha de Transação Final (Fonte Aumentada e Destacada) */
 .lvl-item { background-color: #ffffff; }
 .lvl-item:hover { background-color: #fefefe; }
-.lvl-item .col-name { padding-left: 90px; font-size: 10px; font-weight: 500; color: var(--text-muted); }
-.lvl-item .col-val { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.lvl-item .col-name { padding-left: 90px; font-size: 12px !important; font-weight: 600 !important; color: #334155 !important; }
+.lvl-item .col-val { font-size: 12px !important; font-weight: 600 !important; color: #1e293b !important; }
 
 /* Details e Summary */
 details { width: 100%; display: block; margin: 0; padding: 0; }
@@ -158,6 +158,7 @@ def preparar_dados_fluxo():
         while len(df.columns) < 13:
             df[f"Col_Extra_{len(df.columns)}"] = ""
 
+        col_banco = df.columns[0]    # A (Banco)
         col_data = df.columns[1]     # B (Data)
         col_desc = df.columns[2]     # C (Transação / Descrição)
         col_deb = df.columns[4]      # E (Débito)
@@ -175,6 +176,7 @@ def preparar_dados_fluxo():
         df['Desc_Str'] = df[col_desc].astype(str).str.strip().str.upper()
         df = df[~df['Desc_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
         
+        df['Banco'] = df[col_banco].fillna('Banco S/N').astype(str).str.strip()
         df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
         df['SubGrupo'] = df[col_subgrupo].fillna('Não Informado').astype(str).str.strip()
         df['Fornecedor'] = df[col_fornecedor].fillna('Fornecedor Não Identificado').astype(str).str.strip()
@@ -275,7 +277,7 @@ kpis_html = f"""<div class='kpi-row'>
 injetar_html(kpis_html)
 
 # ==============================================================================
-# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA (J ➔ L ➔ M ➔ C)
+# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA (J ➔ L ➔ M ➔ C + Banco)
 # ==============================================================================
 grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
 
@@ -356,11 +358,13 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
                 html += render_linha(f"<span class='icon-expand'></span>{fornecedor}", "lvl-fornecedor", v_forn_at, 0, v_forn_ant, var_forn, cor_forn)
                 html += "</summary>"
                 
+                # Transações com Banco e Descrição e fonte aumentada
                 df_trans = df_at_s[df_at_s['Fornecedor'] == fornecedor].sort_values('Data')
                 for _, row in df_trans.iterrows():
                     dt_str = row['Data'].strftime('%d/%m')
+                    banco_str = row['Banco']
                     desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
-                    html += render_linha(f"↳ {dt_str} - {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
+                    html += render_linha(f"↳ {dt_str} &nbsp;|&nbsp; <b>[{banco_str}]</b> &nbsp;-&nbsp; {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
                     
                 html += "</details>"
             html += "</details>"
