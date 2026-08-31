@@ -79,14 +79,8 @@ html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
 .lvl-macro .col-name { font-weight: 800; color: var(--primary-dark); text-transform: uppercase; }
 .lvl-macro .col-val { font-weight: 800; color: var(--primary-dark); }
 
-.lvl-grupo .col-name { padding-left: 15px; font-size: 12px; font-weight: 700; color: var(--primary-dark); }
-.lvl-subgrupo .col-name { padding-left: 40px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
-
-/* Linha de Transação Final */
-.lvl-item { background-color: #ffffff; }
-.lvl-item:hover { background-color: #fefefe; }
-.lvl-item .col-name { padding-left: 65px; font-size: 10px; font-weight: 500; color: var(--text-muted); }
-.lvl-item .col-val { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.lvl-grupo { background-color: #ffffff; font-size: 12px; }
+.lvl-subgrupo { background-color: #fafbfc; font-size: 11px; }
 
 /* Details e Summary */
 details { width: 100%; display: block; margin: 0; padding: 0; }
@@ -96,9 +90,6 @@ details summary::-webkit-details-marker { display: none; }
 details:not([open]) > summary .icon-expand::before { content: "+"; }
 details[open] > summary .icon-expand::before { content: "-"; }
 
-/* =========================================
-   MODO IMPRESSÃO (PDF)
-   ========================================= */
 @media print {
     [data-testid="stSidebar"] { display: none !important; }
     header[data-testid="stHeader"] { display: none !important; }
@@ -149,8 +140,8 @@ def preparar_dados_fluxo():
     try:
         df = conn.read(worksheet="Extratos_Bancos", ttl=0)
         
-        # Garante que existam colunas suficientes para ler J, L e C
-        while len(df.columns) < 12:
+        # Garante colunas suficientes até a Coluna M (índice 12)
+        while len(df.columns) < 13:
             df[f"Col_Extra_{len(df.columns)}"] = ""
 
         col_data = df.columns[1]     # B (Data)
@@ -160,23 +151,25 @@ def preparar_dados_fluxo():
         col_classif = df.columns[9]  # J (Classificação Financeira) -> Linha 1
         col_operac = df.columns[10]  # K (Operacionalidade)
         col_subgrupo = df.columns[11] # L (SubGrupo) -> Linha 2
+        col_fornecedor = df.columns[12] # M (Resumo Fornecedor) -> Linha 3
 
         df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
         df['Saída'] = df[col_deb].apply(limpa_valor)
         df['Entrada'] = df[col_cred].apply(limpa_valor)
         df['Valor Líquido'] = df['Entrada'] - df['Saída']
         
-        # Filtro de transferências internas
         df['Desc_Str'] = df[col_desc].astype(str).str.strip().str.upper()
         df = df[~df['Desc_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
         
         df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
         df['SubGrupo'] = df[col_subgrupo].fillna('Não Informado').astype(str).str.strip()
+        df['Fornecedor'] = df[col_fornecedor].fillna('Fornecedor Não Informado').astype(str).str.strip()
         df['Descricao'] = df[col_desc].fillna('Lançamento S/ Descrição').astype(str).str.strip()
         df['Operacionalidade'] = df[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
         
         df.loc[df['Classificacao'] == '', 'Classificacao'] = 'Não Classificado'
         df.loc[df['SubGrupo'] == '', 'SubGrupo'] = 'Não Informado'
+        df.loc[df['Fornecedor'] == '', 'Fornecedor'] = 'Fornecedor Não Informado'
         
         return df[df['Data'].notna()]
     except Exception as e:
@@ -268,7 +261,7 @@ kpis_html = f"""<div class='kpi-row'>
 injetar_html(kpis_html)
 
 # ==============================================================================
-# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA (J ➔ L ➔ C)
+# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA COM LUPA PARA FORNECEDORES
 # ==============================================================================
 grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
 
@@ -293,7 +286,6 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
     html = ""
     if df_at.empty and df_ant.empty: return html
     
-    # Nível 1: Classificação Financeira (Coluna J)
     classif_at = df_at.groupby('Classificacao')[col_valor].sum().to_dict()
     classif_ant = df_ant.groupby('Classificacao')[col_valor].sum().to_dict()
     chaves_classif = sorted(set(list(classif_at.keys()) + list(classif_ant.keys())), key=lambda k: classif_at.get(k, 0), reverse=True)
@@ -308,13 +300,12 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
         else: cor_classif = "var(--success)" if var_classif > 0 else "var(--danger)"
             
         html += "<details><summary>"
-        html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-grupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
+        html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-macro", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
         html += "</summary>"
         
         df_at_c = df_at[df_at['Classificacao'] == classif]
         df_ant_c = df_ant[df_ant['Classificacao'] == classif]
         
-        # Nível 2: SubGrupo (Coluna L)
         sub_at = df_at_c.groupby('SubGrupo')[col_valor].sum().to_dict()
         sub_ant = df_ant_c.groupby('SubGrupo')[col_valor].sum().to_dict()
         chaves_sub = sorted(set(list(sub_at.keys()) + list(sub_ant.keys())), key=lambda k: sub_at.get(k, 0), reverse=True)
@@ -329,16 +320,38 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
             else: cor_sub = "var(--success)" if var_sub > 0 else "var(--danger)"
                 
             html += "<details><summary>"
-            html += render_linha(f"<span class='icon-expand'></span>{subg}", "lvl-subgrupo", v_sub_at, rep_sub, v_sub_ant, var_sub, cor_sub)
+            html += render_linha(f"<span class='icon-expand'></span>{subg}", "lvl-grupo", v_sub_at, rep_sub, v_sub_ant, var_sub, cor_sub)
             html += "</summary>"
             
-            # Nível 3: Transação / Descrição (Coluna C)
-            df_trans = df_at_c[df_at_c['SubGrupo'] == subg].sort_values('Data')
-            for _, row in df_trans.iterrows():
-                dt_str = row['Data'].strftime('%d/%m')
-                desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
-                html += render_linha(f"↳ {dt_str} - {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
+            df_at_s = df_at_c[df_at_c['SubGrupo'] == subg]
+            df_ant_s = df_ant_c[df_ant_c['SubGrupo'] == subg]
+            
+            # Nível 3: Fornecedor (Coluna M) com Totalizador
+            fornecedor_at = df_at_s.groupby('Fornecedor')[col_valor].sum().to_dict()
+            fornecedor_ant = df_ant_s.groupby('Fornecedor')[col_valor].sum().to_dict()
+            chaves_forn = sorted(set(list(fornecedor_at.keys()) + list(fornecedor_ant.keys())), key=lambda k: fornecedor_at.get(k, 0), reverse=True)
+            
+            for forn in chaves_forn:
+                v_forn_at = fornecedor_at.get(forn, 0)
+                v_forn_ant = fornecedor_ant.get(forn, 0)
+                var_forn = calc_var(v_forn_at, v_forn_ant)
                 
+                if is_saida: cor_forn = "var(--danger)" if var_forn > 0 else "var(--success)"
+                else: cor_forn = "var(--success)" if var_forn > 0 else "var(--danger)"
+                
+                # Renderiza o Fornecedor com a Lupa 🔍
+                html += "<details><summary>"
+                html += render_linha(f"<span class='icon-expand'></span>🔍 {forn}", "lvl-subgrupo", v_forn_at, 0, v_forn_ant, var_forn, cor_forn)
+                html += "</summary>"
+                
+                # Nível de Detalhe (Transações individuais sob o fornecedor)
+                df_trans = df_at_s[df_at_s['Fornecedor'] == forn].sort_values('Data')
+                for _, row in df_trans.iterrows():
+                    dt_str = row['Data'].strftime('%d/%m')
+                    desc = row['Descricao'][:60] + ("..." if len(row['Descricao']) > 60 else "")
+                    html += render_linha(f"↳ {dt_str} - {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
+                    
+                html += "</details>"
             html += "</details>"
         html += "</details>"
         
@@ -347,9 +360,9 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
 # ----------------- TABELA OPERACIONAL -----------------
 html_tab = f"""
 <div class='matrix-container'>
-    <div class='matrix-header'>Fluxo Operacional (Hierarquia: Classificação ➔ Subgrupo ➔ Transação)</div>
+    <div class='matrix-header'>Fluxo Operacional (Hierarquia: Classificação ➔ Subgrupo ➔ Fornecedor 🔍)</div>
     <div class='grid-row grid-header' style='grid-template-columns: {grid_cols};'>
-        <div class='col-name'>Nível Estrutural</div>
+        <div class='col-name'>Nível Estrutural (Clique em 🔍 para abrir as transações)</div>
         <div class='col-val border-left'>Realizado ({dt_fim.strftime('%b').capitalize()})</div>
         <div class='col-val border-left'>% Rep.</div>
         <div class='col-val border-left'>Período Anterior</div>
@@ -389,11 +402,11 @@ if tot_nop_ent_at > 0 or tot_nop_sai_at > 0:
         html_nop += render_linha("[+] ENTRADAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_ent_at, 100, tot_nop_ent_ant, var_nop_ent, cor_nop_ent)
         html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Entrada'] > 0], df_nop_ant[df_nop_ant['Entrada'] > 0], 'Entrada', tot_nop_ent_at, is_saida=False)
         
-    if tot_nop_sai_at > 0 or tot_nop_sai_ant > 0:
-        var_nop_sai = calc_var(tot_nop_sai_at, tot_nop_sai_ant)
-        cor_nop_sai = "var(--danger)" if var_nop_sai >= 0 else "var(--success)"
-        html_nop += render_linha("[-] SAÍDAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_sai_at, 100, tot_nop_sai_ant, var_nop_sai, cor_nop_sai)
-        html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Saída'] > 0], df_nop_ant[df_nop_ant['Saída'] > 0], 'Saída', tot_nop_sai_at, is_saida=True)
+        if tot_nop_sai_at > 0 or tot_nop_sai_ant > 0:
+            var_nop_sai = calc_var(tot_nop_sai_at, tot_nop_sai_ant)
+            cor_nop_sai = "var(--danger)" if var_nop_sai >= 0 else "var(--success)"
+            html_nop += render_linha("[-] SAÍDAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_sai_at, 100, tot_nop_sai_ant, var_nop_sai, cor_nop_sai)
+            html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Saída'] > 0], df_nop_ant[df_nop_ant['Saída'] > 0], 'Saída', tot_nop_sai_at, is_saida=True)
 
     html_nop += "</div>"
     injetar_html(html_nop)
