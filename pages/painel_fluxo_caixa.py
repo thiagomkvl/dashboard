@@ -234,22 +234,22 @@ df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERAC
 df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
 
 # ==============================================================================
-# 4. KPIS (TAXA DE CONSUMO EXCEDENTE / QUEIMA DE CAIXA CORRIGIDA)
+# 4. KPIS (MARGEM DE GERAÇÃO EM % — ALINHADA COM O CASH FLOW)
 # ==============================================================================
 tot_entrada_at = df_op_atual['Entrada'].sum()
 tot_saida_at = df_op_atual['Saída'].sum()
 geracao_liq_at = tot_entrada_at - tot_saida_at
 
-# Taxa de Consumo Excedente: Quanto gastou a mais do que entrou (ex: +28%)
+# Margem de Geração (%): (Geração Líquida / Entradas) * 100
 if tot_entrada_at > 0:
-    eficiencia_at = ((tot_saida_at - tot_entrada_at) / tot_entrada_at) * 100
+    margem_geracao_at = (geracao_liq_at / tot_entrada_at) * 100
 else:
-    eficiencia_at = 0.0
+    margem_geracao_at = 0.0
 
 tot_entrada_ant = df_op_ant['Entrada'].sum()
 tot_saida_ant = df_op_ant['Saída'].sum()
 geracao_liq_ant = tot_entrada_ant - tot_saida_ant
-eficiencia_ant = ((tot_saida_ant - tot_entrada_ant) / tot_entrada_ant) * 100 if tot_entrada_ant > 0 else 0.0
+margem_geracao_ant = (geracao_liq_ant / tot_entrada_ant) * 100 if tot_entrada_ant > 0 else 0.0
 
 periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
 header_html = f"""
@@ -273,11 +273,16 @@ def html_var(atual, ant, is_invertido=False):
     seta = "▲" if val >= 0 else "▼"
     return f"<div class='kpi-var {cor}'><span>{seta}</span> {abs(val):.1f}%</div>"
 
+# Cor dinâmica e sinal para a Margem de Geração (%)
+cor_margem = "c-green" if margem_geracao_at >= 0 else "c-red"
+sinal_margem = "+" if margem_geracao_at > 0 else ""
+sinal_margem_ant = "+" if margem_geracao_ant > 0 else ""
+
 kpis_html = f"""<div class='kpi-row'>
 <div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Entradas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_entrada_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_entrada_ant)}</span>{html_var(tot_entrada_at, tot_entrada_ant)}</div></div>
 <div class='kpi-card c-red'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Saídas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_saida_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_saida_ant)}</span>{html_var(tot_saida_at, tot_saida_ant, True)}</div></div>
 <div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Geração Líquida (Cash Flow)</div><div class='kpi-val'>R$ {formata_num(geracao_liq_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(geracao_liq_ant)}</span>{html_var(geracao_liq_at, geracao_liq_ant)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo Excedente</div><div class='kpi-val'>+{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: +{eficiencia_ant:.1f}%</span></div></div>
+<div class='kpi-card {cor_margem}'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Margem de Geração (%)</div><div class='kpi-val'>{sinal_margem}{margem_geracao_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: {sinal_margem_ant}{margem_geracao_ant:.1f}%</span></div></div>
 </div>"""
 injetar_html(kpis_html)
 
@@ -335,7 +340,6 @@ def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False
         for subg in chaves_sub:
             v_sub_at = sub_at.get(subg, 0)
             v_sub_ant = sub_ant.get(subg, 0)
-            # % de representação da Linha 2 em relação ao total geral do período
             rep_sub = (v_sub_at / total_periodo * 100) if total_periodo > 0 else 0
             var_sub = calc_var(v_sub_at, v_sub_ant)
             
