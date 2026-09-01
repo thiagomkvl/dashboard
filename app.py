@@ -7,9 +7,63 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
+# 0. LÓGICA DE AUTENTICAÇÃO E CONTROLE DE SESSÃO
+# ==============================================================================
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+# Tela de Login (Caso o usuário não esteja autenticado)
+if not st.session_state.autenticado:
+    # Custom CSS para a tela de login ficar centralizada e corporativa
+    css_login = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: "Inter", sans-serif; }
+    .stApp { background-color: #f4f6f9; }
+    header[data-testid="stHeader"] { display: none !important; }
+    [data-testid="stSidebar"] { display: none !important; }
+    .login-container {
+        max-width: 400px;
+        margin: 80px auto;
+        padding: 40px;
+        background: #ffffff;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 10px 25px rgba(30, 64, 175, 0.08);
+        text-align: center;
+    }
+    .login-title { font-size: 22px; font-weight: 800; color: #1e40af; margin-bottom: 8px; }
+    .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 25px; font-weight: 500; }
+    </style>
+    """
+    st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
+
+    # Caixa centralizada do formulário
+    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
+    with col_l2:
+        st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
+        with st.form("form_login_portal"):
+            st.markdown("<div class='login-title'>🏢 Portal Executivo</div>", unsafe_allow_html=True)
+            st.markdown("<div class='login-subtitle'>Insira sua senha corporativa para acessar.</div>", unsafe_allow_html=True)
+            
+            senha_digitada = st.text_input("Senha de Acesso", type="password", placeholder="Digite a senha...")
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            botao_entrar = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+            
+            if botao_entrar:
+                # 🔐 Defina aqui a senha corporativa do sistema
+                SENHA_MESTRE = "S@SCARDIO2k26"
+                
+                if senha_digitada == SENHA_MESTRE:
+                    st.session_state.autenticado = True
+                    st.rerun()
+                else:
+                    st.error("Senha incorreta. Tente novamente.")
+    st.stop()  # Interrompe a execução para não carregar o portal se não estiver logado
+
+# ==============================================================================
 # 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS (BLINDAGEM STREAMLIT)
 # ==============================================================================
-# Esta função pega a foto do seu painel e converte para código, garantindo que apareça no HTML.
 def get_img_b64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as f:
@@ -18,15 +72,13 @@ def get_img_b64(filepath):
             ext = filepath.split('.')[-1]
             return f"data:image/{ext};base64,{b64}"
     else:
-        # Se a imagem não for encontrada, exibe um degradê azul corporativo como "placeholder"
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-# --- CAMINHOS DAS IMAGENS (Apenas painéis ativos) ---
+# --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
 img_fluxo = get_img_b64("assets/preview_fluxo.png")
 img_pagar = get_img_b64("assets/preview_pagar.png")
 
-# Função auxiliar para renderizar a propriedade "background-image" ou "background"
 def bg_style(img_data):
     if img_data.startswith("linear-gradient"):
         return f"background: {img_data};"
@@ -35,7 +87,7 @@ def bg_style(img_data):
 
 
 # ==============================================================================
-# 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS
+# 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS E LOGOUT
 # ==============================================================================
 css = """
 <style>
@@ -55,21 +107,21 @@ css = """
 
 html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text-main); }
 .stApp { background-color: var(--bg); }
-.main .block-container { max-width: 1100px; padding-top: 3rem; padding-bottom: 2rem; }
+.main .block-container { max-width: 1100px; padding-top: 2rem; padding-bottom: 2rem; }
 header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stSidebar"] { display: none !important; }
 
-/* CABEÇALHO DO HUB */
-.hub-header { text-align: center; margin-bottom: 40px; }
-.hub-header h1 { font-size: 32px; font-weight: 800; color: var(--primary-dark); margin-bottom: 8px; letter-spacing: -0.5px; }
-.hub-header p { font-size: 15px; color: var(--text-muted); font-weight: 500; }
+/* CABEÇALHO DO HUB E BOTÃO DE SAIR */
+.hub-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 15px; }
+.hub-header h1 { font-size: 28px; font-weight: 800; color: var(--primary-dark); margin: 0 0 4px 0; letter-spacing: -0.5px; }
+.hub-header p { font-size: 14px; color: var(--text-muted); font-weight: 500; margin: 0; }
 
 /* GRID DE CARTÕES */
 .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 30px;
-    padding: 10px;
+    padding: 10px 0;
 }
 
 /* ESTILO DO CARTÃO CLICÁVEL */
@@ -104,12 +156,10 @@ header[data-testid="stHeader"] { display: none !important; }
     transition: transform 0.5s ease;
 }
 
-/* Efeito de zoom suave na foto ao passar o mouse */
 .hub-card:hover .card-image {
     transform: scale(1.03);
 }
 
-/* CONTAINER DA FOTO PARA CORTAR O ZOOM */
 .image-container {
     width: 100%;
     height: 160px;
@@ -157,14 +207,24 @@ header[data-testid="stHeader"] { display: none !important; }
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO HTML INJETANDO AS FOTOS
+# 3. CONSTRUÇÃO DO PORTAL (COM BOTÃO DE LOGOUT DISCRETO)
 # ==============================================================================
+col_title, col_logout = st.columns([4, 1])
+with col_title:
+    st.markdown("""
+    <div class="hub-header">
+        <h1>Portal Financeiro Executivo</h1>
+        <p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_logout:
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    if st.button("🔒 Sair do Sistema", use_container_width=True):
+        st.session_state.autenticado = False
+        st.rerun()
 
 html_hub = f"""
-<div class="hub-header">
-<h1>Portal Financeiro Executivo</h1>
-<p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
-</div>
 <div class="card-grid">
 
 <a href="Dashboard_Saldo" target="_self" class="hub-card">
