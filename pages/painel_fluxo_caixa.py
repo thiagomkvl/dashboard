@@ -234,28 +234,22 @@ df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERAC
 df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
 
 # ==============================================================================
-# 4. KPIS (COM TAXA DE CONSUMO AJUSTADA PARA O CAIXA INICIAL)
+# 4. KPIS (TAXA DE CONSUMO EXCEDENTE / QUEIMA DE CAIXA CORRIGIDA)
 # ==============================================================================
 tot_entrada_at = df_op_atual['Entrada'].sum()
 tot_saida_at = df_op_atual['Saída'].sum()
 geracao_liq_at = tot_entrada_at - tot_saida_at
 
-# Leitura do Caixa Inicial para cálculo correto da taxa de consumo (Burn Rate / Impacto)
-try:
-    df_si_kpi = conectar_sheets().read(worksheet="Saldo_Inicial", ttl=0)
-    col_si_valor_kpi = next((c for c in df_si_kpi.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si_kpi.columns[1])
-    caixa_inicial_total = df_si_kpi[col_si_valor_kpi].apply(limpa_valor_bruto).sum()
-except:
-    caixa_inicial_total = 8585221.29 # Fallback de segurança se falhar a leitura
-
-# Taxa de Consumo: Mapeia o percentual que as saídas representam em relação à receita + caixa inicial disponível
-base_consumo = tot_entrada_at + caixa_inicial_total
-eficiencia_at = (tot_saida_at / base_consumo * 100) if base_consumo > 0 else 0
+# Taxa de Consumo Excedente: Quanto gastou a mais do que entrou (ex: +28%)
+if tot_entrada_at > 0:
+    eficiencia_at = ((tot_saida_at - tot_entrada_at) / tot_entrada_at) * 100
+else:
+    eficiencia_at = 0.0
 
 tot_entrada_ant = df_op_ant['Entrada'].sum()
 tot_saida_ant = df_op_ant['Saída'].sum()
 geracao_liq_ant = tot_entrada_ant - tot_saida_ant
-eficiencia_ant = (tot_saida_ant / (tot_entrada_ant + caixa_inicial_total) * 100) if (tot_entrada_ant + caixa_inicial_total) > 0 else 0
+eficiencia_ant = ((tot_saida_ant - tot_entrada_ant) / tot_entrada_ant) * 100 if tot_entrada_ant > 0 else 0.0
 
 periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
 header_html = f"""
@@ -283,7 +277,7 @@ kpis_html = f"""<div class='kpi-row'>
 <div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Entradas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_entrada_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_entrada_ant)}</span>{html_var(tot_entrada_at, tot_entrada_ant)}</div></div>
 <div class='kpi-card c-red'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Saídas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_saida_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_saida_ant)}</span>{html_var(tot_saida_at, tot_saida_ant, True)}</div></div>
 <div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Geração Líquida (Cash Flow)</div><div class='kpi-val'>R$ {formata_num(geracao_liq_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(geracao_liq_ant)}</span>{html_var(geracao_liq_at, geracao_liq_ant)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo</div><div class='kpi-val'>{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: {eficiencia_ant:.1f}%</span></div></div>
+<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo Excedente</div><div class='kpi-val'>+{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: +{eficiencia_ant:.1f}%</span></div></div>
 </div>"""
 injetar_html(kpis_html)
 
