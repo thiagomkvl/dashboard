@@ -461,7 +461,6 @@ dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
 # HARMONIZAÇÃO (Baseada nas cores do S.O.S. Cardio):
-# Aplicado = #008A8C | Conta Corrente = #006E6F
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -482,7 +481,7 @@ fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#004D4E', # Teal Escuro (Mesma base do Card Saldo Total Atual)
+    marker_color='#004D4E', 
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
     textfont=dict(size=13, color="#1a2035", weight="bold"),
@@ -490,7 +489,7 @@ fig_combinado.add_trace(go.Bar(
     width=0.45
 ))
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=210, 
+    margin=dict(t=25, b=15, l=5, r=5), height=215, # Altura ajustada para 215px para simetria perfeita
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -521,7 +520,6 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
-# Ordem Top-Down, Nomenclaturas Requisitadas e Sem Emojis
 kp_data = [
     (kpi_row[0], "SALDO TOTAL ATUAL", f"R$ {saldo_total:,.2f}", "total"),
     (kpi_row[1], "SALDO CONTA CORRENTE", f"R$ {saldo_disponivel:,.2f}", "corrente"),
@@ -571,8 +569,8 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # APLICANDO A TRAVA DE ALTURA: style="height: 340px; overflow-y: auto;"
-        html_app = f'<div class="tabela-container" style="height: 340px; overflow-y: auto;"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
+        # APLICANDO O ENQUADRAMENTO (320px de altura cravados)
+        html_app = f'<div class="tabela-container" style="height: 320px; overflow-y: auto;"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
@@ -595,7 +593,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div class='tabela-container' style='height: 340px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tabela-container' style='height: 320px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
