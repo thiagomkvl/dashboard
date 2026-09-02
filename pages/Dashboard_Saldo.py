@@ -348,14 +348,6 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# CÁLCULO DE ALTURA DINÂMICA (A MÁGICA DO ENQUADRAMENTO)
-# ==============================================================================
-# A altura base do gráfico de barras cresce junto com a quantidade de linhas da tabela de Aplicações
-num_linhas_app = len(df_aplicacoes_nova) if not df_aplicacoes_nova.empty else 1
-altura_barras = int(max(180, 125 + (num_linhas_app * 40)))
-altura_donut = int(max(320, 245 + (num_linhas_app * 40)))
-
-# ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES (%)
 # ==============================================================================
 saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
@@ -388,6 +380,7 @@ periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strfti
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
+# Gráficos com alturas fixas reduzidas para alinhamento horizontal limpo
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -399,7 +392,7 @@ fig_donut = go.Figure(data=[go.Pie(
 )])
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=40, l=0, r=0), height=altura_donut, # <- Altura Dinâmica Aplicada
+    margin=dict(t=10, b=10, l=0, r=0), height=270, # <- Altura reduzida
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
 )
 
@@ -417,7 +410,7 @@ fig_combinado.add_trace(go.Bar(
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=altura_barras, # <- Altura Dinâmica Aplicada
+    margin=dict(t=10, b=10, l=5, r=5), height=160, # <- Altura reduzida e margens estreitas
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -448,7 +441,6 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
-# Gerador HTML do badge de variação
 def get_var_html(pct):
     if pct > 0: return f"<div class='kpi-var up'>↗ +{pct:.1f}%</div>"
     elif pct < 0: return f"<div class='kpi-var down'>↘ {pct:.1f}%</div>"
@@ -482,7 +474,6 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    # AQUI FOI ALTERADO PARA A COR PRETA (#000000)
     st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#000000; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     
@@ -498,7 +489,6 @@ with c2:
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
-    # AQUI FOI ALTERADO PARA A COR PRETA (#000000)
     st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#000000; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     
     if not df_aplicacoes_nova.empty:
