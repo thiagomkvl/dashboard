@@ -7,76 +7,60 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 0. LÓGICA DE AUTENTICAÇÃO E CONTROLE DE SESSÃO (BLINDADA CONTRA LOOP)
+# 0. LÓGICA DE AUTENTICAÇÃO BLINDADA (SEM RERUN / SEM LOOP)
 # ==============================================================================
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-# Função Callback que verifica a senha silenciosamente
-def verificar_senha():
-    SENHA_MESTRE = "S@SCARDIO2k26"
-    if st.session_state.senha_input == SENHA_MESTRE:
-        st.session_state.autenticado = True
-        st.session_state.erro_senha = False
-    else:
-        st.session_state.autenticado = False
-        st.session_state.erro_senha = True
+# Cria um container vazio que vai abrigar a tela de login
+login_container = st.empty()
 
-# Tela de Login (Caso o usuário não esteja autenticado)
+# Se não estiver autenticado, desenha o login dentro do container
 if not st.session_state.autenticado:
-    # Custom CSS para a tela de login ficar centralizada e corporativa
-    css_login = """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    html, body, [class*="css"] { font-family: "Inter", sans-serif; }
-    .stApp { background-color: #f4f6f9; }
-    header[data-testid="stHeader"] { display: none !important; }
-    [data-testid="stSidebar"] { display: none !important; }
-    .login-container {
-        max-width: 400px;
-        margin: 80px auto;
-        padding: 40px;
-        background: #ffffff;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 10px 25px rgba(30, 64, 175, 0.08);
-        text-align: center;
-    }
-    .login-title { font-size: 22px; font-weight: 800; color: #1e40af; margin-bottom: 8px; }
-    .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 25px; font-weight: 500; }
-    </style>
-    """
-    st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
+    with login_container.container():
+        # Custom CSS para a tela de login
+        css_login = """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        html, body, [class*="css"] { font-family: "Inter", sans-serif; }
+        .stApp { background-color: #f4f6f9; }
+        header[data-testid="stHeader"] { display: none !important; }
+        [data-testid="stSidebar"] { display: none !important; }
+        .login-title { font-size: 22px; font-weight: 800; color: #1e40af; margin-bottom: 8px; text-align: center; }
+        .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 25px; font-weight: 500; text-align: center; }
+        </style>
+        """
+        st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
 
-    # Caixa centralizada do formulário
-    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
-    with col_l2:
-        st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
-        st.markdown("<div class='login-title'>🏢 Portal Executivo</div>", unsafe_allow_html=True)
-        st.markdown("<div class='login-subtitle'>Insira sua senha corporativa para acessar.</div>", unsafe_allow_html=True)
-        
-        # Inputs diretos sem st.form (Evita o loop infinito)
-        # O on_change permite que o usuário aperte "Enter" no teclado para logar
-        st.text_input("Senha de Acesso", type="password", placeholder="Digite a senha...", key="senha_input", on_change=verificar_senha)
-        
-        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-        
-        # O on_click roda a função de verificar antes de recarregar a tela
-        st.button("Entrar no Sistema", use_container_width=True, on_click=verificar_senha)
-        
-        # Exibição do erro caso a senha esteja errada
-        if st.session_state.get("erro_senha"):
-            st.error("Senha incorreta. Tente novamente.")
-            
-    st.stop()  # Interrompe a execução para não carregar o portal se não estiver logado
+        col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
+        with col_l2:
+            st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
+            with st.form("form_login_portal"):
+                st.markdown("<div class='login-title'>🏢 Portal Executivo</div>", unsafe_allow_html=True)
+                st.markdown("<div class='login-subtitle'>Insira sua senha corporativa para acessar.</div>", unsafe_allow_html=True)
+                
+                senha_digitada = st.text_input("Senha de Acesso", type="password", placeholder="Digite a senha...")
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                botao_entrar = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+                
+                if botao_entrar:
+                    SENHA_MESTRE = "S@SCARDIO2k26"
+                    
+                    if senha_digitada == SENHA_MESTRE:
+                        # Muda o estado para logado
+                        st.session_state.autenticado = True
+                    else:
+                        st.error("Senha incorreta. Tente novamente.")
 
-# Função Callback para Logout
-def fazer_logout():
-    st.session_state.autenticado = False
-    st.session_state.senha_input = ""
+# Se após avaliar o botão o usuário CONTINUAR não autenticado, para a execução aqui!
+if not st.session_state.autenticado:
+    st.stop()
+
+# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente (sem recarregar a página!)
+login_container.empty()
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS (BLINDAGEM STREAMLIT)
+# 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -98,7 +82,6 @@ def bg_style(img_data):
         return f"background: {img_data};"
     else:
         return f"background-image: url('{img_data}');"
-
 
 # ==============================================================================
 # 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS E LOGOUT
@@ -234,8 +217,12 @@ with col_title:
 
 with col_logout:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-    # Logout blindado com callback
-    st.button("🔒 Sair do Sistema", use_container_width=True, on_click=fazer_logout)
+    if st.button("🔒 Sair do Sistema", use_container_width=True):
+        st.session_state.autenticado = False
+        try:
+            st.rerun()
+        except AttributeError:
+            st.experimental_rerun()
 
 html_hub = f"""
 <div class="card-grid">
