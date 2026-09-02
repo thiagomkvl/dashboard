@@ -592,11 +592,16 @@ with col_diario:
     st.markdown(f"<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
     if not df_graficos.empty:
-        # AQUI FOI APLICADO O ORDENAMENTO ASCENDING=FALSE PARA TRAZER A DATA MAIS NOVA SEMPRE NO TOPO
-        df_diario_view = df_graficos[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final']].copy()
-        df_diario_view = df_diario_view.sort_values(by='Data', ascending=False)
+        # Ordenamos pelo DataFrame original 'df_graficos' que possui a coluna datetime 'Data' pura
+        df_diario_view = df_graficos.sort_values(by='Data', ascending=False)[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final']].copy()
     else:
         df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final'])
+    
+    html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS (OP.)</th><th class="valores">SAÍDAS (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
+    for _, row in df_diario_view.iterrows():
+        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+    html_diario += '</tbody></table></div>'
+    st.markdown(html_diario, unsafe_allow_html=True)
     
     # APLICADO O CONTAINER DE SCROLL VERTICAL (.tabela-container-scroll) COM CABEÇALHO FIXO
     html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS (OP.)</th><th class="valores">SAÍDAS (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
