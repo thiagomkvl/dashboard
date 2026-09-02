@@ -47,7 +47,6 @@ if not st.session_state.autenticado:
                     SENHA_MESTRE = "S@SCARDIO2k26"
                     
                     if senha_digitada == SENHA_MESTRE:
-                        # Muda o estado para logado
                         st.session_state.autenticado = True
                     else:
                         st.error("Senha incorreta. Tente novamente.")
@@ -56,11 +55,11 @@ if not st.session_state.autenticado:
 if not st.session_state.autenticado:
     st.stop()
 
-# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente (sem recarregar a página!)
+# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente
 login_container.empty()
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
+# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR INTELIGENTE (CASE INSENSITIVE)
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -71,6 +70,17 @@ def get_img_b64(filepath):
             return f"data:image/{ext};base64,{b64}"
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
+
+# Função inteligente que acha o arquivo correto na nuvem mesmo se o nome estiver com letras diferentes (maiúsculas/minúsculas)
+def abrir_pagina(nome_arquivo):
+    nome_lower = nome_arquivo.lower()
+    if os.path.exists("pages"):
+        for file in os.listdir("pages"):
+            if file.lower() == nome_lower:
+                st.switch_page(f"pages/{file}")
+                return
+    # Fallback caso a pasta se chame de outra forma
+    st.switch_page(f"pages/{nome_arquivo}")
 
 # --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
@@ -195,7 +205,7 @@ with c1:
         st.markdown("<div class='card-title' style='margin-top:15px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
         if st.button("➔ Acessar Saldos", key="btn_saldos", use_container_width=True):
-            st.switch_page("pages/Dashboard_Saldo.py")
+            abrir_pagina("Dashboard_Saldo.py")
 
 with c2:
     with st.container(border=True):
@@ -203,7 +213,7 @@ with c2:
         st.markdown("<div class='card-title' style='margin-top:15px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
         if st.button("➔ Acessar Fluxo", key="btn_fluxo", use_container_width=True):
-            st.switch_page("pages/painel_fluxo_caixa.py")
+            abrir_pagina("painel_fluxo_caixa.py")
 
 with c3:
     with st.container(border=True):
@@ -211,4 +221,4 @@ with c3:
         st.markdown("<div class='card-title' style='margin-top:15px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
         if st.button("➔ Acessar Pagamentos", key="btn_pagar", use_container_width=True):
-            st.switch_page("pages/painel_pagar.py")
+            abrir_pagina("painel_pagar.py")
