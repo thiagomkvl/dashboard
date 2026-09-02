@@ -245,12 +245,14 @@ def carregar_dados(data_inicio, data_fim):
         df_fim_mes = pd.DataFrame()
         entradas_operacionais = 0.0
         saidas_operacionais = 0.0
-        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Cred_Op', 'Deb_Op', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op'])
+        df_process = pd.DataFrame()
+        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op'])
 
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                while len(df_ext.columns) < 11:
+                # Garante que temos no mínimo até a Coluna L (12 colunas, índice 11)
+                while len(df_ext.columns) < 12:
                     df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
                 
                 col_banco = df_ext.columns[0]
@@ -259,15 +261,17 @@ def carregar_dados(data_inicio, data_fim):
                 col_cred = df_ext.columns[5]
                 col_tipo = df_ext.columns[7]
                 col_operac = df_ext.columns[10]
+                col_subgrupo = df_ext.columns[11] # Coluna L
 
-                df_process = pd.DataFrame()
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
                 df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
+                df_process['SubGrupo'] = df_ext[col_subgrupo].astype(str).str.strip()
                 
-                # Para deslocamento de saldo, consideramos TUDO (operacional e interno)
+                # Para deslocamento de saldo e totais absolutos (Vl Crédito + Vl Débito em módulo para aplicações)
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
+                df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
                 
                 def normalizar_texto(txt):
                     if pd.isna(txt) or txt is None: return ""
@@ -327,25 +331,23 @@ def carregar_dados(data_inicio, data_fim):
             print("Aviso ao ler e processar extratos dinâmicos:", e)
 
         # =========================================================
-        # 3. FECHAMENTO DO SALDO FINAL DA TABELA
+        # 3. FECHAMENTO DO SALDO FINAL DA TABELA DE BANCOS
         # =========================================================
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
-        # Saldo Final baseado no Saldo Deslocado + Movimentações do Período
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E TABELA DE ACOMPANHAMENTO COM SALDO INICIAL
+        # 4. GRÁFICO DIÁRIO E TABELA DE ACOMPANHAMENTO DIÁRIO
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             
-            # Aqui agregamos tanto as movimentações Totais (para a matemática do saldo) quanto as Operacionais (para exibir)
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({
                 'Vl Crédito': 'sum',
                 'Vl Débito': 'sum',
@@ -354,15 +356,12 @@ def carregar_dados(data_inicio, data_fim):
             }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-            # A matemática do saldo continua usando tudo (Vl Crédito - Vl Débito)
             df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
             
-            # Matemática da Auditoria Diária (Usando Saldo Inicial Deslocado como âncora)
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
             df_graficos['Saldo Inicial'] = df_graficos['Saldo Final'] - df_graficos['Movimentação Líquida']
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
             
-            # Colunas exclusivas para exibição na tabela
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
 
@@ -370,45 +369,63 @@ def carregar_dados(data_inicio, data_fim):
         saidas_operacionais = df_fim_mes['Saída Op'].sum()
 
         # =========================================================
-        # 5. LER ABA DE APLICAÇÕES
+        # 5. GERAR RESUMO DE APLICAÇÕES A PARTIR DO EXTRATO (COLUNA L)
         # =========================================================
         df_aplicacoes_nova = pd.DataFrame()
         saldo_aplicado_kpi = 0.0
         
         try:
-            df_app = conn.read(worksheet="Aplicações", ttl=0)
-            if not df_app.empty:
-                df_app.columns = [str(c).strip() for c in df_app.columns]
-                col_banco = df_app.columns[0]
-                for c in df_app.columns:
-                    if 'banco' in c.lower() or 'conta' in c.lower():
-                        col_banco = c
-                        break
-                        
-                df_app = df_app[df_app[col_banco].notna() & (df_app[col_banco].astype(str).str.strip() != '')]
-                df_app = df_app[~df_app[col_banco].astype(str).str.lower().str.contains('total')]
+            if not df_process.empty:
+                serie_sub = df_process['SubGrupo'].apply(lambda x: unicodedata.normalize('NFKD', str(x)).encode('ASCII', 'ignore').decode('utf-8').lower())
                 
-                def get_col(kws):
-                    for c in df_app.columns:
-                        if any(kw in c.lower() for kw in kws): return c
-                    return None
-                    
-                c_si = get_col(['inicial'])
-                c_app = get_col(['aplicaç', 'aplicac'])
-                c_imp = get_col(['imposto'])
-                c_rend = get_col(['rendimento'])
-                c_resg = get_col(['resgate'])
-                c_atual = get_col(['atual', 'final'])
+                app_mask = serie_sub == 'aplicacao financeira'
+                imp_mask = serie_sub == 'impostos sobre aplicacoes'
+                rend_mask = serie_sub == 'rendimentos de aplicacoes'
+                resg_mask = serie_sub == 'resgates de aplicacoes'
                 
-                cols_to_clean = [c for c in [c_si, c_app, c_imp, c_rend, c_resg, c_atual] if c]
-                for c in cols_to_clean:
-                    df_app[c] = df_app[c].apply(limpa_valor_bruto)
-                    
-                df_aplicacoes_nova = df_app.copy()
-                if c_atual:
-                    saldo_aplicado_kpi = df_aplicacoes_nova[c_atual].sum()
+                # Extraindo os valores absolutos para as movimentações de aplicação
+                df_process['Aplicações_Val'] = df_process['Vl_Absoluto'].where(app_mask, 0.0)
+                df_process['Impostos_Val'] = df_process['Vl_Absoluto'].where(imp_mask, 0.0)
+                df_process['Rendimentos_Val'] = df_process['Vl_Absoluto'].where(rend_mask, 0.0)
+                df_process['Resgates_Val'] = df_process['Vl_Absoluto'].where(resg_mask, 0.0)
+                
+                df_period_app = df_process[(df_process['Data'] >= pd.to_datetime(data_inicio)) & (df_process['Data'] <= pd.to_datetime(data_fim))].copy()
+                
+                if not df_period_app.empty:
+                    df_app_grouped = df_period_app.groupby('Conta Bancária').agg({
+                        'Aplicações_Val': 'sum',
+                        'Impostos_Val': 'sum',
+                        'Rendimentos_Val': 'sum',
+                        'Resgates_Val': 'sum'
+                    }).reset_index()
+                else:
+                    df_app_grouped = pd.DataFrame(columns=['Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val'])
+                
+                # Mescla as transações com o df_fim_mes que já possui os saldos corretos (Inicial e Final)
+                df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(
+                    df_app_grouped, on='Conta Bancária', how='left'
+                ).fillna(0)
+                
+                mask_is_app = df_app_full['Tipo'] == 'Aplicação'
+                mask_has_mov = (df_app_full['Aplicações_Val'] > 0) | (df_app_full['Impostos_Val'] > 0) | \
+                               (df_app_full['Rendimentos_Val'] > 0) | (df_app_full['Resgates_Val'] > 0)
+                
+                df_aplicacoes_nova = df_app_full[mask_is_app | mask_has_mov].copy()
+                
+                # Renomeia as colunas para que o loop visual do UI as encontre perfeitamente
+                df_aplicacoes_nova = df_aplicacoes_nova.rename(columns={
+                    'Conta Bancária': 'banco',
+                    'Saldo Inicial': 'inicial',
+                    'Aplicações_Val': 'aplicaç',
+                    'Impostos_Val': 'imposto',
+                    'Rendimentos_Val': 'rendimento',
+                    'Resgates_Val': 'resgate',
+                    'Saldo Final': 'atual'
+                })
+                
+                saldo_aplicado_kpi = df_app_full[mask_is_app]['Saldo Final'].sum()
         except Exception as e:
-            print("Erro ao ler Aplicações:", e)
+            print("Erro ao processar Aplicações do Extrato:", e)
 
         return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_operacionais, saidas_operacionais, data_inicio, data_fim
         
