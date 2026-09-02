@@ -10,11 +10,6 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import textwrap
 
-# --- VERIFICAÇÃO DE SEGURANÇA / SESSÃO ---
-if "autenticado" not in st.session_state or not st.session_state.autenticado:
-    st.warning("⚠️ Sessão expirada ou acesso não autorizado. Por favor, faça login na página inicial (Portal).")
-    st.stop()
-
 # Tente importar a conexão
 try:
     from database import conectar_sheets
