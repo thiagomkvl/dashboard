@@ -28,10 +28,10 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #d0e3e4; 
-        --text: #172033; 
+        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
+        --text: #172033; /* Cinza Escuro Principal */
         --muted: #6b7280;
-        --primary: #008A8C; 
+        --primary: #008A8C; /* Cor da Logo SOS Cardio */
         --success: #1cc88a;
         --danger: #e74a3b;
         --warning: #c58a16;
@@ -57,7 +57,7 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs */
+    /* KPIs com a Paleta Institucional (S.O.S. Cardio) */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
@@ -74,17 +74,20 @@ css = """
     .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
     .kpi-var.neutral { background: rgba(255, 255, 255, 0.15); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
 
-    /* Seções */
+    /* Seções Harmonizadas com Fonte Cinza Escura */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas */
+    /* Tabelas Gerais (Bancos e Aplicações) */
     .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     
-    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 565px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
-    .tabela-container-scroll .tabela-financeira { min-width: 1125px; }
+    /* Container Diário Otimizado para caber 100% na largura sem scroll lateral */
+    .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 565px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
+    
+    .tabela-container-scroll .tabela-financeira th { padding: 8px 4px !important; font-size: 9px !important; }
+    .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 11px !important; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
     .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; }
@@ -297,7 +300,6 @@ def carregar_dados(data_inicio, data_fim):
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({'Vl Crédito': 'sum', 'Vl Débito': 'sum', 'Cred_Op': 'sum', 'Deb_Op': 'sum'}).reset_index()
             
-            # ORDENAÇÃO CRONOLÓGICA PARA GARANTIR O ENCADEAMENTO CONTÍNUO DE CAIXA
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
@@ -621,14 +623,14 @@ with col_diario:
     else:
         df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %'])
     
-    # Colunas otimizadas e espremidas para ocupar o espaço com harmonia visual
+    # Larguras otimizadas e somando 100% de forma espremida para caber sem barra lateral
     html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr>' \
-                  '<th style="width: 12%;">DATA</th>' \
-                  '<th class="valores" style="width: 20%;">SALDO INICIAL</th>' \
-                  '<th class="valores" style="width: 18%;">ENTRADAS</th>' \
-                  '<th class="valores" style="width: 18%;">SAÍDAS</th>' \
+                  '<th style="width: 10%;">DATA</th>' \
+                  '<th class="valores" style="width: 20%;">SALDO INIC.</th>' \
+                  '<th class="valores" style="width: 17%;">ENTRADAS</th>' \
+                  '<th class="valores" style="width: 17%;">SAÍDAS</th>' \
                   '<th class="valores" style="width: 20%;">SALDO FINAL</th>' \
-                  '<th class="valores" style="width: 12%;">DELTA</th>' \
+                  '<th class="valores" style="width: 16%;">DELTA</th>' \
                   '</tr></thead><tbody>'
                   
     for _, row in df_diario_view.iterrows():
@@ -637,15 +639,15 @@ with col_diario:
         
         cor_delta = "#1cc88a" if d_rs >= 0 else "#e74a3b"
         sinal_delta = "+" if d_rs > 0 else ""
-        delta_str = f"{sinal_delta}{formatar_moeda(d_rs).replace('R$ ', '')} ({sinal_delta}{d_pct:.1f}%)" if d_rs != 0 else "-"
+        delta_str = f"{sinal_delta}{d_pct:.1f}%" if d_rs != 0 else "-"
         
         html_diario += f'<tr>' \
-                       f'<td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
-                       f'<td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td>' \
-                       f'<td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"])}</td>' \
-                       f'<td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"])}</td>' \
-                       f'<td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td>' \
-                       f'<td class="valores" style="color:{cor_delta}; font-size:11px; font-weight:800;">{delta_str}</td>' \
+                       f'<td style="font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
+                       f'<td class="valores">{formatar_moeda(row["Saldo Inicial"]).replace("R$ ", "")}</td>' \
+                       f'<td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"]).replace("R$ ", "")}</td>' \
+                       f'<td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"]).replace("R$ ", "")}</td>' \
+                       f'<td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"]).replace("R$ ", "")}</td>' \
+                       f'<td class="valores" style="color:{cor_delta}; font-weight:800;">{delta_str}</td>' \
                        f'</tr>'
                        
     html_diario += '</tbody></table></div>'
