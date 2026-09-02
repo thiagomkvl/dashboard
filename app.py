@@ -7,8 +7,26 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
+# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (BLINDADO CONTRA STREAMLIT CLOUD)
 # ==============================================================================
+def acessar_painel(nome_arquivo):
+    """
+    Roteador imune a erros do Streamlit Cloud. Se o caminho da pasta falhar 
+    devido ao Linux, ele navega pelo "Nome Oficial" da página.
+    """
+    tentativas = [
+        f"pages/{nome_arquivo}",                                # 1. Rota padrão
+        nome_arquivo.replace(".py", "").replace("_", " "),      # 2. Nome da página (Ex: Dashboard Saldo)
+        nome_arquivo.replace(".py", "")                         # 3. Nome exato (Ex: Dashboard_Saldo)
+    ]
+    for tentativa in tentativas:
+        try:
+            st.switch_page(tentativa)
+            return
+        except Exception:
+            continue
+    st.error(f"Erro de rota: O painel '{nome_arquivo}' não pôde ser carregado.")
+
 def get_img_b64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as f:
@@ -32,7 +50,7 @@ def bg_style(img_data):
 
 
 # ==============================================================================
-# 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS
+# 2. CUSTOM CSS — ESTILO DOS CARTÕES (ADAPTADO PARA COMPONENTES NATIVOS)
 # ==============================================================================
 css = """
 <style>
@@ -56,39 +74,8 @@ html, body, [class*="css"] { font-family: "Inter", sans-serif; color: var(--text
 header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stSidebar"] { display: none !important; }
 
-/* CABEÇALHO DO HUB */
-.hub-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 15px; }
 .hub-header h1 { font-size: 28px; font-weight: 800; color: var(--primary-dark); margin: 0 0 4px 0; letter-spacing: -0.5px; }
 .hub-header p { font-size: 14px; color: var(--text-muted); font-weight: 500; margin: 0; }
-
-/* GRID DE CARTÕES */
-.card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 30px;
-    padding: 10px 0;
-}
-
-/* ESTILO DO CARTÃO CLICÁVEL (ORIGINAL COM HOVER MANTIDO) */
-.hub-card {
-    background-color: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    text-decoration: none;
-    display: flex;
-    flex-direction: column;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.3s ease;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-}
-
-.hub-card:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-md);
-    border-color: #bfdbfe;
-}
 
 /* ÁREA DA FOTO (PREVIEW) */
 .card-image {
@@ -99,12 +86,8 @@ header[data-testid="stHeader"] { display: none !important; }
     background-repeat: no-repeat;
     border-bottom: 1px solid var(--border);
     transition: transform 0.5s ease;
+    border-radius: 12px 12px 0 0;
 }
-
-.hub-card:hover .card-image {
-    transform: scale(1.03);
-}
-
 .image-container {
     width: 100%;
     height: 160px;
@@ -112,40 +95,53 @@ header[data-testid="stHeader"] { display: none !important; }
     border-radius: 12px 12px 0 0;
 }
 
-/* ÁREA DE TEXTO DO CARTÃO */
-.card-content {
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-}
-
+/* ÁREA DE TEXTO DO CARTÃO NATIVO */
 .card-title {
     font-size: 16px;
     font-weight: 800;
     color: var(--primary-dark);
     margin-bottom: 8px;
+    padding: 0 20px;
 }
-
 .card-desc {
     font-size: 12px;
     color: var(--text-muted);
     line-height: 1.5;
     font-weight: 500;
-    margin-bottom: 10px;
+    margin-bottom: 5px;
+    padding: 0 20px;
 }
 
-.card-arrow {
-    margin-top: auto;
-    align-self: flex-end;
-    color: #cbd5e1;
-    font-size: 16px;
-    font-weight: bold;
-    transition: color 0.3s ease;
+/* Modifica a borda padrão do container do Streamlit para parecer um cartão clicável */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: var(--surface);
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    padding: 0px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+    border-color: #bfdbfe !important;
 }
 
-.hub-card:hover .card-arrow {
-    color: var(--primary);
+/* Estiliza o botão do Streamlit para parecer a setinha do seu HTML original */
+.stButton > button {
+    border: none !important;
+    background: transparent !important;
+    color: #cbd5e1 !important;
+    font-weight: bold !important;
+    text-align: right !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    box-shadow: none !important;
+    padding-right: 20px !important;
+    margin-top: 10px !important;
+}
+.stButton > button:hover {
+    color: var(--primary) !important;
 }
 </style>
 """
@@ -153,7 +149,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (COM TARGET=_TOP PARA EVITAR LOOP NA NUVEM)
+# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -163,38 +159,29 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-# A troca mágica está aqui: target="_top" tira o aplicativo do loop do iframe!
-html_hub = f"""
-<div class="card-grid">
+# Grid de cartões usando as estruturas nativas do Streamlit (funciona em qualquer nuvem)
+c1, c2, c3 = st.columns(3)
 
-<a href="Dashboard_Saldo.py" target="_top" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">Dashboard de Saldos</div>
-        <div class="card-desc">Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
+with c1:
+    with st.container(border=True):
+        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>', unsafe_allow_html=True)
+        st.markdown("<div class='card-title' style='margin-top:20px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
+        st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
+        if st.button("Acessar Painel ➔", key="btn_saldos", use_container_width=True):
+            acessar_painel("Dashboard_Saldo.py")
 
-<a href="painel_fluxo_caixa" target="_top" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">Fluxo de Caixa Analítico</div>
-        <div class="card-desc">Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
+with c2:
+    with st.container(border=True):
+        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>', unsafe_allow_html=True)
+        st.markdown("<div class='card-title' style='margin-top:20px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
+        st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
+        if st.button("Acessar Painel ➔", key="btn_fluxo", use_container_width=True):
+            acessar_painel("painel_fluxo_caixa.py")
 
-<a href="painel_pagar" target="_top" class="hub-card">
-    <div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>
-    <div class="card-content">
-        <div class="card-title">Painel de Pagamentos</div>
-        <div class="card-desc">Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>
-        <div class="card-arrow">➔</div>
-    </div>
-</a>
-
-</div>
-"""
-
-st.markdown(html_hub.replace('\n', ''), unsafe_allow_html=True)
+with c3:
+    with st.container(border=True):
+        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>', unsafe_allow_html=True)
+        st.markdown("<div class='card-title' style='margin-top:20px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
+        st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
+        if st.button("Acessar Painel ➔", key="btn_pagar", use_container_width=True):
+            acessar_painel("painel_pagar.py")
