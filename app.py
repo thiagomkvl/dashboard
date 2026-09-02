@@ -61,7 +61,7 @@ login_container.empty()
 
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR INTELIGENTE DE PÁGINAS
+# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR DE PÁGINAS (ANTI-ERRO LINUX)
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -73,26 +73,22 @@ def get_img_b64(filepath):
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-# Roteador inteligente que lê o GPS interno do Streamlit (Ignora bugs do Cloud)
-def abrir_pagina(nome_arquivo):
-    try:
-        from streamlit.source_util import get_pages
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-        
-        # Pega as rotas absolutas registradas na memória do servidor
-        ctx = get_script_run_ctx()
-        pages = get_pages(ctx.main_script_path)
-        
-        # Procura o arquivo independentemente de subpastas ou de letras maiúsculas/minúsculas
-        for page_hash, page_info in pages.items():
-            if nome_arquivo.lower() in page_info["script_path"].lower():
-                st.switch_page(page_info["script_path"])
-                return
-    except Exception:
-        pass
+def abrir_pagina(nome_esperado):
+    import os
+    arquivo_exato = nome_esperado
     
-    # Fallback padrão caso a leitura em memória falhe
-    st.switch_page(f"pages/{nome_arquivo}")
+    # Verifica a pasta pages fisicamente para pegar a capitalização exata do arquivo no Linux (Cloud)
+    # Isso evita o erro StreamlitPageNotFoundError gerado pelo GitHub alterar maiúsculas/minúsculas.
+    pages_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages")
+    if os.path.exists(pages_dir):
+        for arquivo in os.listdir(pages_dir):
+            if arquivo.lower() == nome_esperado.lower():
+                arquivo_exato = arquivo
+                break
+                
+    # Dispara a troca de página com o nome exato registrado no servidor
+    st.switch_page(f"pages/{arquivo_exato}")
+
 
 # --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
