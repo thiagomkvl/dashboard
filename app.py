@@ -14,6 +14,7 @@ if "autenticado" not in st.session_state:
 
 # Tela de Login (Caso o usuário não esteja autenticado)
 if not st.session_state.autenticado:
+    # Custom CSS para a tela de login ficar centralizada e corporativa
     css_login = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -37,6 +38,7 @@ if not st.session_state.autenticado:
     """
     st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
 
+    # Caixa centralizada do formulário
     col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
     with col_l2:
         st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
@@ -49,6 +51,7 @@ if not st.session_state.autenticado:
             botao_entrar = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if botao_entrar:
+                # 🔐 Defina aqui a senha corporativa do sistema
                 SENHA_MESTRE = "S@SCARDIO2k26"
                 
                 if senha_digitada == SENHA_MESTRE:
