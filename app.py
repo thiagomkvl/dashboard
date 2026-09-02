@@ -14,7 +14,6 @@ if "autenticado" not in st.session_state:
 
 # Tela de Login (Caso o usuário não esteja autenticado)
 if not st.session_state.autenticado:
-    # Custom CSS para a tela de login ficar centralizada e corporativa
     css_login = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -38,7 +37,6 @@ if not st.session_state.autenticado:
     """
     st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
 
-    # Caixa centralizada do formulário
     col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
     with col_l2:
         st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
@@ -51,7 +49,6 @@ if not st.session_state.autenticado:
             botao_entrar = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if botao_entrar:
-                # 🔐 Defina aqui a senha corporativa do sistema
                 SENHA_MESTRE = "S@SCARDIO2k26"
                 
                 if senha_digitada == SENHA_MESTRE:
@@ -227,7 +224,7 @@ with col_logout:
 html_hub = f"""
 <div class="card-grid">
 
-<a href="Dashboard_Saldo" target="_self" class="hub-card">
+<a href="/Dashboard_Saldo" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
     <div class="card-content">
         <div class="card-title">Dashboard de Saldos</div>
@@ -236,7 +233,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="painel_fluxo_caixa" target="_self" class="hub-card">
+<a href="/painel_fluxo_caixa" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
     <div class="card-content">
         <div class="card-title">Fluxo de Caixa Analítico</div>
@@ -245,7 +242,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="painel_pagar" target="_self" class="hub-card">
+<a href="/painel_pagar" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>
     <div class="card-content">
         <div class="card-title">Painel de Pagamentos</div>
@@ -258,3 +255,15 @@ html_hub = f"""
 """
 
 st.markdown(html_hub.replace('\n', ''), unsafe_allow_html=True)
+
+# ==============================================================================
+# 4. CONFIGURAÇÃO DE NAVEGAÇÃO DE PÁGINAS (ST.NAVIGATION)
+# ==============================================================================
+paginas = [
+    st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos", icon="📊"),
+    st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰"),
+    st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
+]
+
+pg = st.navigation(paginas, position="hidden")
+pg.run()
