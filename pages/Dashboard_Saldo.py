@@ -80,18 +80,16 @@ css = """
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas Harmonizadas (SEM BURACO BRANCO) */
-    .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
-    
-    .tabela-financeira { width: 100%; height: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
-    .tabela-financeira th, .tabela-financeira td { vertical-align: middle; } /* Centraliza verticalmente o texto nas linhas arejadas */
+    /* Tabelas Harmonizadas com Fonte Cinza Escura */
+    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
     
     .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
     .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #f0f7f7; }
     
-    .tabela-financeira .linha-total { background: #e0efef; }
-    .tabela-financeira .linha-total td { color: var(--text); font-weight: 800; border-top: 2px solid #008A8C; border-bottom: none; } /* Remove borda inferior dupla do rodapé */
+    .tabela-financeira .linha-total { background: #e0efef; border-top: 2px solid #008A8C; }
+    .tabela-financeira .linha-total td { color: var(--text); font-weight: 800; }
     
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
     .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: var(--text); }
@@ -375,18 +373,14 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS E VARIÁVEIS DE DATA (COM ALTURAS ALINHADAS)
+# 4. GRÁFICOS E VARIÁVEIS DE DATA
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# ALTURAS MATEMATICAMENTE CALCULADAS PARA SIMETRIA NO ENQUADRAMENTO
-altura_container_tabela = 315
-altura_grafico_donut = 315
-altura_grafico_barras = 230
-
+# Gráficos com alturas fixas reduzidas para alinhamento horizontal limpo
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -398,7 +392,7 @@ fig_donut = go.Figure(data=[go.Pie(
 )])
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=10, l=0, r=0), height=altura_grafico_donut,
+    margin=dict(t=10, b=10, l=0, r=0), height=270, # <- Altura reduzida
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
 )
 
@@ -416,7 +410,7 @@ fig_combinado.add_trace(go.Bar(
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=10, b=10, l=5, r=5), height=altura_grafico_barras,
+    margin=dict(t=10, b=10, l=5, r=5), height=160, # <- Altura reduzida e margens estreitas
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -511,8 +505,8 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # A MÁGICA: Altura fixa com "height: 100%" na sub-tabela para esticar e preencher o buraco
-        html_app = f'<div class="tabela-container" style="height: {altura_container_tabela}px;"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
+        # TABELA SEM ALTURA FIXA: ELA DITA O TAMANHO DA TELA.
+        html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
@@ -535,7 +529,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown(f"<div class='tabela-container' style='height: {altura_container_tabela}px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc; padding: 20px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tabela-container' style='display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc; padding: 20px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
