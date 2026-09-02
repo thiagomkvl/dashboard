@@ -316,8 +316,9 @@ def carregar_dados(data_inicio, data_fim):
                 mov = row['Vl Crédito'] - row['Vl Débito']
                 sf = si + mov
                 
-                d_rs = sf - si
-                d_pct = ((sf / si) - 1) * 100 if si != 0 else 0.0
+                # Delta calculado com base na base inicial do filtro (acumulado do período)
+                d_rs = sf - saldo_inicial_caixa
+                d_pct = ((sf / saldo_inicial_caixa) - 1) * 100 if saldo_inicial_caixa != 0 else 0.0
                 
                 saldos_iniciais.append(si)
                 saldos_finais.append(sf)
@@ -623,7 +624,6 @@ with col_diario:
     else:
         df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %'])
     
-    # Larguras otimizadas e somando 100% de forma espremida para caber sem barra lateral
     html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr>' \
                   '<th style="width: 10%;">DATA</th>' \
                   '<th class="valores" style="width: 20%;">SALDO INIC.</th>' \
