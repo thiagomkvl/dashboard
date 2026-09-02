@@ -7,25 +7,38 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (BLINDADO CONTRA STREAMLIT CLOUD)
+# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (DETETIVE DE ROTAS PARA LINUX)
 # ==============================================================================
-def acessar_painel(nome_arquivo):
+def acessar_painel(nome_esperado):
     """
-    Roteador imune a erros do Streamlit Cloud. Se o caminho da pasta falhar 
-    devido ao Linux, ele navega pelo "Nome Oficial" da página.
+    Função blindada: Ela escaneia o diretório do servidor em tempo real
+    para descobrir o caminho e a capitalização exata do arquivo,
+    evitando qualquer erro de 'StreamlitPageNotFoundError' no Cloud.
     """
-    tentativas = [
-        f"pages/{nome_arquivo}",                                # 1. Rota padrão
-        nome_arquivo.replace(".py", "").replace("_", " "),      # 2. Nome da página (Ex: Dashboard Saldo)
-        nome_arquivo.replace(".py", "")                         # 3. Nome exato (Ex: Dashboard_Saldo)
-    ]
-    for tentativa in tentativas:
-        try:
-            st.switch_page(tentativa)
-            return
-        except Exception:
-            continue
-    st.error(f"Erro de rota: O painel '{nome_arquivo}' não pôde ser carregado.")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 1. Localiza a pasta pages (independente de estar como 'pages' ou 'Pages')
+    pasta_pages = "pages"
+    for p in os.listdir(base_dir):
+        if p.lower() == "pages" and os.path.isdir(os.path.join(base_dir, p)):
+            pasta_pages = p
+            break
+            
+    # 2. Localiza o arquivo exato dentro da pasta
+    caminho_completo_pasta = os.path.join(base_dir, pasta_pages)
+    caminho_exato = None
+    
+    if os.path.exists(caminho_completo_pasta):
+        for f in os.listdir(caminho_completo_pasta):
+            if f.lower() == nome_esperado.lower():
+                caminho_exato = f"{pasta_pages}/{f}"
+                break
+                
+    # 3. Faz o redirecionamento com a rota infalível
+    if caminho_exato:
+        st.switch_page(caminho_exato)
+    else:
+        st.error(f"Erro: O arquivo '{nome_esperado}' não existe na pasta '{pasta_pages}'. Verifique se ele não está com um sublinhado (_) na frente!")
 
 def get_img_b64(filepath):
     if os.path.exists(filepath):
