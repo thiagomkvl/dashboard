@@ -227,7 +227,7 @@ with col_logout:
 html_hub = f"""
 <div class="card-grid">
 
-<a href="/Dashboard_Saldo" target="_self" class="hub-card">
+<a href="Dashboard_Saldo" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
     <div class="card-content">
         <div class="card-title">Dashboard de Saldos</div>
@@ -236,7 +236,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="/painel_fluxo_caixa" target="_self" class="hub-card">
+<a href="painel_fluxo_caixa" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
     <div class="card-content">
         <div class="card-title">Fluxo de Caixa Analítico</div>
@@ -245,7 +245,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="/painel_pagar" target="_self" class="hub-card">
+<a href="painel_pagar" target="_self" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>
     <div class="card-content">
         <div class="card-title">Painel de Pagamentos</div>
@@ -258,15 +258,3 @@ html_hub = f"""
 """
 
 st.markdown(html_hub.replace('\n', ''), unsafe_allow_html=True)
-
-# ==============================================================================
-# 4. CONFIGURAÇÃO DE NAVEGAÇÃO DE PÁGINAS (ST.NAVIGATION)
-# ==============================================================================
-paginas = [
-    st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos", icon="📊"),
-    st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰"),
-    st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
-]
-
-pg = st.navigation(paginas, position="hidden")
-pg.run()
