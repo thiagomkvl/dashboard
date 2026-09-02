@@ -7,36 +7,17 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO POR NOME DA PÁGINA)
+# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO OFICIAL STREAMLIT)
 # ==============================================================================
 def acessar_painel(nome_arquivo):
     """
-    Em vez de lutar contra o caminho das pastas no Linux do Streamlit Cloud,
-    nós usamos o recurso do Streamlit de buscar apenas pelo NOME da página.
-    Ele acha a página independentemente da subpasta em que ela esteja.
+    Usa o padrão oficial exigido pelo Streamlit Cloud para caminhos em subpastas.
     """
-    # Remove o ".py" para extrair o nome puro da página
-    nome_sem_py = nome_arquivo.replace(".py", "")
-    
-    # O Streamlit as vezes converte os sublinhados (_) em espaços no menu invisível
-    nome_com_espaco = nome_sem_py.replace("_", " ")
-    
-    # O roteador tenta chamar o painel apenas pelo nome dele, ignorando pastas
-    rotas_tentativas = [
-        nome_sem_py,                          # Ex: Dashboard_Saldo
-        nome_com_espaco,                      # Ex: Dashboard Saldo
-        f"pages/{nome_arquivo}",              # Ex: pages/Dashboard_Saldo.py
-        f"dashboard/pages/{nome_arquivo}"     # Ex: dashboard/pages/Dashboard_Saldo.py (O da sua foto)
-    ]
-    
-    for rota in rotas_tentativas:
-        try:
-            st.switch_page(rota)
-            return  # Sucesso! Achou a rota e saiu da função
-        except Exception:
-            continue  # Falhou, tenta a próxima rota da lista
-            
-    st.error(f"❌ O servidor não conseguiu rotear para '{nome_arquivo}'.")
+    caminho_oficial = f"pages/{nome_arquivo}"
+    try:
+        st.switch_page(caminho_oficial)
+    except Exception as e:
+        st.error(f"Erro ao tentar carregar a rota '{caminho_oficial}': {e}")
 
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -138,7 +119,7 @@ header[data-testid="stHeader"] { display: none !important; }
     border-color: #bfdbfe !important;
 }
 
-/* Estiliza o botão do Streamlit para parecer a setinha do HTML */
+/* Estiliza o botão do Streamlit para parecer a setinha */
 .stButton > button {
     border: none !important;
     background: transparent !important;
@@ -160,7 +141,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL E CARDS DE NAVEGAÇÃO
+# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
