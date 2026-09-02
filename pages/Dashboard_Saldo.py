@@ -31,11 +31,11 @@ css = """
         --border: #e7ebf2;
         --text: #172033;
         --muted: #6b7280;
-        --primary: #4040fb;
+        --primary: #318CE7;
         --success: #159570;
         --danger: #d94a4a;
         --warning: #c58a16;
-        --shadow: 0 4px 15px rgba(4, 4, 226, 0.08);
+        --shadow: 0 4px 15px rgba(49, 140, 231, 0.15);
     }
 
     html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
@@ -57,16 +57,16 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs com a Nova Paleta Azul Violeta e Degradê */
+    /* KPIs com a Nova Paleta Azul Celeste */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
-    .kpi-card.total { background: linear-gradient(135deg, #0404e2, #0303b5); }
-    .kpi-card.corrente { background: linear-gradient(135deg, #4040fb, #2c2cdb); }
-    .kpi-card.aplicado { background: linear-gradient(135deg, #6565ff, #4d4ddf); }
-    .kpi-card.inicial { background: linear-gradient(135deg, #8787fb, #6e6edf); }
+    .kpi-card.total { background: linear-gradient(135deg, #318CE7, #1f75cb); }
+    .kpi-card.corrente { background: linear-gradient(135deg, #4a9ae9, #3584d4); }
+    .kpi-card.aplicado { background: linear-gradient(135deg, #6aa9e9, #5494d4); }
+    .kpi-card.inicial { background: linear-gradient(135deg, #8ebae9, #75a3d4); }
     
-    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
-    .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; }
+    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
+    .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
 
     /* Seções */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
@@ -127,7 +127,7 @@ with st.sidebar:
     
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #0404e2, #4040fb); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(4, 4, 226, 0.2); transition: transform 0.2s;">
+        style="width:100%; background:linear-gradient(135deg, #318CE7, #4a9ae9); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(49, 140, 231, 0.2); transition: transform 0.2s;">
         🖨️ Salvar Dashboard (PDF)
         </button>
     """, height=55)
@@ -458,13 +458,13 @@ periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strfti
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# HARMONIZAÇÃO (Baseada nas cores enviadas):
-# Aplicado = #6565ff | Conta Corrente = #4040fb
+# HARMONIZAÇÃO (Baseada na nova paleta):
+# Aplicado = #6aa9e9 (Azul Intermediário) | Conta Corrente = #4a9ae9 (Azul Mais Forte)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
     hole=0.6, 
-    marker=dict(colors=['#6565ff', '#4040fb']),
+    marker=dict(colors=['#6aa9e9', '#4a9ae9']),
     textinfo='percent',
     texttemplate='%{percent:.1%}',
     hoverinfo='label+percent'
@@ -472,7 +472,7 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=40, l=0, r=0), height=320,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#0404e2", showarrow=False)]
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#318CE7", showarrow=False)]
 )
 
 fig_combinado = go.Figure()
@@ -480,7 +480,7 @@ fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#0404e2', # Azul mais escuro (Mesma base do Card Saldo Total Atual)
+    marker_color='#318CE7', # Azul Principal (Mesma base do Card Saldo Total Atual)
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
     textfont=dict(size=13, color="#1a2035", weight="bold"),
