@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 import re
 import difflib
 import unicodedata
@@ -28,10 +29,10 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
-        --text: #172033; /* Cinza Escuro Principal */
+        --border: #d0e3e4; 
+        --text: #172033; 
         --muted: #6b7280;
-        --primary: #008A8C; /* Cor da Logo SOS Cardio */
+        --primary: #008A8C; 
         --success: #159570;
         --danger: #d94a4a;
         --warning: #c58a16;
@@ -57,24 +58,30 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs com a Paleta Institucional (S.O.S. Cardio) */
-    .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
+    /* KPIs */
+    .kpi-card { position: relative; overflow: hidden; min-height: 105px; padding: 18px 20px 14px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
     .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
     .kpi-card.aplicado { background: linear-gradient(135deg, #008A8C, #006869); }
     .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
     
-    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
+    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
 
-    /* Seções Harmonizadas com Fonte Cinza Escura */
+    /* Badges de Variação */
+    .kpi-var { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; margin-top: 5px; width: fit-content; letter-spacing: 0.5px;}
+    .kpi-var.up { background: rgba(74, 222, 128, 0.2); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
+    .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+    .kpi-var.neutral { background: rgba(255, 255, 255, 0.15); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
+
+    /* Seções */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas Harmonizadas com Fonte Cinza Escura */
+    /* Tabelas */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
     
@@ -107,7 +114,7 @@ css = """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO DA BARRA LATERAL (MENU ORIGINAL)
+# 0. CONFIGURAÇÃO DA BARRA LATERAL
 # ==============================================================================
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
@@ -141,97 +148,66 @@ else:
     data_fim_filtro = data_inicio_filtro
 
 # ==============================================================================
-# 1. FUNÇÃO DE LEITURA E LIMPEZA BLINDADA
+# 1. FUNÇÕES DE LIMPEZA E FORMATAÇÃO
 # ==============================================================================
 def limpa_valor_bruto(valor):
     try:
-        if isinstance(valor, pd.Series): 
-            valor = valor.iloc[0] if not valor.empty else 0.0
-            
-        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]:
-            return 0.0
-        if isinstance(valor, (int, float)):
-            return float(valor)
-            
+        if isinstance(valor, pd.Series): valor = valor.iloc[0] if not valor.empty else 0.0
+        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]: return 0.0
+        if isinstance(valor, (int, float)): return float(valor)
         v_str = str(valor).strip()
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
-        
-        if '.' in v_str and ',' in v_str:
-            v_str = v_str.replace('.', '').replace(',', '.')
-        elif ',' in v_str:
-            v_str = v_str.replace(',', '.')
-            
+        if '.' in v_str and ',' in v_str: v_str = v_str.replace('.', '').replace(',', '.')
+        elif ',' in v_str: v_str = v_str.replace(',', '.')
         return float(v_str)
-    except Exception:
-        return 0.0
+    except Exception: return 0.0
 
 def formatar_moeda(valor):
     try:
         val = float(valor)
         if val == 0: return "-"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except Exception:
-        return "-"
+    except Exception: return "-"
 
 def formatar_abreviado(valor):
     try:
         val = float(valor)
-        if abs(val) >= 1_000_000:
-            return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
-        elif abs(val) >= 1_000:
-            return f"R$ {val/1_000:.1f}K".replace('.', ',')
-        else:
-            return f"R$ {val:.0f}"
-    except Exception:
-        return ""
+        if abs(val) >= 1_000_000: return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
+        elif abs(val) >= 1_000: return f"R$ {val/1_000:.1f}K".replace('.', ',')
+        else: return f"R$ {val:.0f}"
+    except Exception: return ""
 
 # ==============================================================================
-# 2. CARGA DE DADOS (COM SALDO INICIAL DESLOCADO E FILTRO ESTRITO DE NOME)
+# 2. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
     conn = conectar_sheets()
-    
-    if conn is None: 
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
+    if conn is None: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
     try:
-        # =========================================================
-        # 1. ABA SALDO_INICIAL FIXO (A ÂNCORA DA TESOURARIA)
-        # =========================================================
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
         try:
             df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
             if not df_si.empty:
                 df_si.columns = [str(c).strip() for c in df_si.columns]
                 df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
-                
                 col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), df_si.columns[0])
                 col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0])
                 col_si_garantida = next((c for c in df_si.columns if 'garantida' in c.lower() or 'limite' in c.lower()), None)
-                
                 df_si[col_si_valor] = df_si[col_si_valor].apply(limpa_valor_bruto)
                 cols_to_keep = [col_si_conta, col_si_valor]
                 new_cols = ['Conta Bancária', 'Saldo Inicial']
-                
                 if col_si_garantida:
                     df_si[col_si_garantida] = df_si[col_si_garantida].apply(limpa_valor_bruto)
                     cols_to_keep.append(col_si_garantida)
                     new_cols.append('Conta Garantida')
-                
                 df_saldo_inicial = df_si[cols_to_keep].copy()
                 df_saldo_inicial.columns = new_cols
-                
-                if 'Conta Garantida' not in df_saldo_inicial.columns:
-                    df_saldo_inicial['Conta Garantida'] = 0.0
-                    
+                if 'Conta Garantida' not in df_saldo_inicial.columns: df_saldo_inicial['Conta Garantida'] = 0.0
                 df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
-        except Exception as e:
-            print("Aviso ao ler Saldo_Inicial:", e)
+        except Exception as e: print("Aviso ao ler Saldo_Inicial:", e)
             
-        # =========================================================
-        # 2. LER TODOS OS EXTRATOS E FAZER O DESLOCAMENTO DO SALDO
-        # =========================================================
         df_extratos = None
         df_fim_mes = pd.DataFrame()
         entradas_operacionais = 0.0
@@ -242,86 +218,54 @@ def carregar_dados(data_inicio, data_fim):
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                while len(df_ext.columns) < 12:
-                    df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
-                
-                col_banco = df_ext.columns[0]
-                col_data = df_ext.columns[1]
-                col_deb = df_ext.columns[4]
-                col_cred = df_ext.columns[5]
-                col_tipo = df_ext.columns[7]
-                col_operac = df_ext.columns[10]
-                col_subgrupo = df_ext.columns[11]
+                while len(df_ext.columns) < 12: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
+                col_banco = df_ext.columns[0]; col_data = df_ext.columns[1]; col_deb = df_ext.columns[4]; col_cred = df_ext.columns[5]
+                col_tipo = df_ext.columns[7]; col_operac = df_ext.columns[10]; col_subgrupo = df_ext.columns[11]
 
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
                 df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
                 df_process['SubGrupo'] = df_ext[col_subgrupo].astype(str).str.strip()
-                
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
                 
-                def normalizar_texto(txt):
-                    if pd.isna(txt) or txt is None: return ""
-                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
-                
+                def normalizar_texto(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
                 serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
                 df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
-
                 serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
                 is_operacional = (serie_operac == 'OPERACIONAL')
 
-                # SEPARANDO OPERACIONAL DE INTERNO
                 df_process['Cred_Op'] = df_process['Vl Crédito'].where((~df_process['É Transf']) & is_operacional, 0.0)
                 df_process['Deb_Op'] = df_process['Vl Débito'].where((~df_process['É Transf']) & is_operacional, 0.0)
                 df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
                 df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
                 
-                dt_ini_pd = pd.to_datetime(data_inicio)
-                dt_fim_pd = pd.to_datetime(data_fim)
+                dt_ini_pd = pd.to_datetime(data_inicio); dt_fim_pd = pd.to_datetime(data_fim)
                 
-                # --- PASSO A: SALDO INICIAL DESLOCADO ---
                 df_before = df_process[df_process['Data'] < dt_ini_pd].copy()
-                
                 if not df_before.empty:
                     df_before_grouped = df_before.groupby('Conta Bancária')['Mov_Total'].sum().reset_index()
                     df_saldo_dinamico = pd.merge(df_saldo_inicial, df_before_grouped, on='Conta Bancária', how='outer').fillna(0)
                     df_saldo_dinamico['Saldo Inicial'] = df_saldo_dinamico['Saldo Inicial'] + df_saldo_dinamico['Mov_Total']
-                else:
-                    df_saldo_dinamico = df_saldo_inicial.copy()
+                else: df_saldo_dinamico = df_saldo_inicial.copy()
                     
                 df_fim_mes = df_saldo_dinamico[['Conta Bancária', 'Saldo Inicial', 'Conta Garantida']].copy()
                 
-                # --- PASSO B: MOVIMENTAÇÃO DO PERÍODO SELECIONADO ---
                 df_period = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
                 df_extratos = df_period 
 
                 if not df_period.empty:
-                    df_period_grouped = df_period.groupby('Conta Bancária').agg({
-                        'Cred_Op': 'sum',
-                        'Deb_Op': 'sum',
-                        'Cred_Tr': 'sum',
-                        'Deb_Tr': 'sum',
-                    }).reset_index()
-                    
+                    df_period_grouped = df_period.groupby('Conta Bancária').agg({'Cred_Op': 'sum', 'Deb_Op': 'sum', 'Cred_Tr': 'sum', 'Deb_Tr': 'sum'}).reset_index()
                     df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
                 else:
-                    df_fim_mes['Cred_Op'] = 0.0
-                    df_fim_mes['Deb_Op'] = 0.0
-                    df_fim_mes['Cred_Tr'] = 0.0
-                    df_fim_mes['Deb_Tr'] = 0.0
+                    for c in ['Cred_Op', 'Deb_Op', 'Cred_Tr', 'Deb_Tr']: df_fim_mes[c] = 0.0
                 
                 df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
                 df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
                 df_fim_mes.rename(columns={'Cred_Op': 'Entrada Op', 'Deb_Op': 'Saída Op', 'Cred_Tr': 'Entrada Tr', 'Deb_Tr': 'Saída Tr'}, inplace=True)
+        except Exception as e: print("Aviso ao ler e processar extratos:", e)
 
-        except Exception as e:
-            print("Aviso ao ler e processar extratos dinâmicos:", e)
-
-        # =========================================================
-        # 3. FECHAMENTO DO SALDO FINAL DA TABELA DE BANCOS
-        # =========================================================
         def definir_tipo(nome): 
             n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
             if 'getnet' in n_norm: return 'Limite'
@@ -330,44 +274,27 @@ def carregar_dados(data_inicio, data_fim):
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
-        # =========================================================
-        # 4. GRÁFICO DIÁRIO E TABELA DE ACOMPANHAMENTO DIÁRIO
-        # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
         if df_extratos is not None and not df_extratos.empty:
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
-            
-            df_extratos_diario = df_ext_caixa.groupby('Data').agg({
-                'Vl Crédito': 'sum',
-                'Vl Débito': 'sum',
-                'Cred_Op': 'sum',
-                'Deb_Op': 'sum'
-            }).reset_index()
-
+            df_extratos_diario = df_ext_caixa.groupby('Data').agg({'Vl Crédito': 'sum', 'Vl Débito': 'sum', 'Cred_Op': 'sum', 'Deb_Op': 'sum'}).reset_index()
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
-            
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
             df_graficos['Saldo Inicial'] = df_graficos['Saldo Final'] - df_graficos['Movimentação Líquida']
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
-            
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
 
         entradas_operacionais = df_fim_mes['Entrada Op'].sum()
         saidas_operacionais = df_fim_mes['Saída Op'].sum()
 
-        # =========================================================
-        # 5. GERAR RESUMO DE APLICAÇÕES A PARTIR DO EXTRATO (COLUNA L)
-        # =========================================================
         df_aplicacoes_nova = pd.DataFrame()
         saldo_aplicado_kpi = 0.0
-        
         try:
             if not df_process.empty:
                 serie_sub = df_process['SubGrupo'].apply(lambda x: unicodedata.normalize('NFKD', str(x)).encode('ASCII', 'ignore').decode('utf-8').lower())
-                
                 app_mask = serie_sub == 'aplicacao financeira'
                 imp_mask = serie_sub == 'impostos sobre aplicacoes'
                 rend_mask = serie_sub == 'rendimentos de aplicacoes'
@@ -379,50 +306,22 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Resgates_Val'] = df_process['Vl_Absoluto'].where(resg_mask, 0.0)
                 
                 df_period_app = df_process[(df_process['Data'] >= pd.to_datetime(data_inicio)) & (df_process['Data'] <= pd.to_datetime(data_fim))].copy()
-                
                 if not df_period_app.empty:
-                    df_app_grouped = df_period_app.groupby('Conta Bancária').agg({
-                        'Aplicações_Val': 'sum',
-                        'Impostos_Val': 'sum',
-                        'Rendimentos_Val': 'sum',
-                        'Resgates_Val': 'sum'
-                    }).reset_index()
-                else:
-                    df_app_grouped = pd.DataFrame(columns=['Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val'])
+                    df_app_grouped = df_period_app.groupby('Conta Bancária').agg({'Aplicações_Val': 'sum', 'Impostos_Val': 'sum', 'Rendimentos_Val': 'sum', 'Resgates_Val': 'sum'}).reset_index()
+                else: df_app_grouped = pd.DataFrame(columns=['Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val'])
                 
-                df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(
-                    df_app_grouped, on='Conta Bancária', how='left'
-                ).fillna(0)
+                df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(df_app_grouped, on='Conta Bancária', how='left').fillna(0)
                 
-                # Exibir somente se a Conta Bancária tem 'aplicação' ou 'investimento' no nome
-                def check_nome_app(nome):
-                    n = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
-                    return 'aplicacao' in n or 'investimento' in n
-
+                def check_nome_app(nome): return 'aplicacao' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower() or 'investimento' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
                 mask_is_app = df_app_full['Conta Bancária'].apply(check_nome_app)
-                
-                mask_has_data = (df_app_full['Aplicações_Val'] != 0) | (df_app_full['Impostos_Val'] != 0) | \
-                                (df_app_full['Rendimentos_Val'] != 0) | (df_app_full['Resgates_Val'] != 0) | \
-                                (df_app_full['Saldo Inicial'] != 0) | (df_app_full['Saldo Final'] != 0)
+                mask_has_data = (df_app_full['Aplicações_Val'] != 0) | (df_app_full['Impostos_Val'] != 0) | (df_app_full['Rendimentos_Val'] != 0) | (df_app_full['Resgates_Val'] != 0) | (df_app_full['Saldo Inicial'] != 0) | (df_app_full['Saldo Final'] != 0)
                 
                 df_aplicacoes_nova = df_app_full[mask_is_app & mask_has_data].copy()
-                
-                df_aplicacoes_nova = df_aplicacoes_nova.rename(columns={
-                    'Conta Bancária': 'banco',
-                    'Saldo Inicial': 'inicial',
-                    'Aplicações_Val': 'aplicaç',
-                    'Impostos_Val': 'imposto',
-                    'Rendimentos_Val': 'rendimento',
-                    'Resgates_Val': 'resgate',
-                    'Saldo Final': 'atual'
-                })
-                
+                df_aplicacoes_nova = df_aplicacoes_nova.rename(columns={'Conta Bancária': 'banco', 'Saldo Inicial': 'inicial', 'Aplicações_Val': 'aplicaç', 'Impostos_Val': 'imposto', 'Rendimentos_Val': 'rendimento', 'Resgates_Val': 'resgate', 'Saldo Final': 'atual'})
                 saldo_aplicado_kpi = df_app_full[mask_is_app]['Saldo Final'].sum()
-        except Exception as e:
-            print("Erro ao processar Aplicações do Extrato:", e)
+        except Exception as e: print("Erro ao processar Aplicações do Extrato:", e)
 
         return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_operacionais, saidas_operacionais, data_inicio, data_fim
-        
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
@@ -435,17 +334,26 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS E HARMONIZAÇÃO DE CORES
+# 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES
 # ==============================================================================
+# Base saldos
 saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
-
-saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
-saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
-limites_totais = saldo_getnet + saldo_conta_garantida
-
 saldo_total = saldo_disponivel + saldo_aplicado
+
+# Saldo inicial segregado para o cálculo das variações
+saldo_inicial_corrente = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Inicial'].sum()
+saldo_inicial_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Inicial'].sum()
+
+def calc_var(final, inicial):
+    if inicial == 0 and final == 0: return 0.0
+    if inicial == 0: return 100.0 if final > 0 else -100.0
+    return ((final / inicial) - 1) * 100
+
+var_total_pct = calc_var(saldo_total, saldo_inicial_periodo)
+var_corrente_pct = calc_var(saldo_disponivel, saldo_inicial_corrente)
+var_aplicado_pct = calc_var(saldo_aplicado, saldo_inicial_aplicado)
 
 entradas_mes = entradas_operacionais
 saidas_mes = saidas_operacionais
@@ -456,11 +364,9 @@ resultado_liquido_mes = entradas_mes - saidas_mes
 # ==============================================================================
 data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
-
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# HARMONIZAÇÃO:
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -473,7 +379,7 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=40, l=0, r=0), height=320,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#172033", showarrow=False)]
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
 )
 
 fig_combinado = go.Figure()
@@ -488,8 +394,29 @@ fig_combinado.add_trace(go.Bar(
     opacity=0.9,
     width=0.45
 ))
+
+# Lógica da Linha de Tendência com Regressão Linear (Numpy)
+if len(df_graficos) > 1:
+    x_vals = np.arange(len(df_graficos))
+    y_vals = df_graficos['Saldo Final'].values
+    z = np.polyfit(x_vals, y_vals, 1) # Regressão linear simples (Grau 1)
+    p = np.poly1d(z)
+    trend_y = p(x_vals)
+    
+    # Se inclinação (z[0]) >= 0, tendência Verde. Senão Vermelho.
+    trend_color = "#1cc88a" if z[0] >= 0 else "#e74a3b"
+    
+    fig_combinado.add_trace(go.Scatter(
+        x=df_graficos['Data_Label'],
+        y=trend_y,
+        mode='lines',
+        name='Tendência',
+        line=dict(color=trend_color, width=3, dash='dot'),
+        hoverinfo='skip'
+    ))
+
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=200, # Altura ajustada natural (200px) para alinhar com a tabela flexível
+    margin=dict(t=25, b=15, l=5, r=5), height=200, 
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -520,15 +447,20 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
+def get_var_html(pct):
+    if pct > 0: return f"<div class='kpi-var up'>↗ +{pct:.1f}%</div>"
+    elif pct < 0: return f"<div class='kpi-var down'>↘ {pct:.1f}%</div>"
+    else: return f"<div class='kpi-var neutral'>→ 0.0%</div>"
+
 kp_data = [
-    (kpi_row[0], "SALDO TOTAL ATUAL", f"R$ {saldo_total:,.2f}", "total"),
-    (kpi_row[1], "SALDO CONTA CORRENTE", f"R$ {saldo_disponivel:,.2f}", "corrente"),
-    (kpi_row[2], "SALDO APLICADO", f"R$ {saldo_aplicado:,.2f}", "aplicado"),
-    (kpi_row[3], "SALDO INICIAL PERÍODO", f"R$ {saldo_inicial_periodo:,.2f}", "inicial")
+    (kpi_row[0], "SALDO TOTAL ATUAL", f"R$ {saldo_total:,.2f}", "total", get_var_html(var_total_pct)),
+    (kpi_row[1], "SALDO CONTA CORRENTE", f"R$ {saldo_disponivel:,.2f}", "corrente", get_var_html(var_corrente_pct)),
+    (kpi_row[2], "SALDO APLICADO", f"R$ {saldo_aplicado:,.2f}", "aplicado", get_var_html(var_aplicado_pct)),
+    (kpi_row[3], "SALDO INICIAL PERÍODO", f"R$ {saldo_inicial_periodo:,.2f}", "inicial", "<div class='kpi-var neutral'>Referência</div>")
 ]
 
-for col, title, val, color in kp_data:
-    col.markdown(f"<div class='kpi-card {color}'><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
+for col, title, val, color, var_html in kp_data:
+    col.markdown(f"<div class='kpi-card {color}'><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div>{var_html}</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -541,13 +473,14 @@ with c1:
 with c2:
     st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
-    m1.markdown(f"<div class='movement-card'><div class='section-title-inline'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='movement-card'><div class='section-title-inline'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    # Cores VERDE para ENTRADAS e VERMELHO para SAÍDAS aplicadas nas Labels
+    m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
     if resultado_liquido_mes >= 0:
-        m3.markdown(f"<div class='movement-card'><div class='section-title-inline'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
     else:
-        m3.markdown(f"<div class='movement-card'><div class='section-title-inline'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
@@ -569,8 +502,6 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # APLICANDO O ENQUADRAMENTO PERFEITO SEM ESPAÇO VAZIO
-        # Removido o style="height: 320px;" para a tabela abraçar o conteúdo.
         html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
