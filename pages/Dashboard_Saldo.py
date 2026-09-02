@@ -68,7 +68,7 @@ css = """
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
 
-    /* Badges de Variação (Ajustados para alinhar à esquerda do título) */
+    /* Badges de Variação */
     .kpi-var { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; letter-spacing: 0.5px;}
     .kpi-var.up { background: rgba(74, 222, 128, 0.2); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
     .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
@@ -408,24 +408,6 @@ fig_combinado.add_trace(go.Bar(
     width=0.45
 ))
 
-# === LINHA DE TENDÊNCIA DE VARIAÇÃO DO PERÍODO ===
-if len(df_graficos) > 1:
-    val_inicio = df_graficos['Saldo Final'].iloc[0]
-    val_fim = df_graficos['Saldo Final'].iloc[-1]
-    
-    # Se a variação de saldo no período foi positiva, linha Verde. Se negativa, linha Vermelha.
-    cor_tendencia = "#1cc88a" if val_fim >= val_inicio else "#e74a3b"
-    
-    fig_combinado.add_trace(go.Scatter(
-        x=[df_graficos['Data_Label'].iloc[0], df_graficos['Data_Label'].iloc[-1]],
-        y=[val_inicio, val_fim],
-        mode='lines+markers',
-        name='Variação do Período',
-        line=dict(color=cor_tendencia, width=4, dash='dot'),
-        marker=dict(size=10, color=cor_tendencia),
-        hoverinfo='skip'
-    ))
-
 fig_combinado.update_layout(
     margin=dict(t=25, b=15, l=5, r=5), height=200,
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
@@ -458,7 +440,6 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
-# Gerador HTML do badge de variação alinhado à esquerda
 def get_var_html(pct):
     if pct > 0: return f"<div class='kpi-var up'>↗ +{pct:.1f}%</div>"
     elif pct < 0: return f"<div class='kpi-var down'>↘ {pct:.1f}%</div>"
@@ -471,7 +452,6 @@ kp_data = [
     (kpi_row[3], "SALDO INICIAL PERÍODO", f"R$ {saldo_inicial_periodo:,.2f}", "inicial", "<div class='kpi-var neutral'>→ Ref.</div>")
 ]
 
-# Renderização do cartão com Flexbox alinhando Badge e Título na mesma linha (Esquerda para a Direita)
 for col, title, val, color, var_html in kp_data:
     card_html = f"""
     <div class='kpi-card {color}'>
@@ -493,10 +473,10 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    # AQUI FOI ALTERADO PARA A COR PRETA (#000000)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#000000; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     
-    # Cores Verde e Vermelho aplicadas literais nas Entradas e Saídas
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
@@ -509,7 +489,8 @@ with c2:
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
-    st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    # AQUI FOI ALTERADO PARA A COR PRETA (#000000)
+    st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#000000; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     
     if not df_aplicacoes_nova.empty:
         def find_c(kws):
