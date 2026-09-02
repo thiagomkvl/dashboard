@@ -61,7 +61,7 @@ login_container.empty()
 
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR DE PÁGINAS (ANTI-ERRO LINUX)
+# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR BLINDADO (ANTI-ERRO NUVEM)
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -73,22 +73,30 @@ def get_img_b64(filepath):
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-def abrir_pagina(nome_esperado):
-    import os
-    arquivo_exato = nome_esperado
+def abrir_pagina(nome_arquivo):
+    """
+    Roteador Dinâmico: Resolve o conflito de montagem de pasta do Streamlit Cloud.
+    Ele tenta as rotas prováveis até encontrar o caminho correto sem quebrar a tela.
+    """
+    tentativas_de_rota = [
+        f"pages/{nome_arquivo}",                # Padrão local
+        f"dashboard/pages/{nome_arquivo}",      # Padrão de subpasta do Streamlit Cloud (Linux)
+        f"Dashboard/pages/{nome_arquivo}",      # Variação com letra maiúscula
+        nome_arquivo.replace(".py", "").replace("_", " ")  # Fallback buscando pelo nome mapeado na memória
+    ]
     
-    # Verifica a pasta pages fisicamente para pegar a capitalização exata do arquivo no Linux (Cloud)
-    # Isso evita o erro StreamlitPageNotFoundError gerado pelo GitHub alterar maiúsculas/minúsculas.
-    pages_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages")
-    if os.path.exists(pages_dir):
-        for arquivo in os.listdir(pages_dir):
-            if arquivo.lower() == nome_esperado.lower():
-                arquivo_exato = arquivo
-                break
+    for rota in tentativas_de_rota:
+        try:
+            st.switch_page(rota)
+            return  # Se deu certo, encerra o loop
+        except Exception as e:
+            # Se o erro for especificamente o PageNotFoundError, tenta a próxima rota
+            if "StreamlitPageNotFoundError" in str(type(e)):
+                continue
+            else:
+                raise e # Outros erros graves ele acusa
                 
-    # Dispara a troca de página com o nome exato registrado no servidor
-    st.switch_page(f"pages/{arquivo_exato}")
-
+    st.error(f"O servidor do Streamlit não encontrou o arquivo: {nome_arquivo}")
 
 # --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
