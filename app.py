@@ -7,28 +7,36 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO ABSOLUTO - ANTI-BUG CLOUD)
+# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO POR NOME DA PÁGINA)
 # ==============================================================================
 def acessar_painel(nome_arquivo):
     """
-    Constrói o caminho absoluto do arquivo para driblar o bug de diretório 
-    do Streamlit Cloud quando o app está hospedado em subpastas.
+    Em vez de lutar contra o caminho das pastas no Linux do Streamlit Cloud,
+    nós usamos o recurso do Streamlit de buscar apenas pelo NOME da página.
+    Ele acha a página independentemente da subpasta em que ela esteja.
     """
-    # Descobre a pasta raiz exata onde este app.py está rodando no servidor
-    caminho_base = os.path.dirname(os.path.abspath(__file__))
+    # Remove o ".py" para extrair o nome puro da página
+    nome_sem_py = nome_arquivo.replace(".py", "")
     
-    # Monta a rota absoluta (Ex: /mount/src/dashboard/pages/Dashboard_Saldo.py)
-    caminho_absoluto = os.path.join(caminho_base, "pages", nome_arquivo)
+    # O Streamlit as vezes converte os sublinhados (_) em espaços no menu invisível
+    nome_com_espaco = nome_sem_py.replace("_", " ")
     
-    try:
-        # Tenta rotear pelo caminho absoluto primeiro (Garantia no Linux/Cloud)
-        st.switch_page(caminho_absoluto)
-    except Exception:
+    # O roteador tenta chamar o painel apenas pelo nome dele, ignorando pastas
+    rotas_tentativas = [
+        nome_sem_py,                          # Ex: Dashboard_Saldo
+        nome_com_espaco,                      # Ex: Dashboard Saldo
+        f"pages/{nome_arquivo}",              # Ex: pages/Dashboard_Saldo.py
+        f"dashboard/pages/{nome_arquivo}"     # Ex: dashboard/pages/Dashboard_Saldo.py (O da sua foto)
+    ]
+    
+    for rota in rotas_tentativas:
         try:
-            # Fallback para o comportamento normal caso rode no seu Windows
-            st.switch_page(f"pages/{nome_arquivo}")
-        except Exception as e:
-            st.error(f"Erro no servidor ao tentar acessar '{nome_arquivo}'. Rota tentada: {caminho_absoluto}")
+            st.switch_page(rota)
+            return  # Sucesso! Achou a rota e saiu da função
+        except Exception:
+            continue  # Falhou, tenta a próxima rota da lista
+            
+    st.error(f"❌ O servidor não conseguiu rotear para '{nome_arquivo}'.")
 
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -130,7 +138,7 @@ header[data-testid="stHeader"] { display: none !important; }
     border-color: #bfdbfe !important;
 }
 
-/* Estiliza o botão do Streamlit para parecer a setinha */
+/* Estiliza o botão do Streamlit para parecer a setinha do HTML */
 .stButton > button {
     border: none !important;
     background: transparent !important;
@@ -152,7 +160,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
+# 3. CONSTRUÇÃO DO PORTAL E CARDS DE NAVEGAÇÃO
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
