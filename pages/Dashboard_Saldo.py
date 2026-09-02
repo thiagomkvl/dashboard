@@ -29,7 +29,7 @@ css = """
         --surface: #ffffff;
         --surface-soft: #f8fafc;
         --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
-        --text: #172033;
+        --text: #172033; /* Cinza Escuro Principal */
         --muted: #6b7280;
         --primary: #008A8C; /* Cor da Logo SOS Cardio */
         --success: #159570;
@@ -68,25 +68,25 @@ css = """
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
 
-    /* Seções Harmonizadas */
-    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: #004D4E; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
+    /* Seções Harmonizadas com Fonte Cinza Escura */
+    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
-    .section-title-inline { font-size: 9px; font-weight: 750; color: #006E6F; text-transform: uppercase; letter-spacing: 0.45px; }
+    .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas Harmonizadas */
+    /* Tabelas Harmonizadas com Fonte Cinza Escura */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
     
-    .tabela-financeira th { background: #eaf4f4; color: #004D4E; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
-    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #1c2b2b; white-space: nowrap; }
+    .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #f0f7f7; }
     
     .tabela-financeira .linha-total { background: #e0efef; border-top: 2px solid #008A8C; }
-    .tabela-financeira .linha-total td { color: #003334; font-weight: 800; }
+    .tabela-financeira .linha-total td { color: var(--text); font-weight: 800; }
     
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
-    .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #003334; }
+    .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: var(--text); }
     
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
 
@@ -460,7 +460,7 @@ periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strfti
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# HARMONIZAÇÃO (Baseada nas cores do S.O.S. Cardio):
+# HARMONIZAÇÃO:
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -473,7 +473,7 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=40, l=0, r=0), height=320,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#172033", showarrow=False)]
 )
 
 fig_combinado = go.Figure()
@@ -489,7 +489,7 @@ fig_combinado.add_trace(go.Bar(
     width=0.45
 ))
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=215, # Altura ajustada para 215px para simetria perfeita
+    margin=dict(t=25, b=15, l=5, r=5), height=200, # Altura ajustada natural (200px) para alinhar com a tabela flexível
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -539,21 +539,21 @@ with c1:
     st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
 with c2:
-    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
-    m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m1.markdown(f"<div class='movement-card'><div class='section-title-inline'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='movement-card'><div class='section-title-inline'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
     if resultado_liquido_mes >= 0:
-        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#1cc88a;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
     else:
-        m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='movement-card'><div class='section-title-inline'> RESULTADO LÍQUIDO</div><div style='font-size:19px; font-weight:800; color:#e74a3b;'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
-    st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#1a2035; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>RESUMO APLICAÇÕES <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     
     if not df_aplicacoes_nova.empty:
         def find_c(kws):
@@ -569,8 +569,9 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # APLICANDO O ENQUADRAMENTO (320px de altura cravados)
-        html_app = f'<div class="tabela-container" style="height: 320px; overflow-y: auto;"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
+        # APLICANDO O ENQUADRAMENTO PERFEITO SEM ESPAÇO VAZIO
+        # Removido o style="height: 320px;" para a tabela abraçar o conteúdo.
+        html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
@@ -593,7 +594,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div class='tabela-container' style='height: 320px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tabela-container' style='display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc; padding: 20px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
