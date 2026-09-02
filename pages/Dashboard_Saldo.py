@@ -28,7 +28,7 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #e7ebf2;
+        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
         --text: #172033;
         --muted: #6b7280;
         --primary: #008A8C; /* Cor da Logo SOS Cardio */
@@ -68,23 +68,25 @@ css = """
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
 
-    /* Seções */
-    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
+    /* Seções Harmonizadas */
+    .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: #004D4E; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
-    .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
-    .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+    .section-title-inline { font-size: 9px; font-weight: 750; color: #006E6F; text-transform: uppercase; letter-spacing: 0.45px; }
+    .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas */
-    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.03); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    /* Tabelas Harmonizadas */
+    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
-    .tabela-financeira th { background: #f7f9fc; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
-    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
-    .tabela-financeira tbody tr:hover td { background: #fafbfe; }
-    .tabela-financeira .linha-total { background: #eef2f7; border-top: 2px solid #d8dee8; }
-    .tabela-financeira .linha-total td { color: #172033; font-weight: 800; }
+    
+    .tabela-financeira th { background: #eaf4f4; color: #004D4E; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #1c2b2b; white-space: nowrap; }
+    .tabela-financeira tbody tr:hover td { background: #f0f7f7; }
+    
+    .tabela-financeira .linha-total { background: #e0efef; border-top: 2px solid #008A8C; }
+    .tabela-financeira .linha-total td { color: #003334; font-weight: 800; }
     
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
-    .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #1a2035; }
+    .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: #003334; }
     
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
 
@@ -569,7 +571,8 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
+        # APLICANDO A TRAVA DE ALTURA: style="height: 340px; overflow-y: auto;"
+        html_app = f'<div class="tabela-container" style="height: 340px; overflow-y: auto;"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
         
@@ -592,7 +595,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tabela-container' style='height: 340px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
