@@ -7,10 +7,20 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 0. LÓGICA DE AUTENTICAÇÃO E CONTROLE DE SESSÃO
+# 0. LÓGICA DE AUTENTICAÇÃO E CONTROLE DE SESSÃO (BLINDADA CONTRA LOOP)
 # ==============================================================================
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
+
+# Função Callback que verifica a senha silenciosamente
+def verificar_senha():
+    SENHA_MESTRE = "S@SCARDIO2k26"
+    if st.session_state.senha_input == SENHA_MESTRE:
+        st.session_state.autenticado = True
+        st.session_state.erro_senha = False
+    else:
+        st.session_state.autenticado = False
+        st.session_state.erro_senha = True
 
 # Tela de Login (Caso o usuário não esteja autenticado)
 if not st.session_state.autenticado:
@@ -42,24 +52,28 @@ if not st.session_state.autenticado:
     col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
     with col_l2:
         st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
-        with st.form("form_login_portal"):
-            st.markdown("<div class='login-title'>🏢 Portal Executivo</div>", unsafe_allow_html=True)
-            st.markdown("<div class='login-subtitle'>Insira sua senha corporativa para acessar.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-title'>🏢 Portal Executivo</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-subtitle'>Insira sua senha corporativa para acessar.</div>", unsafe_allow_html=True)
+        
+        # Inputs diretos sem st.form (Evita o loop infinito)
+        # O on_change permite que o usuário aperte "Enter" no teclado para logar
+        st.text_input("Senha de Acesso", type="password", placeholder="Digite a senha...", key="senha_input", on_change=verificar_senha)
+        
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        
+        # O on_click roda a função de verificar antes de recarregar a tela
+        st.button("Entrar no Sistema", use_container_width=True, on_click=verificar_senha)
+        
+        # Exibição do erro caso a senha esteja errada
+        if st.session_state.get("erro_senha"):
+            st.error("Senha incorreta. Tente novamente.")
             
-            senha_digitada = st.text_input("Senha de Acesso", type="password", placeholder="Digite a senha...")
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-            botao_entrar = st.form_submit_button("Entrar no Sistema", use_container_width=True)
-            
-            if botao_entrar:
-                # 🔐 Defina aqui a senha corporativa do sistema
-                SENHA_MESTRE = "S@SCARDIO2k26"
-                
-                if senha_digitada == SENHA_MESTRE:
-                    st.session_state.autenticado = True
-                    st.rerun()
-                else:
-                    st.error("Senha incorreta. Tente novamente.")
     st.stop()  # Interrompe a execução para não carregar o portal se não estiver logado
+
+# Função Callback para Logout
+def fazer_logout():
+    st.session_state.autenticado = False
+    st.session_state.senha_input = ""
 
 # ==============================================================================
 # 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS (BLINDAGEM STREAMLIT)
@@ -220,9 +234,8 @@ with col_title:
 
 with col_logout:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-    if st.button("🔒 Sair do Sistema", use_container_width=True):
-        st.session_state.autenticado = False
-        st.rerun()
+    # Logout blindado com callback
+    st.button("🔒 Sair do Sistema", use_container_width=True, on_click=fazer_logout)
 
 html_hub = f"""
 <div class="card-grid">
