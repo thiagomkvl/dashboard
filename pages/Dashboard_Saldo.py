@@ -348,6 +348,14 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
+# CÁLCULO DE ALTURA DINÂMICA (A MÁGICA DO ENQUADRAMENTO)
+# ==============================================================================
+# A altura base do gráfico de barras cresce junto com a quantidade de linhas da tabela de Aplicações
+num_linhas_app = len(df_aplicacoes_nova) if not df_aplicacoes_nova.empty else 1
+altura_barras = int(max(180, 125 + (num_linhas_app * 40)))
+altura_donut = int(max(320, 245 + (num_linhas_app * 40)))
+
+# ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES (%)
 # ==============================================================================
 saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
@@ -391,7 +399,7 @@ fig_donut = go.Figure(data=[go.Pie(
 )])
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=40, l=0, r=0), height=320,
+    margin=dict(t=10, b=40, l=0, r=0), height=altura_donut, # <- Altura Dinâmica Aplicada
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
 )
 
@@ -409,7 +417,7 @@ fig_combinado.add_trace(go.Bar(
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=200,
+    margin=dict(t=25, b=15, l=5, r=5), height=altura_barras, # <- Altura Dinâmica Aplicada
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -440,6 +448,7 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
+# Gerador HTML do badge de variação
 def get_var_html(pct):
     if pct > 0: return f"<div class='kpi-var up'>↗ +{pct:.1f}%</div>"
     elif pct < 0: return f"<div class='kpi-var down'>↘ {pct:.1f}%</div>"
@@ -506,6 +515,7 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
+        # TABELA SEM ALTURA FIXA: ELA DITA O TAMANHO DA TELA.
         html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
