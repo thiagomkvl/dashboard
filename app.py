@@ -167,7 +167,7 @@ st.markdown("""
 html_hub = f"""
 <div class="card-grid">
 
-<a href="Dashboard_Saldo" target="_top" class="hub-card">
+<a href="Dashboard_Saldo.py" target="_top" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
     <div class="card-content">
         <div class="card-title">Dashboard de Saldos</div>
