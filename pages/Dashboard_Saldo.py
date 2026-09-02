@@ -196,7 +196,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (USANDO SALDO_INICIAL FIXO E SEPARANDO OP/INT)
+# 2. CARGA DE DADOS (COM SALDO INICIAL DESLOCADO)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -239,10 +239,10 @@ def carregar_dados(data_inicio, data_fim):
             print("Aviso ao ler Saldo_Inicial:", e)
             
         # =========================================================
-        # 2. LER EXTRATOS APENAS DO PERÍODO SELECIONADO
+        # 2. LER TODOS OS EXTRATOS E FAZER O DESLOCAMENTO DO SALDO
         # =========================================================
         df_extratos = None
-        df_fim_mes = df_saldo_inicial.copy()
+        df_fim_mes = pd.DataFrame()
         entradas_operacionais = 0.0
         saidas_operacionais = 0.0
         df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label'])
@@ -263,38 +263,51 @@ def carregar_dados(data_inicio, data_fim):
                 df_process = pd.DataFrame()
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
+                df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
+                df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
+                
+                # Para deslocamento de saldo, consideramos TUDO (operacional e interno)
+                df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
+                
+                def normalizar_texto(txt):
+                    if pd.isna(txt) or txt is None: return ""
+                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                
+                serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
+                df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+
+                serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
+                is_operacional = (serie_operac == 'OPERACIONAL')
+
+                # SEPARANDO OPERACIONAL DE INTERNO (TRANSFERÊNCIAS)
+                df_process['Cred_Op'] = df_process['Vl Crédito'].where((~df_process['É Transf']) & is_operacional, 0.0)
+                df_process['Deb_Op'] = df_process['Vl Débito'].where((~df_process['É Transf']) & is_operacional, 0.0)
+                df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
+                df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
                 
                 dt_ini_pd = pd.to_datetime(data_inicio)
                 dt_fim_pd = pd.to_datetime(data_fim)
                 
-                # Filtra apenas o período
-                df_process = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
+                # --- PASSO A: SALDO INICIAL DESLOCADO ---
+                # Pega as transações ANTERIORES à data do filtro para somar à aba fixa
+                df_before = df_process[df_process['Data'] < dt_ini_pd].copy()
                 
-                if not df_process.empty:
-                    # Aplicar limpeza nos dados do período
-                    df_process['Vl Débito'] = df_ext.loc[df_process.index, col_deb].apply(limpa_valor_bruto)
-                    df_process['Vl Crédito'] = df_ext.loc[df_process.index, col_cred].apply(limpa_valor_bruto)
+                if not df_before.empty:
+                    df_before_grouped = df_before.groupby('Conta Bancária')['Mov_Total'].sum().reset_index()
+                    df_saldo_dinamico = pd.merge(df_saldo_inicial, df_before_grouped, on='Conta Bancária', how='outer').fillna(0)
+                    df_saldo_dinamico['Saldo Inicial'] = df_saldo_dinamico['Saldo Inicial'] + df_saldo_dinamico['Mov_Total']
+                else:
+                    df_saldo_dinamico = df_saldo_inicial.copy()
                     
-                    def normalizar_texto(txt):
-                        if pd.isna(txt) or txt is None: return ""
-                        return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower()
-                    
-                    serie_tipo = df_ext.loc[df_process.index, col_tipo].apply(normalizar_texto)
-                    df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+                df_fim_mes = df_saldo_dinamico[['Conta Bancária', 'Saldo Inicial', 'Conta Garantida']].copy()
+                
+                # --- PASSO B: MOVIMENTAÇÃO DO PERÍODO SELECIONADO ---
+                # Pega as transações apenas de DENTRO do filtro
+                df_period = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
+                df_extratos = df_period 
 
-                    serie_operac = df_ext.loc[df_process.index, col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
-                    is_operacional = (serie_operac == 'OPERACIONAL')
-
-                    # SEPARANDO OPERACIONAL DE INTERNO (TRANSFERÊNCIAS)
-                    df_process['Cred_Op'] = df_process['Vl Crédito'].where((~df_process['É Transf']) & is_operacional, 0.0)
-                    df_process['Deb_Op'] = df_process['Vl Débito'].where((~df_process['É Transf']) & is_operacional, 0.0)
-                    df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
-                    df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
-                    
-                    df_extratos = df_process
-
-                    # Agrupamento para a Tabela de Bancos
-                    df_period_grouped = df_process.groupby('Conta Bancária').agg({
+                if not df_period.empty:
+                    df_period_grouped = df_period.groupby('Conta Bancária').agg({
                         'Cred_Op': 'sum',
                         'Deb_Op': 'sum',
                         'Cred_Tr': 'sum',
@@ -323,7 +336,7 @@ def carregar_dados(data_inicio, data_fim):
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
-        # Saldo Final baseado na aba Saldo_Inicial + O que aconteceu no período
+        # Saldo Final baseado no Saldo Deslocado + Movimentações do Período
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
@@ -342,7 +355,7 @@ def carregar_dados(data_inicio, data_fim):
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
             
-            # Matemática da Auditoria Diária (Usando Saldo Inicial Fixo como âncora)
+            # Matemática da Auditoria Diária (Usando Saldo Inicial Deslocado como âncora)
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
             df_graficos['Saldo Inicial'] = df_graficos['Saldo Final'] - df_graficos['Movimentação Líquida']
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
