@@ -7,19 +7,18 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 0. LÓGICA DE AUTENTICAÇÃO BLINDADA (SEM RERUN / SEM LOOP)
+# 0. LÓGICA DE AUTENTICAÇÃO BLINDADA (SEM LOOP)
 # ==============================================================================
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-# Cria um container vazio que vai abrigar a tela de login
+# Container que abriga o login (evita o uso de st.rerun que causa loop)
 login_container = st.empty()
 
-# Se não estiver autenticado, desenha o login dentro do container
 if not st.session_state.autenticado:
     with login_container.container():
         # Custom CSS para a tela de login
-        css_login = '''
+        css_login = """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         html, body, [class*="css"] { font-family: "Inter", sans-serif; }
@@ -29,7 +28,7 @@ if not st.session_state.autenticado:
         .login-title { font-size: 22px; font-weight: 800; color: #1e40af; margin-bottom: 8px; text-align: center; }
         .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 25px; font-weight: 500; text-align: center; }
         </style>
-        '''
+        """
         st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
 
         col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
@@ -47,21 +46,20 @@ if not st.session_state.autenticado:
                     SENHA_MESTRE = "S@SCARDIO2k26"
                     
                     if senha_digitada == SENHA_MESTRE:
-                        # Muda o estado para logado
                         st.session_state.autenticado = True
                     else:
                         st.error("Senha incorreta. Tente novamente.")
 
-# Se após avaliar o botão o usuário CONTINUAR não autenticado, para a execução aqui!
+# Trava a execução da página se não estiver logado
 if not st.session_state.autenticado:
     st.stop()
 
-# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente (sem recarregar a página!)
+# Apaga o formulário de login instantaneamente (liberando a tela para o Hub)
 login_container.empty()
 
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR (ANTI-ERRO STREAMLIT)
+# 1. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -86,9 +84,9 @@ def bg_style(img_data):
 
 
 # ==============================================================================
-# 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS E LOGOUT
+# 2. CUSTOM CSS — ESTILO PORTAL ORIGINAL COM THUMBNAILS E LOGOUT
 # ==============================================================================
-css = '''
+css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -115,6 +113,35 @@ header[data-testid="stHeader"] { display: none !important; }
 .hub-header h1 { font-size: 28px; font-weight: 800; color: var(--primary-dark); margin: 0 0 4px 0; letter-spacing: -0.5px; }
 .hub-header p { font-size: 14px; color: var(--text-muted); font-weight: 500; margin: 0; }
 
+/* GRID DE CARTÕES */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 30px;
+    padding: 10px 0;
+}
+
+/* ESTILO DO CARTÃO CLICÁVEL (SEU HTML ORIGINAL) */
+.hub-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.hub-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+    border-color: #bfdbfe;
+}
+
 /* ÁREA DA FOTO (PREVIEW) */
 .card-image {
     width: 100%;
@@ -124,8 +151,12 @@ header[data-testid="stHeader"] { display: none !important; }
     background-repeat: no-repeat;
     border-bottom: 1px solid var(--border);
     transition: transform 0.5s ease;
-    border-radius: 12px 12px 0 0;
 }
+
+.hub-card:hover .card-image {
+    transform: scale(1.03);
+}
+
 .image-container {
     width: 100%;
     height: 160px;
@@ -133,60 +164,57 @@ header[data-testid="stHeader"] { display: none !important; }
     border-radius: 12px 12px 0 0;
 }
 
-/* ÁREA DE TEXTO DO CARTÃO NATIVO */
+/* ÁREA DE TEXTO DO CARTÃO */
+.card-content {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
 .card-title {
     font-size: 16px;
     font-weight: 800;
     color: var(--primary-dark);
     margin-bottom: 8px;
 }
+
 .card-desc {
     font-size: 12px;
     color: var(--text-muted);
     line-height: 1.5;
     font-weight: 500;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 
-/* Esconde o botão feio nativo mas aproveita o st.page_link transformando em texto simples e robusto */
-.stPageLink {
-    text-decoration: none !important;
-}
-.stPageLink a {
-    text-decoration: none !important;
-    color: var(--primary) !important;
-    font-weight: 700 !important;
-    font-size: 14px !important;
+.card-arrow {
+    margin-top: auto;
+    align-self: flex-end;
+    color: #cbd5e1;
+    font-size: 16px;
+    font-weight: bold;
+    transition: color 0.3s ease;
 }
 
-[data-testid="stVerticalBlockBorderWrapper"] {
-    background-color: var(--surface);
-    border: 1px solid var(--border) !important;
-    border-radius: 12px !important;
-    box-shadow: var(--shadow-sm);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-md);
-    border-color: #bfdbfe !important;
+.hub-card:hover .card-arrow {
+    color: var(--primary);
 }
 </style>
-'''
+"""
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (COM PAGE_LINK PARA NAVEGAÇÃO SEGURA)
+# 3. CONSTRUÇÃO DO PORTAL (COM O SEU MENU HTML ORIGINAL)
 # ==============================================================================
 col_title, col_logout = st.columns([4, 1])
 with col_title:
-    st.markdown('''
+    st.markdown("""
     <div class="hub-header">
         <h1>Portal Financeiro Executivo</h1>
         <p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
     </div>
-    ''', unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 with col_logout:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
@@ -197,28 +225,37 @@ with col_logout:
         except AttributeError:
             st.experimental_rerun()
 
-st.markdown("<br>", unsafe_allow_html=True)
+html_hub = f"""
+<div class="card-grid">
 
-# Usando st.page_link para roteamento nativo, imune a erros do switch_page na nuvem
-c1, c2, c3 = st.columns(3)
+<a href="Dashboard_Saldo" target="_self" class="hub-card">
+    <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
+    <div class="card-content">
+        <div class="card-title">Dashboard de Saldos</div>
+        <div class="card-desc">Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>
+        <div class="card-arrow">➔</div>
+    </div>
+</a>
 
-with c1:
-    with st.container(border=True):
-        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>', unsafe_allow_html=True)
-        st.markdown("<div class='card-title' style='margin-top:15px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
-        st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
-        st.page_link("pages/Dashboard_Saldo.py", label="Acessar Painel ➔", icon="📊")
+<a href="painel_fluxo_caixa" target="_self" class="hub-card">
+    <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
+    <div class="card-content">
+        <div class="card-title">Fluxo de Caixa Analítico</div>
+        <div class="card-desc">Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>
+        <div class="card-arrow">➔</div>
+    </div>
+</a>
 
-with c2:
-    with st.container(border=True):
-        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>', unsafe_allow_html=True)
-        st.markdown("<div class='card-title' style='margin-top:15px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
-        st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
-        st.page_link("pages/painel_fluxo_caixa.py", label="Acessar Painel ➔", icon="💰")
+<a href="painel_pagar" target="_self" class="hub-card">
+    <div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>
+    <div class="card-content">
+        <div class="card-title">Painel de Pagamentos</div>
+        <div class="card-desc">Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>
+        <div class="card-arrow">➔</div>
+    </div>
+</a>
 
-with c3:
-    with st.container(border=True):
-        st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>', unsafe_allow_html=True)
-        st.markdown("<div class='card-title' style='margin-top:15px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
-        st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
-        st.page_link("pages/painel_pagar.py", label="Acessar Painel ➔", icon="📄")
+</div>
+"""
+
+st.markdown(html_hub.replace('\n', ''), unsafe_allow_html=True)
