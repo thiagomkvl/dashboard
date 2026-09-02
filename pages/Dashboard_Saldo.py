@@ -3,7 +3,6 @@ import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
 import re
 import difflib
 import unicodedata
@@ -29,12 +28,12 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #d0e3e4; 
-        --text: #172033; 
+        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
+        --text: #172033; /* Cinza Escuro Principal */
         --muted: #6b7280;
-        --primary: #008A8C; 
-        --success: #159570;
-        --danger: #d94a4a;
+        --primary: #008A8C; /* Cor da Logo SOS Cardio */
+        --success: #1cc88a;
+        --danger: #e74a3b;
         --warning: #c58a16;
         --shadow: 0 4px 15px rgba(0, 138, 140, 0.15);
     }
@@ -58,30 +57,30 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs */
-    .kpi-card { position: relative; overflow: hidden; min-height: 105px; padding: 18px 20px 14px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
+    /* KPIs com a Paleta Institucional (S.O.S. Cardio) */
+    .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
     .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
     .kpi-card.aplicado { background: linear-gradient(135deg, #008A8C, #006869); }
     .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
     
-    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
-    .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
+    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
+    .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
 
-    /* Badges de Variação */
-    .kpi-var { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; margin-top: 5px; width: fit-content; letter-spacing: 0.5px;}
+    /* Badges de Variação (Ajustados para alinhar à esquerda do título) */
+    .kpi-var { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; letter-spacing: 0.5px;}
     .kpi-var.up { background: rgba(74, 222, 128, 0.2); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
     .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
     .kpi-var.neutral { background: rgba(255, 255, 255, 0.15); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
 
-    /* Seções */
+    /* Seções Harmonizadas com Fonte Cinza Escura */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas */
+    /* Tabelas Harmonizadas com Fonte Cinza Escura */
     .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
     
@@ -152,31 +151,46 @@ else:
 # ==============================================================================
 def limpa_valor_bruto(valor):
     try:
-        if isinstance(valor, pd.Series): valor = valor.iloc[0] if not valor.empty else 0.0
-        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]: return 0.0
-        if isinstance(valor, (int, float)): return float(valor)
+        if isinstance(valor, pd.Series): 
+            valor = valor.iloc[0] if not valor.empty else 0.0
+            
+        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "NaN", "None"]:
+            return 0.0
+        if isinstance(valor, (int, float)):
+            return float(valor)
+            
         v_str = str(valor).strip()
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         v_str = v_str.replace('R$', '').strip()
-        if '.' in v_str and ',' in v_str: v_str = v_str.replace('.', '').replace(',', '.')
-        elif ',' in v_str: v_str = v_str.replace(',', '.')
+        
+        if '.' in v_str and ',' in v_str:
+            v_str = v_str.replace('.', '').replace(',', '.')
+        elif ',' in v_str:
+            v_str = v_str.replace(',', '.')
+            
         return float(v_str)
-    except Exception: return 0.0
+    except Exception:
+        return 0.0
 
 def formatar_moeda(valor):
     try:
         val = float(valor)
         if val == 0: return "-"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except Exception: return "-"
+    except Exception:
+        return "-"
 
 def formatar_abreviado(valor):
     try:
         val = float(valor)
-        if abs(val) >= 1_000_000: return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
-        elif abs(val) >= 1_000: return f"R$ {val/1_000:.1f}K".replace('.', ',')
-        else: return f"R$ {val:.0f}"
-    except Exception: return ""
+        if abs(val) >= 1_000_000:
+            return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
+        elif abs(val) >= 1_000:
+            return f"R$ {val/1_000:.1f}K".replace('.', ',')
+        else:
+            return f"R$ {val:.0f}"
+    except Exception:
+        return ""
 
 # ==============================================================================
 # 2. CARGA DE DADOS
@@ -334,15 +348,14 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES
+# 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES (%)
 # ==============================================================================
-# Base saldos
 saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_disponivel + saldo_aplicado
 
-# Saldo inicial segregado para o cálculo das variações
+# Saldo Inicial segregado para calcular a variação de cada bloco
 saldo_inicial_corrente = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Inicial'].sum()
 saldo_inicial_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Inicial'].sum()
 
@@ -386,7 +399,7 @@ fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
-    name='Saldo Total',
+    name='Saldo Diário',
     marker_color='#004D4E', 
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
@@ -395,28 +408,26 @@ fig_combinado.add_trace(go.Bar(
     width=0.45
 ))
 
-# Lógica da Linha de Tendência com Regressão Linear (Numpy)
+# === LINHA DE TENDÊNCIA DE VARIAÇÃO DO PERÍODO ===
 if len(df_graficos) > 1:
-    x_vals = np.arange(len(df_graficos))
-    y_vals = df_graficos['Saldo Final'].values
-    z = np.polyfit(x_vals, y_vals, 1) # Regressão linear simples (Grau 1)
-    p = np.poly1d(z)
-    trend_y = p(x_vals)
+    val_inicio = df_graficos['Saldo Final'].iloc[0]
+    val_fim = df_graficos['Saldo Final'].iloc[-1]
     
-    # Se inclinação (z[0]) >= 0, tendência Verde. Senão Vermelho.
-    trend_color = "#1cc88a" if z[0] >= 0 else "#e74a3b"
+    # Se a variação de saldo no período foi positiva, linha Verde. Se negativa, linha Vermelha.
+    cor_tendencia = "#1cc88a" if val_fim >= val_inicio else "#e74a3b"
     
     fig_combinado.add_trace(go.Scatter(
-        x=df_graficos['Data_Label'],
-        y=trend_y,
-        mode='lines',
-        name='Tendência',
-        line=dict(color=trend_color, width=3, dash='dot'),
+        x=[df_graficos['Data_Label'].iloc[0], df_graficos['Data_Label'].iloc[-1]],
+        y=[val_inicio, val_fim],
+        mode='lines+markers',
+        name='Variação do Período',
+        line=dict(color=cor_tendencia, width=4, dash='dot'),
+        marker=dict(size=10, color=cor_tendencia),
         hoverinfo='skip'
     ))
 
 fig_combinado.update_layout(
-    margin=dict(t=25, b=15, l=5, r=5), height=200, 
+    margin=dict(t=25, b=15, l=5, r=5), height=200,
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -447,6 +458,7 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
+# Gerador HTML do badge de variação alinhado à esquerda
 def get_var_html(pct):
     if pct > 0: return f"<div class='kpi-var up'>↗ +{pct:.1f}%</div>"
     elif pct < 0: return f"<div class='kpi-var down'>↘ {pct:.1f}%</div>"
@@ -456,11 +468,21 @@ kp_data = [
     (kpi_row[0], "SALDO TOTAL ATUAL", f"R$ {saldo_total:,.2f}", "total", get_var_html(var_total_pct)),
     (kpi_row[1], "SALDO CONTA CORRENTE", f"R$ {saldo_disponivel:,.2f}", "corrente", get_var_html(var_corrente_pct)),
     (kpi_row[2], "SALDO APLICADO", f"R$ {saldo_aplicado:,.2f}", "aplicado", get_var_html(var_aplicado_pct)),
-    (kpi_row[3], "SALDO INICIAL PERÍODO", f"R$ {saldo_inicial_periodo:,.2f}", "inicial", "<div class='kpi-var neutral'>Referência</div>")
+    (kpi_row[3], "SALDO INICIAL PERÍODO", f"R$ {saldo_inicial_periodo:,.2f}", "inicial", "<div class='kpi-var neutral'>→ Ref.</div>")
 ]
 
+# Renderização do cartão com Flexbox alinhando Badge e Título na mesma linha (Esquerda para a Direita)
 for col, title, val, color, var_html in kp_data:
-    col.markdown(f"<div class='kpi-card {color}'><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div>{var_html}</div>", unsafe_allow_html=True)
+    card_html = f"""
+    <div class='kpi-card {color}'>
+        <div style='display: flex; align-items: center;'>
+            {var_html}
+            <div class='kpi-title' style='margin-left: 10px;'>{title}</div>
+        </div>
+        <div class='kpi-value'>{val}</div>
+    </div>
+    """
+    col.markdown(card_html, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -473,7 +495,8 @@ with c1:
 with c2:
     st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:11px; color:#6b7280; font-weight:900; text-transform:uppercase;'>Ref: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
-    # Cores VERDE para ENTRADAS e VERMELHO para SAÍDAS aplicadas nas Labels
+    
+    # Cores Verde e Vermelho aplicadas literais nas Entradas e Saídas
     m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#1cc88a;'> ENTRADAS</div><div style='font-size:19px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#e74a3b;'> SAÍDAS</div><div style='font-size:19px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
