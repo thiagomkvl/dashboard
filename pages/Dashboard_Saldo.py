@@ -87,7 +87,7 @@ css = """
     .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 565px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
     
     .tabela-container-scroll .tabela-financeira th { padding: 8px 4px !important; font-size: 9px !important; }
-    .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 11px !important; }
+    .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 12px !important; font-weight: 750 !important; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
     .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; }
@@ -316,7 +316,6 @@ def carregar_dados(data_inicio, data_fim):
                 mov = row['Vl Crédito'] - row['Vl Débito']
                 sf = si + mov
                 
-                # Delta calculado com base na base inicial do filtro (acumulado do período)
                 d_rs = sf - saldo_inicial_caixa
                 d_pct = ((sf / saldo_inicial_caixa) - 1) * 100 if saldo_inicial_caixa != 0 else 0.0
                 
@@ -641,12 +640,13 @@ with col_diario:
         sinal_delta = "+" if d_rs > 0 else ""
         delta_str = f"{sinal_delta}{d_pct:.1f}%" if d_rs != 0 else "-"
         
+        # Todas as células de valores usam a mesma classe e padronização visual unificada
         html_diario += f'<tr>' \
                        f'<td style="font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
                        f'<td class="valores">{formatar_moeda(row["Saldo Inicial"]).replace("R$ ", "")}</td>' \
                        f'<td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"]).replace("R$ ", "")}</td>' \
                        f'<td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"]).replace("R$ ", "")}</td>' \
-                       f'<td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"]).replace("R$ ", "")}</td>' \
+                       f'<td class="valores">{formatar_moeda(row["Saldo Final"]).replace("R$ ", "")}</td>' \
                        f'<td class="valores" style="color:{cor_delta}; font-weight:800;">{delta_str}</td>' \
                        f'</tr>'
                        
