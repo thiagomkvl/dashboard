@@ -61,10 +61,10 @@ css = """
 
     /* KPIs */
     .kpi-card { position: relative; overflow: hidden; min-height: 85px; padding: 14px 18px 12px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; backdrop-filter: blur(5px); }
-    .kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
+    .kpi-card.inicial { background: linear-gradient(135deg, rgba(71, 85, 105, 0.95), rgba(100, 116, 139, 0.75)); }
     .kpi-card.disponivel { background: linear-gradient(135deg, rgba(21, 149, 112, 0.95), rgba(28, 200, 138, 0.75)); }
     .kpi-card.aplicacoes { background: linear-gradient(135deg, rgba(118, 84, 200, 0.95), rgba(143, 104, 228, 0.75)); }
-    .kpi-card.limites { background: linear-gradient(135deg, rgba(35, 136, 167, 0.95), rgba(54, 185, 204, 0.75)); }
+    .kpi-card.total { background: linear-gradient(135deg, rgba(49, 87, 213, 0.95), rgba(78, 115, 223, 0.75)); }
     
     .kpi-icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px; border-radius: 7px; background: rgba(255,255,255,0.2); font-size: 14px; color: white; }
     .kpi-title { font-size: 10px; line-height: 1; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.65px; margin-bottom: 4px; }
@@ -444,14 +444,11 @@ if not col_conta: col_conta = 'Conta Bancária'
 if df_consolidado.empty: st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs MENSAIS
+# 3. CÁLCULOS DOS KPIs MENSAIS E HARMONIZAÇÃO DE CORES
 # ==============================================================================
+saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
-
-saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
-saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
-limites_totais = saldo_getnet + saldo_conta_garantida
 
 saldo_total = saldo_disponivel + saldo_aplicado
 
@@ -468,11 +465,12 @@ periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strfti
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
+# HARMONIZAÇÃO: Cores exatamente iguais aos cards. Aplicado = Roxo (#7654c8) | Disponível = Verde (#159570)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Aplicado', 'Disponível'], 
     hole=0.6, 
-    marker=dict(colors=['#4e73df', '#1cc88a']),
+    marker=dict(colors=['#7654c8', '#159570']),
     textinfo='percent',
     texttemplate='%{percent:.1%}',
     hoverinfo='label+percent'
@@ -480,7 +478,7 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=40, l=0, r=0), height=320,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, showarrow=False)]
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#3157d5", showarrow=False)]
 )
 
 fig_combinado = go.Figure()
@@ -488,7 +486,7 @@ fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#4e73df',
+    marker_color='#3157d5', # Azul harmônico com o card Saldo Total
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
     textfont=dict(size=13, color="#1a2035", weight="bold"),
@@ -527,10 +525,10 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 kp_data = [
-    (kpi_row[0], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total"),
+    (kpi_row[0], "⏮️", "SALDO INICIAL", f"R$ {saldo_inicial_periodo:,.2f}", "inicial"),
     (kpi_row[1], "💳", "SALDO DISPONÍVEL", f"R$ {saldo_disponivel:,.2f}", "disponivel"),
     (kpi_row[2], "📊", "APLICAÇÕES", f"R$ {saldo_aplicado:,.2f}", "aplicacoes"),
-    (kpi_row[3], "🛡️", "LIMITES TOTAIS", f"R$ {limites_totais:,.2f}", "limites")
+    (kpi_row[3], "🏛️", "SALDO TOTAL", f"R$ {saldo_total:,.2f}", "total")
 ]
 for col, icon, title, val, color in kp_data:
     col.markdown(f"<div class='kpi-card {color}'><div class='kpi-icon'>{icon}</div><div class='kpi-title'>{title}</div><div class='kpi-value'>{val}</div></div>", unsafe_allow_html=True)
