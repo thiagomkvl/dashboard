@@ -19,7 +19,7 @@ login_container = st.empty()
 if not st.session_state.autenticado:
     with login_container.container():
         # Custom CSS para a tela de login
-        css_login = """
+        css_login = '''
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         html, body, [class*="css"] { font-family: "Inter", sans-serif; }
@@ -29,7 +29,7 @@ if not st.session_state.autenticado:
         .login-title { font-size: 22px; font-weight: 800; color: #1e40af; margin-bottom: 8px; text-align: center; }
         .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 25px; font-weight: 500; text-align: center; }
         </style>
-        """
+        '''
         st.markdown(textwrap.dedent(css_login), unsafe_allow_html=True)
 
         col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
@@ -61,7 +61,7 @@ login_container.empty()
 
 
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR BLINDADO (ANTI-ERRO NUVEM)
+# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR (ANTI-ERRO STREAMLIT)
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -72,31 +72,6 @@ def get_img_b64(filepath):
             return f"data:image/{ext};base64,{b64}"
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
-
-def abrir_pagina(nome_arquivo):
-    """
-    Roteador Dinâmico: Resolve o conflito de montagem de pasta do Streamlit Cloud.
-    Ele tenta as rotas prováveis até encontrar o caminho correto sem quebrar a tela.
-    """
-    tentativas_de_rota = [
-        f"pages/{nome_arquivo}",                # Padrão local
-        f"dashboard/pages/{nome_arquivo}",      # Padrão de subpasta do Streamlit Cloud (Linux)
-        f"Dashboard/pages/{nome_arquivo}",      # Variação com letra maiúscula
-        nome_arquivo.replace(".py", "").replace("_", " ")  # Fallback buscando pelo nome mapeado na memória
-    ]
-    
-    for rota in tentativas_de_rota:
-        try:
-            st.switch_page(rota)
-            return  # Se deu certo, encerra o loop
-        except Exception as e:
-            # Se o erro for especificamente o PageNotFoundError, tenta a próxima rota
-            if "StreamlitPageNotFoundError" in str(type(e)):
-                continue
-            else:
-                raise e # Outros erros graves ele acusa
-                
-    st.error(f"O servidor do Streamlit não encontrou o arquivo: {nome_arquivo}")
 
 # --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
@@ -113,7 +88,7 @@ def bg_style(img_data):
 # ==============================================================================
 # 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS E LOGOUT
 # ==============================================================================
-css = """
+css = '''
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -173,7 +148,17 @@ header[data-testid="stHeader"] { display: none !important; }
     margin-bottom: 15px;
 }
 
-/* Modifica a borda padrão do container do Streamlit para parecer um cartão */
+/* Esconde o botão feio nativo mas aproveita o st.page_link transformando em texto simples e robusto */
+.stPageLink {
+    text-decoration: none !important;
+}
+.stPageLink a {
+    text-decoration: none !important;
+    color: var(--primary) !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+}
+
 [data-testid="stVerticalBlockBorderWrapper"] {
     background-color: var(--surface);
     border: 1px solid var(--border) !important;
@@ -187,21 +172,21 @@ header[data-testid="stHeader"] { display: none !important; }
     border-color: #bfdbfe !important;
 }
 </style>
-"""
+'''
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (COM NAVEGAÇÃO NATIVA E SEM PERDA DE SESSÃO)
+# 3. CONSTRUÇÃO DO PORTAL (COM PAGE_LINK PARA NAVEGAÇÃO SEGURA)
 # ==============================================================================
 col_title, col_logout = st.columns([4, 1])
 with col_title:
-    st.markdown("""
+    st.markdown('''
     <div class="hub-header">
         <h1>Portal Financeiro Executivo</h1>
         <p>Selecione um módulo abaixo para acessar os painéis de controle e análise.</p>
     </div>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
 with col_logout:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
@@ -214,7 +199,7 @@ with col_logout:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Hub criado com containers e botões nativos do Streamlit
+# Usando st.page_link para roteamento nativo, imune a erros do switch_page na nuvem
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -222,21 +207,18 @@ with c1:
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:15px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
-        if st.button("➔ Acessar Saldos", key="btn_saldos", use_container_width=True):
-            abrir_pagina("Dashboard_Saldo.py")
+        st.page_link("pages/Dashboard_Saldo.py", label="Acessar Painel ➔", icon="📊")
 
 with c2:
     with st.container(border=True):
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:15px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
-        if st.button("➔ Acessar Fluxo", key="btn_fluxo", use_container_width=True):
-            abrir_pagina("painel_fluxo_caixa.py")
+        st.page_link("pages/painel_fluxo_caixa.py", label="Acessar Painel ➔", icon="💰")
 
 with c3:
     with st.container(border=True):
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:15px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
-        if st.button("➔ Acessar Pagamentos", key="btn_pagar", use_container_width=True):
-            abrir_pagina("painel_pagar.py")
+        st.page_link("pages/painel_pagar.py", label="Acessar Painel ➔", icon="📄")
