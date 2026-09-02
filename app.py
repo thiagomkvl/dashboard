@@ -47,6 +47,7 @@ if not st.session_state.autenticado:
                     SENHA_MESTRE = "S@SCARDIO2k26"
                     
                     if senha_digitada == SENHA_MESTRE:
+                        # Muda o estado para logado
                         st.session_state.autenticado = True
                     else:
                         st.error("Senha incorreta. Tente novamente.")
@@ -55,11 +56,12 @@ if not st.session_state.autenticado:
 if not st.session_state.autenticado:
     st.stop()
 
-# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente
+# Se chegou aqui, a senha estava correta. Limpamos a tela de login imediatamente (sem recarregar a página!)
 login_container.empty()
 
+
 # ==============================================================================
-# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR INTELIGENTE (CASE INSENSITIVE)
+# 1. FUNÇÃO PARA CARREGAR IMAGENS E ROTEADOR INTELIGENTE DE PÁGINAS
 # ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -71,15 +73,25 @@ def get_img_b64(filepath):
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-# Função inteligente que acha o arquivo correto na nuvem mesmo se o nome estiver com letras diferentes (maiúsculas/minúsculas)
+# Roteador inteligente que lê o GPS interno do Streamlit (Ignora bugs do Cloud)
 def abrir_pagina(nome_arquivo):
-    nome_lower = nome_arquivo.lower()
-    if os.path.exists("pages"):
-        for file in os.listdir("pages"):
-            if file.lower() == nome_lower:
-                st.switch_page(f"pages/{file}")
+    try:
+        from streamlit.source_util import get_pages
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        
+        # Pega as rotas absolutas registradas na memória do servidor
+        ctx = get_script_run_ctx()
+        pages = get_pages(ctx.main_script_path)
+        
+        # Procura o arquivo independentemente de subpastas ou de letras maiúsculas/minúsculas
+        for page_hash, page_info in pages.items():
+            if nome_arquivo.lower() in page_info["script_path"].lower():
+                st.switch_page(page_info["script_path"])
                 return
-    # Fallback caso a pasta se chame de outra forma
+    except Exception:
+        pass
+    
+    # Fallback padrão caso a leitura em memória falhe
     st.switch_page(f"pages/{nome_arquivo}")
 
 # --- CAMINHOS DAS IMAGENS ---
@@ -92,6 +104,7 @@ def bg_style(img_data):
         return f"background: {img_data};"
     else:
         return f"background-image: url('{img_data}');"
+
 
 # ==============================================================================
 # 2. CUSTOM CSS — ESTILO PORTAL COM THUMBNAILS E LOGOUT
@@ -172,6 +185,7 @@ header[data-testid="stHeader"] { display: none !important; }
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+
 
 # ==============================================================================
 # 3. CONSTRUÇÃO DO PORTAL (COM NAVEGAÇÃO NATIVA E SEM PERDA DE SESSÃO)
