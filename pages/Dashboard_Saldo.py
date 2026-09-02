@@ -80,11 +80,14 @@ css = """
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas Harmonizadas com Fonte Cinza Escura */
-    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
-    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; }
+    /* Tabelas Harmonizadas */
+    .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     
-    .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; }
+    /* Container com rolagem vertical controlada para a tabela diária */
+    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 480px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
+
+    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
+    .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; }
     .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #f0f7f7; }
     
@@ -106,7 +109,7 @@ css = """
             print-color-adjust: exact !important;
             color-adjust: exact !important;
         }
-        .kpi-card, .tabela-container, .movement-card { break-inside: avoid; }
+        .kpi-card, .tabela-container, .tabela-container-scroll, .movement-card { break-inside: avoid; max-height: none !important; overflow: visible !important; }
     }
 </style>
 """
@@ -380,7 +383,6 @@ periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strfti
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# Gráficos com alturas fixas reduzidas para alinhamento horizontal limpo
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -392,7 +394,7 @@ fig_donut = go.Figure(data=[go.Pie(
 )])
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=10, l=0, r=0), height=270, # <- Altura reduzida
+    margin=dict(t=10, b=10, l=0, r=0), height=315,
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
 )
 
@@ -410,7 +412,7 @@ fig_combinado.add_trace(go.Bar(
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=10, b=10, l=5, r=5), height=160, # <- Altura reduzida e margens estreitas
+    margin=dict(t=10, b=10, l=5, r=5), height=230,
     xaxis=dict(tickfont=dict(size=10), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -505,7 +507,6 @@ with c3:
         c_resg = find_c(['resgate'])
         c_atual = find_c(['atual', 'final'])
         
-        # TABELA SEM ALTURA FIXA: ELA DITA O TAMANHO DA TELA.
         html_app = f'<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>BANCO</th><th class="valores">SALDO INICIAL {dt_ini_short}</th><th class="valores">APLICAÇÕES</th><th class="valores">IMPOSTOS</th><th class="valores">RENDIMENTOS</th><th class="valores">RESGATES</th><th class="valores">SALDO ATUAL {dt_fim_short}</th></tr></thead><tbody>'
         
         tot_si = 0; tot_app = 0; tot_imp = 0; tot_rend = 0; tot_resg = 0; tot_atual = 0
@@ -588,15 +589,17 @@ with col_tab:
     st.markdown(html_tabela, unsafe_allow_html=True)
 
 with col_diario:
-    st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
     if not df_graficos.empty:
+        # AQUI FOI APLICADO O ORDENAMENTO ASCENDING=FALSE PARA TRAZER A DATA MAIS NOVA SEMPRE NO TOPO
         df_diario_view = df_graficos[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final']].copy()
-        df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
+        df_diario_view = df_diario_view.sort_values(by='Data', ascending=False)
     else:
         df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final'])
     
-    html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS (OP.)</th><th class="valores">SAÍDAS (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
+    # APLICADO O CONTAINER DE SCROLL VERTICAL (.tabela-container-scroll) COM CABEÇALHO FIXO
+    html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS (OP.)</th><th class="valores">SAÍDAS (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
     for _, row in df_diario_view.iterrows():
         html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
     html_diario += '</tbody></table></div>'
