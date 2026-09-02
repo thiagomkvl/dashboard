@@ -7,38 +7,40 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (DETETIVE DE ROTAS PARA LINUX)
+# 1. FUNÇÕES DE NAVEGAÇÃO E DIAGNÓSTICO PROFUNDO (ANTI-ERRO STREAMLIT CLOUD)
 # ==============================================================================
-def acessar_painel(nome_esperado):
+def acessar_painel(nome_alvo):
     """
-    Função blindada: Ela escaneia o diretório do servidor em tempo real
-    para descobrir o caminho e a capitalização exata do arquivo,
-    evitando qualquer erro de 'StreamlitPageNotFoundError' no Cloud.
+    Lê diretamente a memória de roteamento do Streamlit.
+    Se o arquivo existir, ele acha e navega. Se não existir, ele lista o que encontrou.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    from streamlit.source_util import get_pages
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
     
-    # 1. Localiza a pasta pages (independente de estar como 'pages' ou 'Pages')
-    pasta_pages = "pages"
-    for p in os.listdir(base_dir):
-        if p.lower() == "pages" and os.path.isdir(os.path.join(base_dir, p)):
-            pasta_pages = p
-            break
+    ctx = get_script_run_ctx()
+    if ctx is None:
+        st.error("Erro interno do Streamlit (Contexto não encontrado).")
+        return
+        
+    # Pega o dicionário de todas as páginas que o Streamlit registrou no servidor
+    pages = get_pages(ctx.main_script_path)
+    
+    # Limpa o nome para fazer uma busca flexível
+    nome_limpo = nome_alvo.lower().replace(".py", "")
+    
+    # 1. Tenta encontrar a página registrada na memória do Streamlit
+    for page_hash, page_info in pages.items():
+        caminho_registrado = page_info.get("script_path", "").lower()
+        if nome_limpo in caminho_registrado:
+            st.switch_page(page_info["script_path"])
+            return
             
-    # 2. Localiza o arquivo exato dentro da pasta
-    caminho_completo_pasta = os.path.join(base_dir, pasta_pages)
-    caminho_exato = None
+    # 2. Se chegou aqui, o Streamlit CLOUD não registrou a página. Vamos exibir o diagnóstico:
+    paginas_encontradas = [p.get("script_path", "Desconhecido").split("/")[-1] for p in pages.values()]
     
-    if os.path.exists(caminho_completo_pasta):
-        for f in os.listdir(caminho_completo_pasta):
-            if f.lower() == nome_esperado.lower():
-                caminho_exato = f"{pasta_pages}/{f}"
-                break
-                
-    # 3. Faz o redirecionamento com a rota infalível
-    if caminho_exato:
-        st.switch_page(caminho_exato)
-    else:
-        st.error(f"Erro: O arquivo '{nome_esperado}' não existe na pasta '{pasta_pages}'. Verifique se ele não está com um sublinhado (_) na frente!")
+    st.error(f"❌ O Streamlit Cloud bloqueou o acesso ao painel '{nome_alvo}'.")
+    st.warning(f"O servidor só conseguiu registrar e reconhecer estes arquivos: **{paginas_encontradas}**")
+    st.info("💡 **DICA:** Verifique no GitHub se os seus arquivos estão exatamente dentro de uma pasta chamada `pages` (tudo minúsculo) e garanta que NÃO há um sublinhado (`_`) no início do nome deles.")
 
 def get_img_b64(filepath):
     if os.path.exists(filepath):
@@ -162,7 +164,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
+# 3. CONSTRUÇÃO DO PORTAL E CARDS DE NAVEGAÇÃO
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -172,7 +174,7 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-# Grid de cartões usando as estruturas nativas do Streamlit (funciona em qualquer nuvem)
+# Grid de cartões usando as estruturas nativas do Streamlit
 c1, c2, c3 = st.columns(3)
 
 with c1:
