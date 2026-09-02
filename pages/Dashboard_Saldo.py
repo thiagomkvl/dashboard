@@ -84,7 +84,7 @@ css = """
     .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     
     /* Container com altura idêntica à tabela dos bancos e largura mínima forçada para igualar o peso visual (~1125px) */
-    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 840px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 830px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-container-scroll .tabela-financeira { min-width: 1125px; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
