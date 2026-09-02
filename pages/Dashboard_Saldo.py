@@ -68,7 +68,7 @@ css = """
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; }
 
-    /* Ajuste de contraste para os blocos mais claros */
+     /* Ajuste de contraste para os blocos mais claros */
     .kpi-card.aplicado .kpi-title, .kpi-card.aplicado .kpi-value { color: #015C91; font-weight: 800; }
     .kpi-card.inicial .kpi-title, .kpi-card.inicial .kpi-value { color: #015C91; font-weight: 800; }
 
