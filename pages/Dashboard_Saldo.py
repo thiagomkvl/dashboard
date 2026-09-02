@@ -31,11 +31,11 @@ css = """
         --border: #e7ebf2;
         --text: #172033;
         --muted: #6b7280;
-        --primary: #2C82B5;
+        --primary: #4040fb;
         --success: #159570;
         --danger: #d94a4a;
         --warning: #c58a16;
-        --shadow: 0 4px 15px rgba(1, 92, 145, 0.08);
+        --shadow: 0 4px 15px rgba(4, 4, 226, 0.08);
     }
 
     html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
@@ -57,13 +57,13 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs com a Nova Paleta e Degradê */
+    /* KPIs com a Nova Paleta Azul Violeta e Degradê */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
-    .kpi-card.total { background: linear-gradient(135deg, #015C91, #013b5e); }
-    .kpi-card.corrente { background: linear-gradient(135deg, #2C82B5, #1e648f); }
-    .kpi-card.aplicado { background: linear-gradient(135deg, #88CDF6, #63aedb); }
-    .kpi-card.inicial { background: linear-gradient(135deg, #BCE5FF, #9ad1f7); }
+    .kpi-card.total { background: linear-gradient(135deg, #0404e2, #0303b5); }
+    .kpi-card.corrente { background: linear-gradient(135deg, #4040fb, #2c2cdb); }
+    .kpi-card.aplicado { background: linear-gradient(135deg, #6565ff, #4d4ddf); }
+    .kpi-card.inicial { background: linear-gradient(135deg, #8787fb, #6e6edf); }
     
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; }
@@ -127,7 +127,7 @@ with st.sidebar:
     
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #015C91, #2C82B5); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(1, 92, 145, 0.2); transition: transform 0.2s;">
+        style="width:100%; background:linear-gradient(135deg, #0404e2, #4040fb); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(4, 4, 226, 0.2); transition: transform 0.2s;">
         🖨️ Salvar Dashboard (PDF)
         </button>
     """, height=55)
@@ -183,15 +183,6 @@ def formatar_abreviado(valor):
             return f"R$ {val:.0f}"
     except Exception:
         return ""
-
-def formatar_transf(valor):
-    try:
-        val = float(valor)
-        if val == 0: return "-"
-        prefixo = "+ " if val > 0 else "- "
-        return f"{prefixo}R$ {abs(val):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except Exception:
-        return "-"
 
 # ==============================================================================
 # 2. CARGA DE DADOS (COM SALDO INICIAL DESLOCADO E FILTRO ESTRITO DE NOME)
@@ -448,6 +439,10 @@ saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 
+saldo_getnet = df_consolidado[df_consolidado['Tipo'] == 'Limite']['Saldo Final'].sum()
+saldo_conta_garantida = df_consolidado['Conta Garantida'].sum()
+limites_totais = saldo_getnet + saldo_conta_garantida
+
 saldo_total = saldo_disponivel + saldo_aplicado
 
 entradas_mes = entradas_operacionais
@@ -464,12 +459,12 @@ dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
 # HARMONIZAÇÃO (Baseada nas cores enviadas):
-# Aplicado = #88CDF6 (Azul Claro) | Conta Corrente = #2C82B5 (Azul Médio)
+# Aplicado = #6565ff | Conta Corrente = #4040fb
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
     hole=0.6, 
-    marker=dict(colors=['#88CDF6', '#2C82B5']),
+    marker=dict(colors=['#6565ff', '#4040fb']),
     textinfo='percent',
     texttemplate='%{percent:.1%}',
     hoverinfo='label+percent'
@@ -477,7 +472,7 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=40, l=0, r=0), height=320,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#015C91", showarrow=False)]
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#0404e2", showarrow=False)]
 )
 
 fig_combinado = go.Figure()
@@ -485,7 +480,7 @@ fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
     y=df_graficos['Saldo Final'],
     name='Saldo Total',
-    marker_color='#015C91', # Azul Escuro (Mesma base do Card Saldo Total Atual)
+    marker_color='#0404e2', # Azul mais escuro (Mesma base do Card Saldo Total Atual)
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
     textposition='outside',
     textfont=dict(size=13, color="#1a2035", weight="bold"),
@@ -524,7 +519,7 @@ st.markdown(f"""
 
 kpi_row = st.columns(4)
 
-# Ordem Top-Down e Nomenclaturas Requisitadas
+# Ordem Top-Down, Nomenclaturas Requisitadas e Sem Emojis
 kp_data = [
     (kpi_row[0], "SALDO TOTAL ATUAL", f"R$ {saldo_total:,.2f}", "total"),
     (kpi_row[1], "SALDO CONTA CORRENTE", f"R$ {saldo_disponivel:,.2f}", "corrente"),
