@@ -7,40 +7,35 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E DIAGNÓSTICO PROFUNDO (ANTI-ERRO STREAMLIT CLOUD)
+# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (LEITURA FÍSICA DE ARQUIVOS)
 # ==============================================================================
-def acessar_painel(nome_alvo):
+def acessar_painel(nome_esperado):
     """
-    Lê diretamente a memória de roteamento do Streamlit.
-    Se o arquivo existir, ele acha e navega. Se não existir, ele lista o que encontrou.
+    Lê a pasta fisicamente usando o Python nativo para garantir que a 
+    capitalização (maiúsculas/minúsculas) esteja perfeita para o Linux.
     """
-    from streamlit.source_util import get_pages
-    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    caminho_base = os.path.dirname(__file__)
+    pasta_pages = os.path.join(caminho_base, "pages")
     
-    ctx = get_script_run_ctx()
-    if ctx is None:
-        st.error("Erro interno do Streamlit (Contexto não encontrado).")
-        return
-        
-    # Pega o dicionário de todas as páginas que o Streamlit registrou no servidor
-    pages = get_pages(ctx.main_script_path)
+    arquivo_exato = None
     
-    # Limpa o nome para fazer uma busca flexível
-    nome_limpo = nome_alvo.lower().replace(".py", "")
-    
-    # 1. Tenta encontrar a página registrada na memória do Streamlit
-    for page_hash, page_info in pages.items():
-        caminho_registrado = page_info.get("script_path", "").lower()
-        if nome_limpo in caminho_registrado:
-            st.switch_page(page_info["script_path"])
-            return
-            
-    # 2. Se chegou aqui, o Streamlit CLOUD não registrou a página. Vamos exibir o diagnóstico:
-    paginas_encontradas = [p.get("script_path", "Desconhecido").split("/")[-1] for p in pages.values()]
-    
-    st.error(f"❌ O Streamlit Cloud bloqueou o acesso ao painel '{nome_alvo}'.")
-    st.warning(f"O servidor só conseguiu registrar e reconhecer estes arquivos: **{paginas_encontradas}**")
-    st.info("💡 **DICA:** Verifique no GitHub se os seus arquivos estão exatamente dentro de uma pasta chamada `pages` (tudo minúsculo) e garanta que NÃO há um sublinhado (`_`) no início do nome deles.")
+    # 1. Vasculha a pasta fisicamente para pegar o nome real do arquivo
+    if os.path.exists(pasta_pages):
+        for f in os.listdir(pasta_pages):
+            if f.lower() == nome_esperado.lower():
+                arquivo_exato = f
+                break
+                
+    # 2. Navega usando a rota exata ou o formato moderno do Streamlit
+    if arquivo_exato:
+        st.switch_page(f"pages/{arquivo_exato}")
+    else:
+        # Fallback para versões mais novas do Streamlit (onde basta passar o nome sem .py)
+        try:
+            nome_limpo = nome_esperado.replace(".py", "")
+            st.switch_page(nome_limpo)
+        except Exception:
+            st.error(f"❌ Arquivo '{nome_esperado}' não encontrado na pasta 'pages/'.")
 
 def get_img_b64(filepath):
     if os.path.exists(filepath):
