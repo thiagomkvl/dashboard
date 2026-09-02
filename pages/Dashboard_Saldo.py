@@ -196,7 +196,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (COM SALDO INICIAL DESLOCADO)
+# 2. CARGA DE DADOS (COM SALDO INICIAL DESLOCADO E FILTRO ESTRITO DE NOME)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -251,7 +251,6 @@ def carregar_dados(data_inicio, data_fim):
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
-                # Garante que temos no mínimo até a Coluna L (12 colunas, índice 11)
                 while len(df_ext.columns) < 12:
                     df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
                 
@@ -261,7 +260,7 @@ def carregar_dados(data_inicio, data_fim):
                 col_cred = df_ext.columns[5]
                 col_tipo = df_ext.columns[7]
                 col_operac = df_ext.columns[10]
-                col_subgrupo = df_ext.columns[11] # Coluna L
+                col_subgrupo = df_ext.columns[11]
 
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
@@ -269,7 +268,6 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
                 df_process['SubGrupo'] = df_ext[col_subgrupo].astype(str).str.strip()
                 
-                # Para deslocamento de saldo e totais absolutos (Vl Crédito + Vl Débito em módulo para aplicações)
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
                 
@@ -283,7 +281,7 @@ def carregar_dados(data_inicio, data_fim):
                 serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
                 is_operacional = (serie_operac == 'OPERACIONAL')
 
-                # SEPARANDO OPERACIONAL DE INTERNO (TRANSFERÊNCIAS)
+                # SEPARANDO OPERACIONAL DE INTERNO
                 df_process['Cred_Op'] = df_process['Vl Crédito'].where((~df_process['É Transf']) & is_operacional, 0.0)
                 df_process['Deb_Op'] = df_process['Vl Débito'].where((~df_process['É Transf']) & is_operacional, 0.0)
                 df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
@@ -334,8 +332,9 @@ def carregar_dados(data_inicio, data_fim):
         # 3. FECHAMENTO DO SALDO FINAL DA TABELA DE BANCOS
         # =========================================================
         def definir_tipo(nome): 
-            if 'getnet' in str(nome).lower(): return 'Limite'
-            return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
+            n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+            if 'getnet' in n_norm: return 'Limite'
+            return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
@@ -383,7 +382,6 @@ def carregar_dados(data_inicio, data_fim):
                 rend_mask = serie_sub == 'rendimentos de aplicacoes'
                 resg_mask = serie_sub == 'resgates de aplicacoes'
                 
-                # Extraindo os valores absolutos para as movimentações de aplicação
                 df_process['Aplicações_Val'] = df_process['Vl_Absoluto'].where(app_mask, 0.0)
                 df_process['Impostos_Val'] = df_process['Vl_Absoluto'].where(imp_mask, 0.0)
                 df_process['Rendimentos_Val'] = df_process['Vl_Absoluto'].where(rend_mask, 0.0)
@@ -401,18 +399,23 @@ def carregar_dados(data_inicio, data_fim):
                 else:
                     df_app_grouped = pd.DataFrame(columns=['Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val'])
                 
-                # Mescla as transações com o df_fim_mes que já possui os saldos corretos (Inicial e Final)
                 df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(
                     df_app_grouped, on='Conta Bancária', how='left'
                 ).fillna(0)
                 
-                mask_is_app = df_app_full['Tipo'] == 'Aplicação'
-                mask_has_mov = (df_app_full['Aplicações_Val'] > 0) | (df_app_full['Impostos_Val'] > 0) | \
-                               (df_app_full['Rendimentos_Val'] > 0) | (df_app_full['Resgates_Val'] > 0)
+                # REGRA APLICADA ESTREITAMENTE: Exibir somente se a Conta Bancária tem 'aplicação' ou 'investimento' no nome
+                def check_nome_app(nome):
+                    n = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                    return 'aplicacao' in n or 'investimento' in n
+
+                mask_is_app = df_app_full['Conta Bancária'].apply(check_nome_app)
                 
-                df_aplicacoes_nova = df_app_full[mask_is_app | mask_has_mov].copy()
+                mask_has_data = (df_app_full['Aplicações_Val'] != 0) | (df_app_full['Impostos_Val'] != 0) | \
+                                (df_app_full['Rendimentos_Val'] != 0) | (df_app_full['Resgates_Val'] != 0) | \
+                                (df_app_full['Saldo Inicial'] != 0) | (df_app_full['Saldo Final'] != 0)
                 
-                # Renomeia as colunas para que o loop visual do UI as encontre perfeitamente
+                df_aplicacoes_nova = df_app_full[mask_is_app & mask_has_data].copy()
+                
                 df_aplicacoes_nova = df_aplicacoes_nova.rename(columns={
                     'Conta Bancária': 'banco',
                     'Saldo Inicial': 'inicial',
@@ -594,7 +597,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada na aba Aplicações.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding: 10px; text-align:center; color: #888; font-size: 13px; border: 1px dashed #ccc; border-radius: 8px; margin-bottom: 8px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
