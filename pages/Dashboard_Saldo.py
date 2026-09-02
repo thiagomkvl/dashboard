@@ -196,7 +196,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (COM CÁLCULO DE SALDO INICIAL DINÂMICO)
+# 2. CARGA DE DADOS 100% BASEADA EM EXTRATO (SALDO DINÂMICO)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -206,46 +206,32 @@ def carregar_dados(data_inicio, data_fim):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
     try:
         # =========================================================
-        # 1. ABA SALDO_INICIAL ABSOLUTO (DIA ZERO)
+        # 1. ABA SALDO_INICIAL (APENAS PARA LER OS LIMITES/GARANTIDA)
         # =========================================================
-        df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
+        df_limites = pd.DataFrame(columns=['Conta Bancária', 'Conta Garantida'])
         try:
             df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
             if not df_si.empty:
                 df_si.columns = [str(c).strip() for c in df_si.columns]
-                df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
-                
                 col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), df_si.columns[0])
-                col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0])
                 col_si_garantida = next((c for c in df_si.columns if 'garantida' in c.lower() or 'limite' in c.lower()), None)
-                
-                df_si[col_si_valor] = df_si[col_si_valor].apply(limpa_valor_bruto)
-                cols_to_keep = [col_si_conta, col_si_valor]
-                new_cols = ['Conta Bancária', 'Saldo Inicial']
                 
                 if col_si_garantida:
                     df_si[col_si_garantida] = df_si[col_si_garantida].apply(limpa_valor_bruto)
-                    cols_to_keep.append(col_si_garantida)
-                    new_cols.append('Conta Garantida')
-                
-                df_saldo_inicial = df_si[cols_to_keep].copy()
-                df_saldo_inicial.columns = new_cols
-                
-                if 'Conta Garantida' not in df_saldo_inicial.columns:
-                    df_saldo_inicial['Conta Garantida'] = 0.0
-                    
-                df_saldo_inicial['Conta Bancária'] = df_saldo_inicial['Conta Bancária'].astype(str).str.strip()
+                    df_limites = df_si[[col_si_conta, col_si_garantida]].copy()
+                    df_limites.columns = ['Conta Bancária', 'Conta Garantida']
+                    df_limites['Conta Bancária'] = df_limites['Conta Bancária'].astype(str).str.strip()
         except Exception as e:
-            print("Aviso ao ler Saldo_Inicial:", e)
+            print("Aviso ao ler Limites:", e)
             
         # =========================================================
-        # 2. LER TODOS OS EXTRATOS E SEPARAR HISTÓRICO vs PERÍODO
+        # 2. LER TODOS OS EXTRATOS E CALCULAR SALDO HISTÓRICO
         # =========================================================
         df_extratos = None
-        df_fim_mes = df_saldo_inicial.copy()
+        df_fim_mes = pd.DataFrame()
         entradas_operacionais = 0.0
         saidas_operacionais = 0.0
-        df_graficos = pd.DataFrame(columns=['Data', 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final', 'Data_Label'])
+        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label'])
 
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -265,6 +251,8 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
                 df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
+                # Saldo Líquido Total por lançamento
+                df_process['Vl Líquido'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 
                 def normalizar_texto(txt):
                     if pd.isna(txt) or txt is None: return ""
@@ -284,21 +272,23 @@ def carregar_dados(data_inicio, data_fim):
                 dt_ini_pd = pd.to_datetime(data_inicio)
                 dt_fim_pd = pd.to_datetime(data_fim)
                 
-                # --- PASSO A: Acumular tudo ANTES da data inicial para o Saldo Inicial Dinâmico ---
+                # --- PASSO A: SALDO INICIAL 100% DINÂMICO (Histórico de tudo ANTES do filtro) ---
                 df_before = df_process[df_process['Data'] < dt_ini_pd].copy()
-                df_before_grouped = df_before.groupby('Conta Bancária').agg({
-                    'Vl Crédito': 'sum',
-                    'Vl Débito': 'sum'
-                }).reset_index()
+                df_saldo_dinamico = df_before.groupby('Conta Bancária')['Vl Líquido'].sum().reset_index(name='Saldo Inicial')
                 
-                # Mescla o Saldo Absoluto (Dia zero) com o movimento histórico anterior ao filtro
-                df_saldo_dinamico = pd.merge(df_saldo_inicial, df_before_grouped, on='Conta Bancária', how='outer').fillna(0)
-                df_saldo_dinamico['Saldo Inicial'] = df_saldo_dinamico['Saldo Inicial'] + df_saldo_dinamico['Vl Crédito'] - df_saldo_dinamico['Vl Débito']
-                df_fim_mes = df_saldo_dinamico[['Conta Bancária', 'Saldo Inicial', 'Conta Garantida']].copy()
+                todas_contas = pd.DataFrame({'Conta Bancária': df_process['Conta Bancária'].unique()})
+                if not df_limites.empty:
+                    todas_contas = pd.concat([todas_contas, df_limites[['Conta Bancária']]]).drop_duplicates()
+                    
+                df_fim_mes = todas_contas.merge(df_saldo_dinamico, on='Conta Bancária', how='left').fillna(0)
+                if not df_limites.empty:
+                    df_fim_mes = df_fim_mes.merge(df_limites, on='Conta Bancária', how='left').fillna(0)
+                else:
+                    df_fim_mes['Conta Garantida'] = 0.0
                 
-                # --- PASSO B: Extrair a movimentação apenas DENTRO do período filtrado ---
+                # --- PASSO B: MOVIMENTAÇÃO DO PERÍODO SELECIONADO ---
                 df_period = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
-                df_extratos = df_period # Exporta pro resto do sistema
+                df_extratos = df_period 
 
                 if not df_period.empty:
                     df_period_grouped = df_period.groupby('Conta Bancária').agg({
@@ -307,24 +297,18 @@ def carregar_dados(data_inicio, data_fim):
                         'Cred_Tr': 'sum',
                         'Deb_Tr': 'sum',
                     }).reset_index()
-                    
-                    df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
+                    df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='left').fillna(0)
                 else:
-                    df_fim_mes['Cred_Op'] = 0.0
-                    df_fim_mes['Deb_Op'] = 0.0
-                    df_fim_mes['Cred_Tr'] = 0.0
-                    df_fim_mes['Deb_Tr'] = 0.0
-                    
-                df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op']
-                df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op']
-                df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr']
-                df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr']
+                    for col in ['Cred_Op', 'Deb_Op', 'Cred_Tr', 'Deb_Tr']:
+                        df_fim_mes[col] = 0.0
+                        
+                df_fim_mes.rename(columns={'Cred_Op': 'Entrada Op', 'Deb_Op': 'Saída Op', 'Cred_Tr': 'Entrada Tr', 'Deb_Tr': 'Saída Tr'}, inplace=True)
                 
         except Exception as e:
             print("Aviso ao ler e processar extratos dinâmicos:", e)
 
         # =========================================================
-        # 3. FECHAMENTO DO SALDO FINAL
+        # 3. FECHAMENTO DO SALDO FINAL DA TABELA
         # =========================================================
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
@@ -334,7 +318,7 @@ def carregar_dados(data_inicio, data_fim):
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO BASEADO NO NOVO SALDO
+        # 4. GRÁFICO DIÁRIO E TABELA DE ACOMPANHAMENTO COM SALDO INICIAL
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
@@ -342,17 +326,16 @@ def carregar_dados(data_inicio, data_fim):
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({
-                'Cred_Op': 'sum',
-                'Deb_Op': 'sum',
-                'Cred_Tr': 'sum',
-                'Deb_Tr': 'sum'
+                'Vl Crédito': 'sum',
+                'Vl Débito': 'sum'
             }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-            df_graficos['Entrada'] = df_graficos['Cred_Op'].fillna(0)
-            df_graficos['Saída'] = df_graficos['Deb_Op'].fillna(0)
-            df_graficos['Movimentação Líquida'] = (df_graficos['Cred_Op'] + df_graficos['Cred_Tr']).fillna(0) - (df_graficos['Deb_Op'] + df_graficos['Deb_Tr']).fillna(0)
+            df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
+            
+            # Matemática da Auditoria Diária
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
+            df_graficos['Saldo Inicial'] = df_graficos['Saldo Final'] - df_graficos['Movimentação Líquida']
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
 
         entradas_operacionais = df_fim_mes['Entrada Op'].sum()
@@ -627,12 +610,12 @@ with col_tab:
 with col_diario:
     st.markdown("<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
-    df_diario_view = df_graficos[['Data_Label', 'Saldo Final', 'Entrada', 'Saída']].copy()
+    df_diario_view = df_graficos[['Data_Label', 'Saldo Inicial', 'Vl Crédito', 'Vl Débito', 'Saldo Final']].copy()
     df_diario_view = df_diario_view.sort_values(by='Data_Label', ascending=False)
     
-    html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO FINAL</th><th class="valores">ENTRADA (OP.)</th><th class="valores">SAÍDA (OP.)</th></tr></thead><tbody>'
+    html_diario = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS</th><th class="valores">SAÍDAS</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
     for _, row in df_diario_view.iterrows():
-        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída"])}</td></tr>'
+        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Vl Crédito"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Vl Débito"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
