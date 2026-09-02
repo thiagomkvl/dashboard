@@ -10,6 +10,11 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import textwrap
 
+# --- VERIFICAÇÃO DE SEGURANÇA / SESSÃO ---
+if "autenticado" not in st.session_state or not st.session_state.autenticado:
+    st.warning("⚠️ Sessão expirada ou acesso não autorizado. Por favor, faça login na página inicial (Portal).")
+    st.stop()
+
 # Tente importar a conexão
 try:
     from database import conectar_sheets
@@ -196,7 +201,7 @@ def formatar_transf(valor):
         return "-"
 
 # ==============================================================================
-# 2. CARGA DE DADOS (COM FILTRO OPERACIONAL NA COLUNA K)
+# 2. CARGA DE DADOS (COM CÁLCULO DE SALDO INICIAL DINÂMICO)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados(data_inicio, data_fim):
@@ -206,7 +211,7 @@ def carregar_dados(data_inicio, data_fim):
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
     try:
         # =========================================================
-        # 1. ABA SALDO_INICIAL
+        # 1. ABA SALDO_INICIAL ABSOLUTO (DIA ZERO)
         # =========================================================
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
         try:
@@ -239,33 +244,30 @@ def carregar_dados(data_inicio, data_fim):
             print("Aviso ao ler Saldo_Inicial:", e)
             
         # =========================================================
-        # 2. EXTRATOS (Com Filtro de Data e Operacionalidade - Coluna K)
+        # 2. LER TODOS OS EXTRATOS E SEPARAR HISTÓRICO vs PERÍODO
         # =========================================================
         df_extratos = None
-        
+        df_fim_mes = df_saldo_inicial.copy()
+        entradas_operacionais = 0.0
+        saidas_operacionais = 0.0
+        df_graficos = pd.DataFrame(columns=['Data', 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final', 'Data_Label'])
+
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
                 while len(df_ext.columns) < 11:
                     df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
                 
-                # Mapeamento estrito das colunas solicitadas
                 col_banco = df_ext.columns[0]
                 col_data = df_ext.columns[1]
                 col_deb = df_ext.columns[4]
                 col_cred = df_ext.columns[5]
                 col_tipo = df_ext.columns[7]
-                col_operac = df_ext.columns[10] # Coluna K (Operacionalidade)
+                col_operac = df_ext.columns[10]
 
                 df_process = pd.DataFrame()
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
-                
-                dt_ini_pd = pd.to_datetime(data_inicio)
-                dt_fim_pd = pd.to_datetime(data_fim)
-                
-                df_process = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
-                
                 df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
                 
@@ -276,7 +278,6 @@ def carregar_dados(data_inicio, data_fim):
                 serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
                 df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
 
-                # REGRA SOLICITADA: Considerar apenas créditos e débitos com classificação OPERACIONAL (Coluna K)
                 serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
                 is_operacional = (serie_operac == 'OPERACIONAL')
 
@@ -285,46 +286,60 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
                 df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
                 
-                df_extratos = df_process
+                dt_ini_pd = pd.to_datetime(data_inicio)
+                dt_fim_pd = pd.to_datetime(data_fim)
+                
+                # --- PASSO A: Acumular tudo ANTES da data inicial para o Saldo Inicial Dinâmico ---
+                df_before = df_process[df_process['Data'] < dt_ini_pd].copy()
+                df_before_grouped = df_before.groupby('Conta Bancária').agg({
+                    'Vl Crédito': 'sum',
+                    'Vl Débito': 'sum'
+                }).reset_index()
+                
+                # Mescla o Saldo Absoluto (Dia zero) com o movimento histórico anterior ao filtro
+                df_saldo_dinamico = pd.merge(df_saldo_inicial, df_before_grouped, on='Conta Bancária', how='outer').fillna(0)
+                df_saldo_dinamico['Saldo Inicial'] = df_saldo_dinamico['Saldo Inicial'] + df_saldo_dinamico['Vl Crédito'] - df_saldo_dinamico['Vl Débito']
+                df_fim_mes = df_saldo_dinamico[['Conta Bancária', 'Saldo Inicial', 'Conta Garantida']].copy()
+                
+                # --- PASSO B: Extrair a movimentação apenas DENTRO do período filtrado ---
+                df_period = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
+                df_extratos = df_period # Exporta pro resto do sistema
+
+                if not df_period.empty:
+                    df_period_grouped = df_period.groupby('Conta Bancária').agg({
+                        'Cred_Op': 'sum',
+                        'Deb_Op': 'sum',
+                        'Cred_Tr': 'sum',
+                        'Deb_Tr': 'sum',
+                    }).reset_index()
+                    
+                    df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
+                else:
+                    df_fim_mes['Cred_Op'] = 0.0
+                    df_fim_mes['Deb_Op'] = 0.0
+                    df_fim_mes['Cred_Tr'] = 0.0
+                    df_fim_mes['Deb_Tr'] = 0.0
+                    
+                df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op']
+                df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op']
+                df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr']
+                df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr']
+                
         except Exception as e:
-            print("Aviso ao ler extratos:", e)
+            print("Aviso ao ler e processar extratos dinâmicos:", e)
 
         # =========================================================
-        # 3. CONSTRUÇÃO DA TABELA FINAL DE BANCOS
+        # 3. FECHAMENTO DO SALDO FINAL
         # =========================================================
         def definir_tipo(nome): 
             if 'getnet' in str(nome).lower(): return 'Limite'
             return 'Aplicação' if ('aplicação' in str(nome).lower() or 'investimentos' in str(nome).lower()) else 'Disponível'
 
-        df_fim_mes = df_saldo_inicial.copy()
-        
-        if df_extratos is not None and not df_extratos.empty:
-            df_extratos_grouped = df_extratos.groupby('Conta Bancária').agg({
-                'Cred_Op': 'sum',
-                'Deb_Op': 'sum',
-                'Cred_Tr': 'sum',
-                'Deb_Tr': 'sum',
-            }).reset_index()
-            
-            df_fim_mes = df_fim_mes.merge(df_extratos_grouped, on='Conta Bancária', how='outer')
-            df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
-            df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
-            
-            df_fim_mes['Entrada Op'] = df_fim_mes['Cred_Op'].fillna(0)
-            df_fim_mes['Saída Op'] = df_fim_mes['Deb_Op'].fillna(0)
-            df_fim_mes['Entrada Tr'] = df_fim_mes['Cred_Tr'].fillna(0)
-            df_fim_mes['Saída Tr'] = df_fim_mes['Deb_Tr'].fillna(0)
-        else:
-            df_fim_mes['Entrada Op'] = 0.0
-            df_fim_mes['Saída Op'] = 0.0
-            df_fim_mes['Entrada Tr'] = 0.0
-            df_fim_mes['Saída Tr'] = 0.0
-
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
         df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op'] + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
 
         # =========================================================
-        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO
+        # 4. GRÁFICO DIÁRIO E EVOLUÇÃO BASEADO NO NOVO SALDO
         # =========================================================
         saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
         
@@ -343,16 +358,10 @@ def carregar_dados(data_inicio, data_fim):
             df_graficos['Saída'] = df_graficos['Deb_Op'].fillna(0)
             df_graficos['Movimentação Líquida'] = (df_graficos['Cred_Op'] + df_graficos['Cred_Tr']).fillna(0) - (df_graficos['Deb_Op'] + df_graficos['Deb_Tr']).fillna(0)
             df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
-        else:
-            df_graficos = pd.DataFrame(columns=['Data', 'Entrada', 'Saída', 'Movimentação Líquida', 'Saldo Final'])
-
-        if not df_graficos.empty:
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
-        else:
-            df_graficos['Data_Label'] = pd.Series(dtype='object')
 
-        entradas_operacionais = df_extratos['Cred_Op'].sum() if df_extratos is not None else 0.0
-        saidas_operacionais = df_extratos['Deb_Op'].sum() if df_extratos is not None else 0.0
+        entradas_operacionais = df_fim_mes['Entrada Op'].sum()
+        saidas_operacionais = df_fim_mes['Saída Op'].sum()
 
         # =========================================================
         # 5. LER ABA DE APLICAÇÕES
