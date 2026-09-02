@@ -7,18 +7,19 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO OFICIAL STREAMLIT)
+# 1. DEFINIÇÃO DAS PÁGINAS (PADRÃO MODERNO ST.PAGE)
 # ==============================================================================
-def acessar_painel(nome_arquivo):
-    """
-    Usa o padrão oficial exigido pelo Streamlit Cloud para caminhos em subpastas.
-    """
-    caminho_oficial = f"pages/{nome_arquivo}"
-    try:
-        st.switch_page(caminho_oficial)
-    except Exception as e:
-        st.error(f"Erro ao tentar carregar a rota '{caminho_oficial}': {e}")
+# O Streamlit agora exige que as páginas sejam declaradas via st.Page
+pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos", icon="📊")
+pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰")
+pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
 
+# Cria a navegação oficial do app
+nav = st.navigation([pg_saldos, pg_fluxo, pg_pagar], position="hidden")
+
+# ==============================================================================
+# 2. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
+# ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as f:
@@ -42,7 +43,7 @@ def bg_style(img_data):
 
 
 # ==============================================================================
-# 2. CUSTOM CSS — ESTILO DOS CARTÕES (ADAPTADO PARA COMPONENTES NATIVOS)
+# 3. CUSTOM CSS — ESTILO DOS CARTÕES (ADAPTADO PARA COMPONENTES NATIVOS)
 # ==============================================================================
 css = """
 <style>
@@ -141,7 +142,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
+# 4. CONSTRUÇÃO DO PORTAL (COM SWITCH NATIVO DE PÁGINAS)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -151,7 +152,7 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-# Grid de cartões usando as estruturas nativas do Streamlit
+# Grid de cartões usando a troca nativa e oficial por objeto de página
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -160,7 +161,7 @@ with c1:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_saldos", use_container_width=True):
-            acessar_painel("Dashboard_Saldo.py")
+            st.switch_page(pg_saldos)
 
 with c2:
     with st.container(border=True):
@@ -168,7 +169,7 @@ with c2:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_fluxo", use_container_width=True):
-            acessar_painel("painel_fluxo_caixa.py")
+            st.switch_page(pg_fluxo)
 
 with c3:
     with st.container(border=True):
@@ -176,4 +177,4 @@ with c3:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_pagar", use_container_width=True):
-            acessar_painel("painel_pagar.py")
+            st.switch_page(pg_pagar)
