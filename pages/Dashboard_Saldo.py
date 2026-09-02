@@ -87,7 +87,7 @@ css = """
     .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 815px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
     
     .tabela-container-scroll .tabela-financeira th { padding: 8px 4px !important; font-size: 9px !important; }
-    .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 12px !important; font-weight: 750 !important; }
+    .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 15px !important; font-weight: 750 !important; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
     .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; }
