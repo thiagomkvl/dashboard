@@ -69,7 +69,7 @@ header[data-testid="stHeader"] { display: none !important; }
     padding: 10px 0;
 }
 
-/* ESTILO DO CARTÃO CLICÁVEL (SEU HTML ORIGINAL) */
+/* ESTILO DO CARTÃO CLICÁVEL (ORIGINAL COM HOVER MANTIDO) */
 .hub-card {
     background-color: var(--surface);
     border: 1px solid var(--border);
@@ -153,7 +153,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL 
+# 3. CONSTRUÇÃO DO PORTAL (COM TARGET=_TOP PARA EVITAR LOOP NA NUVEM)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -163,11 +163,11 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-
+# A troca mágica está aqui: target="_top" tira o aplicativo do loop do iframe!
 html_hub = f"""
 <div class="card-grid">
 
-<a href="Dashboard_Saldo" target="_self" class="hub-card">
+<a href="Dashboard_Saldo" target="_top" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>
     <div class="card-content">
         <div class="card-title">Dashboard de Saldos</div>
@@ -176,7 +176,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="painel_fluxo_caixa" target="_self" class="hub-card">
+<a href="painel_fluxo_caixa" target="_top" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>
     <div class="card-content">
         <div class="card-title">Fluxo de Caixa Analítico</div>
@@ -185,7 +185,7 @@ html_hub = f"""
     </div>
 </a>
 
-<a href="painel_pagar" target="_self" class="hub-card">
+<a href="painel_pagar" target="_top" class="hub-card">
     <div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>
     <div class="card-content">
         <div class="card-title">Painel de Pagamentos</div>
