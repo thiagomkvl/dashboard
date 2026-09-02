@@ -28,10 +28,10 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
-        --text: #172033; /* Cinza Escuro Principal */
+        --border: #d0e3e4; 
+        --text: #172033; 
         --muted: #6b7280;
-        --primary: #008A8C; /* Cor da Logo SOS Cardio */
+        --primary: #008A8C; 
         --success: #1cc88a;
         --danger: #e74a3b;
         --warning: #c58a16;
@@ -57,7 +57,7 @@ css = """
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
 
-    /* KPIs com a Paleta Institucional (S.O.S. Cardio) */
+    /* KPIs */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
@@ -74,17 +74,16 @@ css = """
     .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
     .kpi-var.neutral { background: rgba(255, 255, 255, 0.15); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
 
-    /* Seções Harmonizadas com Fonte Cinza Escura */
+    /* Seções */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
 
-    /* Tabelas Harmonizadas */
+    /* Tabelas */
     .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     
-    /* Container com altura idêntica à tabela dos bancos e largura mínima forçada para igualar o peso visual (~1125px) */
-    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 820px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
+    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 565px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     .tabela-container-scroll .tabela-financeira { min-width: 1125px; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
@@ -231,7 +230,7 @@ def carregar_dados(data_inicio, data_fim):
         entradas_operacionais = 0.0
         saidas_operacionais = 0.0
         df_process = pd.DataFrame()
-        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op'])
+        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %'])
 
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -297,13 +296,39 @@ def carregar_dados(data_inicio, data_fim):
         if df_extratos is not None and not df_extratos.empty:
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({'Vl Crédito': 'sum', 'Vl Débito': 'sum', 'Cred_Op': 'sum', 'Deb_Op': 'sum'}).reset_index()
+            
+            # ORDENAÇÃO CRONOLÓGICA PARA GARANTIR O ENCADEAMENTO CONTÍNUO DE CAIXA
             df_graficos = df_extratos_diario.sort_values('Data').copy()
             df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
-            df_graficos['Saldo Final'] = saldo_inicial_caixa + df_graficos['Movimentação Líquida'].cumsum()
-            df_graficos['Saldo Inicial'] = df_graficos['Saldo Final'] - df_graficos['Movimentação Líquida']
-            df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
+            
+            saldos_iniciais = []
+            saldos_finais = []
+            delta_rs = []
+            delta_pct = []
+            
+            saldo_atual_iter = saldo_inicial_caixa
+            for idx, row in df_graficos.iterrows():
+                si = saldo_atual_iter
+                mov = row['Vl Crédito'] - row['Vl Débito']
+                sf = si + mov
+                
+                d_rs = sf - si
+                d_pct = ((sf / si) - 1) * 100 if si != 0 else 0.0
+                
+                saldos_iniciais.append(si)
+                saldos_finais.append(sf)
+                delta_rs.append(d_rs)
+                delta_pct.append(d_pct)
+                
+                saldo_atual_iter = sf
+                
+            df_graficos['Saldo Inicial'] = saldos_iniciais
+            df_graficos['Saldo Final'] = saldos_finais
+            df_graficos['Delta R$'] = delta_rs
+            df_graficos['Delta %'] = delta_pct
+            df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
 
         entradas_operacionais = df_fim_mes['Entrada Op'].sum()
         saidas_operacionais = df_fim_mes['Saída Op'].sum()
@@ -359,7 +384,6 @@ saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_disponivel + saldo_aplicado
 
-# Saldo Inicial segregado para calcular a variação de cada bloco
 saldo_inicial_corrente = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Inicial'].sum()
 saldo_inicial_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Inicial'].sum()
 
@@ -593,13 +617,37 @@ with col_diario:
     st.markdown(f"<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
     if not df_graficos.empty:
-        df_diario_view = df_graficos.sort_values(by='Data', ascending=False)[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final']].copy()
+        df_diario_view = df_graficos.sort_values(by='Data', ascending=False)[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %']].copy()
     else:
-        df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final'])
+        df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %'])
     
-    html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr><th>DATA</th><th class="valores">SALDO INICIAL</th><th class="valores">ENTRADAS (OP.)</th><th class="valores">SAÍDAS (OP.)</th><th class="valores">SALDO FINAL</th></tr></thead><tbody>'
+    # Colunas otimizadas e espremidas para ocupar o espaço com harmonia visual
+    html_diario = '<div class="tabela-container-scroll"><table class="tabela-financeira"><thead><tr>' \
+                  '<th style="width: 12%;">DATA</th>' \
+                  '<th class="valores" style="width: 20%;">SALDO INICIAL</th>' \
+                  '<th class="valores" style="width: 18%;">ENTRADAS</th>' \
+                  '<th class="valores" style="width: 18%;">SAÍDAS</th>' \
+                  '<th class="valores" style="width: 20%;">SALDO FINAL</th>' \
+                  '<th class="valores" style="width: 12%;">DELTA</th>' \
+                  '</tr></thead><tbody>'
+                  
     for _, row in df_diario_view.iterrows():
-        html_diario += f'<tr><td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td><td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td><td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"])}</td><td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"])}</td><td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td></tr>'
+        d_rs = row['Delta R$']
+        d_pct = row['Delta %']
+        
+        cor_delta = "#1cc88a" if d_rs >= 0 else "#e74a3b"
+        sinal_delta = "+" if d_rs > 0 else ""
+        delta_str = f"{sinal_delta}{formatar_moeda(d_rs).replace('R$ ', '')} ({sinal_delta}{d_pct:.1f}%)" if d_rs != 0 else "-"
+        
+        html_diario += f'<tr>' \
+                       f'<td style="font-size:13px; font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
+                       f'<td class="valores">{formatar_moeda(row["Saldo Inicial"])}</td>' \
+                       f'<td class="valores" style="color:#1cc88a;">{formatar_moeda(row["Entrada Op"])}</td>' \
+                       f'<td class="valores" style="color:#e74a3b;">{formatar_moeda(row["Saída Op"])}</td>' \
+                       f'<td class="valores valor-destaque">{formatar_moeda(row["Saldo Final"])}</td>' \
+                       f'<td class="valores" style="color:{cor_delta}; font-size:11px; font-weight:800;">{delta_str}</td>' \
+                       f'</tr>'
+                       
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
