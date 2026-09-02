@@ -84,7 +84,7 @@ css = """
     .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
     
     /* Container Diário Otimizado para caber 100% na largura sem scroll lateral */
-    .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 830px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
+    .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 815px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
     
     .tabela-container-scroll .tabela-financeira th { padding: 8px 4px !important; font-size: 9px !important; }
     .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 12px !important; font-weight: 750 !important; }
