@@ -68,10 +68,6 @@ css = """
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; }
 
-     /* Ajuste de contraste para os blocos mais claros */
-    .kpi-card.aplicado .kpi-title, .kpi-card.aplicado .kpi-value { color: #015C91; font-weight: 800; }
-    .kpi-card.inicial .kpi-title, .kpi-card.inicial .kpi-value { color: #015C91; font-weight: 800; }
-
     /* Seções */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
