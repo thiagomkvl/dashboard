@@ -194,10 +194,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E USO EXCLUSIVO DA COLUNA M)
+# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E AGRUPAMENTO V6)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v5(ano):
+def carregar_dados_matriz_fluxo_v6(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
@@ -216,7 +216,6 @@ def carregar_dados_matriz_fluxo_v5(ano):
         # Garante que as colunas existem
         while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
         
-        # Mapeamento estrito das colunas necessárias (A coluna C foi totalmente descartada)
         col_data = df_ext.columns[1]      # (B)
         col_deb = df_ext.columns[4]       # (E)
         col_cred = df_ext.columns[5]      # (F)
@@ -244,7 +243,7 @@ def carregar_dados_matriz_fluxo_v5(ano):
         df_ext.loc[df_ext['Classificacao'] == '', 'Classificacao'] = 'NÃO CLASSIFICADO'
         
         # Mapeamento do Nível 2: Transação / Fornecedor (Exclusivamente Coluna M)
-        df_ext['Descricao_Trans'] = df_ext[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip()
+        df_ext['Descricao_Trans'] = df_ext[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip().str.upper()
         df_ext.loc[df_ext['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
         
         # Filtra Transferências
@@ -273,7 +272,7 @@ def carregar_dados_matriz_fluxo_v5(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v5(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v6(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -334,7 +333,7 @@ total_ano_sai = sum(tot_sai)
 injetar_html(f"""
 <div class='kpi-row'>
     <div class='kpi-card inicial'>
-        <div class='kpi-title'>SALDO INICIAL {ano_selecionado}</div>
+        <div class='kpi-title'>SALDO INICIAL ({ano_selecionado})</div>
         <div class='kpi-value'>R$ {formatar_moeda(saldo_inicio_ano)}</div>
     </div>
     <div class='kpi-card total'>
@@ -353,7 +352,7 @@ injetar_html(f"""
 """)
 
 # ==============================================================================
-# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (2 NÍVEIS)
+# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (AGRUPAMENTO POR NOMENCLATURA)
 # ==============================================================================
 meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -379,7 +378,7 @@ def render_linha(nome, nivel, arr_prev, arr_real, is_item=False):
 
 def build_drilldown(df_dados):
     html = ""
-    # Agrupa pelo Nível 1: CLASSIFICAÇÃO (Coluna J)
+    # Agrupa pelo Nível 1: CLASSIFICAÇÃO FINANCEIRA (Coluna J)
     classificacoes = sorted(df_dados['Classificacao'].unique())
     
     for classif in classificacoes:
@@ -393,15 +392,18 @@ def build_drilldown(df_dados):
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real)
             html += "</summary>"
             
-            # Nível 2 direto: TRANSAÇÃO (Coluna M) e Data
-            df_classif_sorted = df_classif.sort_values('Data')
-            for _, row in df_classif_sorted.iterrows():
+            # Nível 2 Agrupado: Soma todas as transações com a mesma nomenclatura (Coluna M)
+            forn_totais = df_classif.groupby('Descricao_Trans')['Valor_Op'].sum().sort_values(ascending=False)
+            
+            for trans_name in forn_totais.index:
+                df_trans = df_classif[df_classif['Descricao_Trans'] == trans_name]
                 arr_trans_real = [0]*12
-                arr_trans_real[row['Mes'] - 1] = row['Valor_Op']
-                dt_s = row['Data'].strftime('%d/%m')
-                # Usa unicamente a Descrição retirada da Coluna M
-                desc = row['Descricao_Trans'][:65] + ("..." if len(row['Descricao_Trans']) > 65 else "")
-                html += render_linha(f"↳ {dt_s} | {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
+                for m in range(1, 13):
+                    arr_trans_real[m-1] = df_trans[df_trans['Mes'] == m]['Valor_Op'].sum()
+                
+                desc = trans_name[:65] + ("..." if len(trans_name) > 65 else "")
+                html += render_linha(f"↳ {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
+                
             html += "</details>"
             
     return html
