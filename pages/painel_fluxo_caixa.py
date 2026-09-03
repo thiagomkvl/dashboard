@@ -74,15 +74,19 @@ css = """
     /* Configuração Colunas Duplas */
     .col-val { padding: 0; display: flex; flex-direction: column; justify-content: center; border-right: 2px solid #cbd5e1; }
     .dual-col { display: flex; width: 100%; height: 100%; align-items: stretch; }
-    .dual-cell { flex: 1; text-align: right; padding: 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-end; }
+    
+    /* ALINHAMENTO À ESQUERDA PARA OS VALORES */
+    .dual-cell { flex: 1; text-align: left; padding: 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-start; }
+    
+    /* Cores das células (Previsão vs Realizado) */
     .dual-cell.prev { color: #94a3b8; border-right: 1px dashed #e2e8f0; background: rgba(248, 250, 252, 0.4); }
-    .dual-cell.real { color: #4b5563; font-weight: 600; }
+    .dual-cell.real { color: #000000; font-weight: 600; }
     
     /* Header Personalizado Padrão Foto */
     .grid-header { background-color: #eaf4f4; border-bottom: 2px solid var(--primary); }
     .grid-header .col-name { font-weight: 800; font-size: 11px; color: #172033; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
-    .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: center; }
-    .dual-cell.real.header { font-size: 10px; font-weight: 800; color: #15803d; background: #f0fdf4; border-bottom: 2px solid #22c55e; justify-content: center; }
+    .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: flex-start; }
+    .dual-cell.real.header { font-size: 10px; font-weight: 800; color: #15803d; background: #f0fdf4; border-bottom: 2px solid #22c55e; justify-content: flex-start; }
     
     /* =============== COLUNA CONGELADA (STICKY) =============== */
     .col-name { 
@@ -101,7 +105,7 @@ css = """
     }
     
     .total-col { background-color: #f8fafc; border-right: none; }
-    .total-col .dual-cell.real { color: #172033; font-weight: 800; }
+    .total-col .dual-cell.real { color: #000000; font-weight: 800; }
 
     /* Níveis Hierárquicos (Macro, Subgrupo, Transação) - FUNDOS SÓLIDOS PRO STICKY FUNCIONAR */
     .lvl-macro { background-color: var(--primary); color: #ffffff; }
@@ -113,12 +117,12 @@ css = """
     
     .lvl-item { background-color: #fbfcfd; }
     .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #6b7280; font-weight: 500; }
-    .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #6b7280; }
+    .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } /* Valor real em transações preto */
 
     /* Linhas de Resultado */
     .res-r1 { background-color: #f8fafc; }
     .res-r1 .col-name { background-color: #f8fafc; font-weight: 800; color: #172033; }
-    .res-r1 .dual-cell.real { font-weight: 800; color: #172033; }
+    .res-r1 .dual-cell.real { font-weight: 800; color: #000000; }
     
     .res-r2 { background-color: #ffffff; }
     .res-r2 .col-name { background-color: #ffffff; font-weight: 800; color: var(--primary); }
@@ -194,10 +198,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E AGRUPAMENTO V6)
+# 4. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v6(ano):
+def carregar_dados_matriz_fluxo_v7(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
@@ -213,54 +217,44 @@ def carregar_dados_matriz_fluxo_v6(ano):
         df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
         if df_ext.empty: return pd.DataFrame(), saldo_base, 0.0
         
-        # Garante que as colunas existem
         while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
         
-        col_data = df_ext.columns[1]      # (B)
-        col_deb = df_ext.columns[4]       # (E)
-        col_cred = df_ext.columns[5]      # (F)
-        col_tipo = df_ext.columns[7]      # (H)
-        col_classif = df_ext.columns[9]   # (J) CLASSIFICAÇÃO FINANCEIRA
-        col_operac = df_ext.columns[10]   # (K) OPERACIONALIDADE
-        col_fornecedor = df_ext.columns[12] # (M) RESUMO FORNECEDOR
+        col_data = df_ext.columns[1]      
+        col_deb = df_ext.columns[4]       
+        col_cred = df_ext.columns[5]      
+        col_tipo = df_ext.columns[7]      
+        col_classif = df_ext.columns[9]   
+        col_operac = df_ext.columns[10]   
+        col_fornecedor = df_ext.columns[12] 
 
-        # Tratamento da Data
         df_ext['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce')
         df_ext = df_ext.dropna(subset=['Data']).copy()
         df_ext['Ano'] = df_ext['Data'].dt.year
         df_ext['Mes'] = df_ext['Data'].dt.month
         
-        # Tratamento de Valores
         df_ext['Vl_Deb'] = df_ext[col_deb].apply(limpa_valor_bruto)
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
         
-        # FILTRO CRÍTICO: APENAS OPERACIONAL (Coluna K)
         df_ext['Operacional'] = df_ext[col_operac].fillna('').astype(str).str.strip().str.upper()
         df_ext = df_ext[df_ext['Operacional'] == 'OPERACIONAL'].copy()
         
-        # Mapeamento do Nível 1: Classificação (Coluna J)
         df_ext['Classificacao'] = df_ext[col_classif].fillna('NÃO CLASSIFICADO').astype(str).str.strip().str.upper()
         df_ext.loc[df_ext['Classificacao'] == '', 'Classificacao'] = 'NÃO CLASSIFICADO'
         
-        # Mapeamento do Nível 2: Transação / Fornecedor (Exclusivamente Coluna M)
         df_ext['Descricao_Trans'] = df_ext[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip().str.upper()
         df_ext.loc[df_ext['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
         
-        # Filtra Transferências
         def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
         serie_tipo = df_ext[col_tipo].apply(norm_txt)
         is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
         df_ext = df_ext[~is_transf]
 
-        # Calcula Saldo Operacional Histórico (Antes do ano selecionado)
         df_before = df_ext[df_ext['Data'] < f"{ano}-01-01"]
         saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
 
-        # Calcula Saldo Operacional Atual
         df_up_to_now = df_ext[df_ext['Data'] <= pd.to_datetime(datetime.now().date())]
         saldo_atual_op = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
-        # Isola os dados do ano selecionado
         df_ano = df_ext[df_ext['Ano'] == ano].copy()
             
         return df_ano, saldo_inicio_ano, saldo_atual_op
@@ -272,7 +266,7 @@ def carregar_dados_matriz_fluxo_v6(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v6(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v7(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -356,7 +350,7 @@ injetar_html(f"""
 # ==============================================================================
 meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
-def render_linha(nome, nivel, arr_prev, arr_real, is_item=False):
+def render_linha(nome, nivel, arr_prev, arr_real):
     tot_p = sum(arr_prev)
     tot_r = sum(arr_real)
     html = f"<div class='grid-row {nivel}'>"
@@ -365,14 +359,15 @@ def render_linha(nome, nivel, arr_prev, arr_real, is_item=False):
     for p, r in zip(arr_prev, arr_real):
         html += "<div class='col-val'>"
         html += "<div class='dual-col'>"
-        html += f"<div class='dual-cell prev'>{'R$ ' if is_item and p != 0 else ''}{formatar_moeda(p)}</div>"
-        html += f"<div class='dual-cell real'>{'R$ ' if is_item and r != 0 else ''}{formatar_moeda(r)}</div>"
+        # Exibição sem R$
+        html += f"<div class='dual-cell prev'>{formatar_moeda(p)}</div>"
+        html += f"<div class='dual-cell real'>{formatar_moeda(r)}</div>"
         html += "</div></div>"
         
     html += "<div class='col-val total-col'>"
     html += "<div class='dual-col'>"
-    html += f"<div class='dual-cell prev'>{'R$ ' if is_item and tot_p != 0 else ''}{formatar_moeda(tot_p)}</div>"
-    html += f"<div class='dual-cell real'>{'R$ ' if is_item and tot_r != 0 else ''}{formatar_moeda(tot_r)}</div>"
+    html += f"<div class='dual-cell prev'>{formatar_moeda(tot_p)}</div>"
+    html += f"<div class='dual-cell real'>{formatar_moeda(tot_r)}</div>"
     html += "</div></div></div>"
     return html
 
@@ -402,7 +397,7 @@ def build_drilldown(df_dados):
                     arr_trans_real[m-1] = df_trans[df_trans['Mes'] == m]['Valor_Op'].sum()
                 
                 desc = trans_name[:65] + ("..." if len(trans_name) > 65 else "")
-                html += render_linha(f"↳ {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
+                html += render_linha(f"↳ {desc}", "lvl-item", dummy_prev, arr_trans_real)
                 
             html += "</details>"
             
