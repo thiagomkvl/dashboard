@@ -67,9 +67,10 @@ css = """
     
     .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     
-    /* Hover SOMENTE nas linhas comuns (Desativa nos Macros para não ficar branco) */
+    /* Hover SOMENTE nas linhas comuns */
     .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
     .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
+    .grid-row:not(.lvl-macro):not(.res-r6):hover .total-col { background-color: #f0f7f7; }
     
     /* Configuração Colunas Duplas */
     .col-val { padding: 0; display: flex; flex-direction: column; justify-content: center; border-right: 2px solid #cbd5e1; }
@@ -82,13 +83,13 @@ css = """
     .dual-cell.prev { color: #94a3b8; border-right: 1px dashed #e2e8f0; background: rgba(248, 250, 252, 0.4); }
     .dual-cell.real { color: #000000; font-weight: 600; }
     
-    /* Header Personalizado Padrão Foto */
+    /* Header Personalizado */
     .grid-header { background-color: #eaf4f4; border-bottom: 2px solid var(--primary); }
-    .grid-header .col-name { font-weight: 800; font-size: 11px; color: #172033; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
+    .grid-header .col-name { font-weight: 800; font-size: 11px; color: #000000; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
     .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: flex-start; }
     .dual-cell.real.header { font-size: 10px; font-weight: 800; color: #15803d; background: #f0fdf4; border-bottom: 2px solid #22c55e; justify-content: flex-start; }
     
-    /* =============== COLUNA CONGELADA (STICKY) =============== */
+    /* =============== COLUNA CONGELADA ESQUERDA (DESCRIÇÕES) =============== */
     .col-name { 
         position: sticky; 
         left: 0; 
@@ -103,34 +104,51 @@ css = """
         text-overflow: ellipsis; 
         box-shadow: 3px 0 5px -2px rgba(0,0,0,0.1); 
     }
-    
-    .total-col { background-color: #f8fafc; border-right: none; }
+
+    /* =============== COLUNA CONGELADA DIREITA (TOTAIS) =============== */
+    .total-col { 
+        position: sticky; 
+        right: 0; 
+        z-index: 2; 
+        background-color: #f8fafc; 
+        border-left: 2px solid #cbd5e1; 
+        border-right: none;
+        box-shadow: -3px 0 5px -2px rgba(0,0,0,0.1); 
+    }
     .total-col .dual-cell.real { color: #000000; font-weight: 800; }
 
-    /* Níveis Hierárquicos (Macro, Subgrupo, Transação) - FUNDOS SÓLIDOS PRO STICKY FUNCIONAR */
+    /* Níveis Hierárquicos (Sincronizando fundos das colunas congeladas) */
+    .grid-header .total-col { background-color: #eaf4f4; z-index: 3; }
+
     .lvl-macro { background-color: #e0efef; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
     .lvl-macro .col-name { background-color: #e0efef; color: #000000 !important; font-weight: 800 !important; font-size: 12px; border-right: 2px solid #cbd5e1; }
+    .lvl-macro .total-col { background-color: #e0efef; border-left: 2px solid #cbd5e1; }
     .lvl-macro .dual-cell.prev { color: #4b5563 !important; font-weight: 800; background: transparent; border-right: 1px dashed #cbd5e1;}
     .lvl-macro .dual-cell.real { color: #000000 !important; font-weight: 900; background: transparent;}
     
     .lvl-subgrupo { background-color: #ffffff; }
     .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #000000; } 
+    .lvl-subgrupo .total-col { background-color: #ffffff; } 
     
     .lvl-item { background-color: #fbfcfd; }
     .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #000000; font-weight: 500; } 
+    .lvl-item .total-col { background-color: #fbfcfd; } 
     .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } 
 
-    /* Linhas de Resultado */
+    /* Linhas de Resultado (Sincronizando fundos da Direita) */
     .res-r1 { background-color: #f8fafc; }
     .res-r1 .col-name { background-color: #f8fafc; font-weight: 800; color: #172033; }
+    .res-r1 .total-col { background-color: #f8fafc; }
     .res-r1 .dual-cell.real { font-weight: 800; color: #000000; }
     
     .res-r2 { background-color: #ffffff; }
     .res-r2 .col-name { background-color: #ffffff; font-weight: 800; color: var(--primary); }
+    .res-r2 .total-col { background-color: #ffffff; }
     .res-r2 .dual-cell.real { font-weight: 800; color: var(--primary); }
     
     .res-r6 { background-color: #ccebdc; border-top: 2px solid #1cc88a; border-bottom: 2px solid #1cc88a;}
     .res-r6 .col-name { background-color: #ccebdc; font-weight: 900; color: #000000 !important; border-right: 2px solid #cbd5e1;}
+    .res-r6 .total-col { background-color: #ccebdc; }
     .res-r6 .dual-cell.prev { font-weight: 800; color: #4b5563 !important; background: transparent; border-right: 1px dashed #cbd5e1;}
     .res-r6 .dual-cell.real { font-weight: 900; color: #000000 !important; background: transparent;}
 
@@ -196,7 +214,7 @@ with st.sidebar:
     
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
     st.markdown("### Relatório")
-    st.info("💡 Role para os lados para ver os meses. A primeira coluna é fixa.", icon="ℹ️")
+    st.info("💡 Role para os lados para ver os meses. A primeira coluna e a coluna TOTAL estão congeladas.", icon="ℹ️")
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
         style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(0, 138, 140, 0.2); transition: transform 0.2s;">
@@ -205,16 +223,15 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (V10: MATEMÁTICA IDÊNTICA AO DASH DE SALDOS)
+# 4. CARGA DE DADOS (V12)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v10(ano):
+def carregar_dados_matriz_fluxo_v12(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
     saldo_base = 0.0
     try:
-        # Mesma lógica imbatível do Dashboard_Saldo.py
         df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
         if not df_si.empty:
             df_si.columns = [str(c).strip() for c in df_si.columns]
@@ -251,26 +268,21 @@ def carregar_dados_matriz_fluxo_v10(ano):
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
         df_ext['Tipo_Conta'] = df_ext[col_banco].astype(str).apply(definir_tipo)
         
-        # ---------------------------------------------------------------------
-        # PASSO 1: CALCULAR SALDOS GLOBAIS ABSOLUTOS (IGUAL AO PAINEL SALDO)
-        # ---------------------------------------------------------------------
-        df_valid_balance = df_ext[df_ext['Tipo_Conta'].isin(['Disponível', 'Aplicação'])].copy()
-
+        # Filtra Transferências
+        def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
+        serie_tipo = df_ext[col_tipo].apply(norm_txt)
+        is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+        
+        # Saldos Globais
+        df_valid_balance = df_ext[(~is_transf) & (df_ext['Tipo_Conta'].isin(['Disponível', 'Aplicação']))].copy()
         df_before = df_valid_balance[df_valid_balance['Data'] < f"{ano}-01-01"]
         saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
 
         df_up_to_now = df_valid_balance[df_valid_balance['Data'] <= pd.to_datetime(datetime.now().date())]
         saldo_atual_caixa = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
-        # ---------------------------------------------------------------------
-        # PASSO 2: FILTRAR DADOS APENAS DA MATRIZ OPERACIONAL
-        # ---------------------------------------------------------------------
-        def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
-        serie_tipo = df_ext[col_tipo].apply(norm_txt)
-        is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
-        
+        # Filtrar dados Matriz Operacional
         df_op = df_ext[~is_transf].copy()
-        
         df_op['Operacional'] = df_op[col_operac].fillna('').astype(str).str.strip().str.upper()
         df_op = df_op[df_op['Operacional'] == 'OPERACIONAL'].copy()
         
@@ -291,7 +303,7 @@ def carregar_dados_matriz_fluxo_v10(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v10(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v12(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -384,7 +396,6 @@ def render_linha(nome, nivel, arr_prev, arr_real):
     for p, r in zip(arr_prev, arr_real):
         html += "<div class='col-val'>"
         html += "<div class='dual-col'>"
-        # Sem cifra monetária para ficar limpo e alinhado
         html += f"<div class='dual-cell prev'>{formatar_moeda(p)}</div>"
         html += f"<div class='dual-cell real'>{formatar_moeda(r)}</div>"
         html += "</div></div>"
@@ -429,14 +440,14 @@ def build_drilldown(df_dados):
 # Inicia montagem da estrutura HTML
 html_matriz = "<div class='matrix-wrapper'><div class='matrix-grid'>"
 
-# Header Dinâmico de Meses e Colunas Duplas (C/ ID DE MÊS PARA O SCROLL INTELIGENTE)
+# Header Dinâmico de Meses e Colunas Duplas
 html_matriz += "<div class='grid-row grid-header'>"
-html_matriz += "<div class='col-name' style='padding-left: 15px;'>DESCRIÇÃO DOS LANÇAMENTOS</div>"
+html_matriz += "<div class='col-name' style='padding-left: 15px; font-weight: 800; color: #000000;'>Fluxo de Caixa Operacional</div>"
 
 for idx, m in enumerate(meses_labels): 
     html_matriz += f'''
     <div class='col-val' id='mes-{idx + 1}' style='padding:0;'>
-        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px;'>{m.upper()}/{str(ano_selecionado)[-2:]}</div>
+        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>{m.upper()}/{str(ano_selecionado)[-2:]}</div>
         <div class='dual-col'>
             <div class='dual-cell prev header'>PREVISÃO</div>
             <div class='dual-cell real header'>REALIZADO</div>
@@ -445,7 +456,7 @@ for idx, m in enumerate(meses_labels):
     '''
 html_matriz += f'''
     <div class='col-val total-col' style='padding:0;'>
-        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px;'>TOTAL ANUAL</div>
+        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>TOTAL ANUAL</div>
         <div class='dual-col'>
             <div class='dual-cell prev header'>PREVISÃO</div>
             <div class='dual-cell real header'>REALIZADO</div>
@@ -466,10 +477,10 @@ html_matriz += build_drilldown(df_saidas)
 
 html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
 
-# BLOCO DE RESULTADO SIMPLIFICADO
-html_matriz += render_linha("(ENTRADAS - SAÍDAS)", "res-r1", dummy_prev, l1_resultado)
+# BLOCO DE RESULTADOS
+html_matriz += render_linha("RESULTADO CAIXA", "res-r1", dummy_prev, l1_resultado)
 html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant)
-html_matriz += render_linha("RESULTADO CAIXA", "res-r6", dummy_prev, l3_acumulado)
+html_matriz += render_linha("SALDO FINAL", "res-r6", dummy_prev, l3_acumulado)
 
 html_matriz += "</div></div>"
 
