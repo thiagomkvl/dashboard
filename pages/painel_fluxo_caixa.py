@@ -67,7 +67,7 @@ css = """
     
     .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     
-    /* Hover SOMENTE nas linhas comuns */
+    /* Hover SOMENTE nas linhas comuns (Desativa nos Macros para não piscar) */
     .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
     .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
     
@@ -107,30 +107,32 @@ css = """
     .total-col { background-color: #f8fafc; border-right: none; }
     .total-col .dual-cell.real { color: #000000; font-weight: 800; }
 
-    /* Níveis Hierárquicos (Macro, Subgrupo, Transação) - FUNDOS SÓLIDOS PRO STICKY FUNCIONAR */
-    .lvl-macro { background-color: var(--primary); color: #ffffff; }
-    .lvl-macro .col-name { background-color: var(--primary); color: #ffffff !important; font-weight: 800 !important; font-size: 12px; border-right: none; }
-    .lvl-macro .dual-cell.prev, .lvl-macro .dual-cell.real { color: #ffffff; font-weight: 800; border-color: rgba(255,255,255,0.2); background: transparent;}
+    /* =============== Níveis Hierárquicos (Com Textos Pretos Absolutos) =============== */
+    .lvl-macro { background-color: #e0efef; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
+    .lvl-macro .col-name { background-color: #e0efef; color: #000000 !important; font-weight: 800 !important; font-size: 12px; border-right: 2px solid #cbd5e1; }
+    .lvl-macro .dual-cell.prev { color: #4b5563 !important; font-weight: 800; background: transparent; border-right: 1px dashed #cbd5e1;}
+    .lvl-macro .dual-cell.real { color: #000000 !important; font-weight: 900; background: transparent;}
     
     .lvl-subgrupo { background-color: #ffffff; }
-    .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #000000; } /* Textos Pretos */
+    .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #000000; } 
     
     .lvl-item { background-color: #fbfcfd; }
-    .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #000000; font-weight: 500; } /* Textos Pretos */
+    .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #000000; font-weight: 500; } 
     .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } 
 
-    /* Linhas de Resultado */
+    /* Linhas de Resultado (100% Preto) */
     .res-r1 { background-color: #f8fafc; }
     .res-r1 .col-name { background-color: #f8fafc; font-weight: 800; color: #172033; }
     .res-r1 .dual-cell.real { font-weight: 800; color: #000000; }
     
     .res-r2 { background-color: #ffffff; }
     .res-r2 .col-name { background-color: #ffffff; font-weight: 800; color: var(--primary); }
-    .res-r2 .dual-cell.real { font-weight: 800; color: var(--primary); }
+    .res-r2 .dual-cell.real { font-weight: 800; color: #000000; }
     
-    .res-r6 { background-color: #004D4E; }
-    .res-r6 .col-name { background-color: #004D4E; font-weight: 800; color: #ffffff !important; border-right: none;}
-    .res-r6 .dual-cell.prev, .res-r6 .dual-cell.real { font-weight: 800; color: #ffffff !important; background: transparent; border-color: rgba(255,255,255,0.2);}
+    .res-r6 { background-color: #ccebdc; border-top: 2px solid #1cc88a; border-bottom: 2px solid #1cc88a;}
+    .res-r6 .col-name { background-color: #ccebdc; font-weight: 900; color: #000000 !important; border-right: 2px solid #cbd5e1;}
+    .res-r6 .dual-cell.prev { font-weight: 800; color: #4b5563 !important; background: transparent; border-right: 1px dashed #cbd5e1;}
+    .res-r6 .dual-cell.real { font-weight: 900; color: #000000 !important; background: transparent;}
 
     /* Interatividade Details/Summary */
     details { width: 100%; display: block; margin: 0; padding: 0; }
@@ -198,10 +200,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E AGRUPAMENTO V7)
+# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E AGRUPAMENTO V8)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v7(ano):
+def carregar_dados_matriz_fluxo_v8(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
@@ -266,7 +268,7 @@ def carregar_dados_matriz_fluxo_v7(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v7(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v8(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -359,7 +361,7 @@ def render_linha(nome, nivel, arr_prev, arr_real):
     for p, r in zip(arr_prev, arr_real):
         html += "<div class='col-val'>"
         html += "<div class='dual-col'>"
-        # Exibição limpa, sem string 'R$'
+        # Sem cifra monetária para ficar limpo e alinhado
         html += f"<div class='dual-cell prev'>{formatar_moeda(p)}</div>"
         html += f"<div class='dual-cell real'>{formatar_moeda(r)}</div>"
         html += "</div></div>"
@@ -404,7 +406,7 @@ def build_drilldown(df_dados):
 # Inicia montagem da estrutura HTML
 html_matriz = "<div class='matrix-wrapper'><div class='matrix-grid'>"
 
-# Header Dinâmico de Meses e Colunas Duplas (C/ ID DE MÊS PARA O SCROLL INTELIGENTE)
+# Header Dinâmico de Meses e Colunas Duplas
 html_matriz += "<div class='grid-row grid-header'>"
 html_matriz += "<div class='col-name' style='padding-left: 15px;'>DESCRIÇÃO DOS LANÇAMENTOS</div>"
 
