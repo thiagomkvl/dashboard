@@ -51,12 +51,13 @@ css = """
     .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; text-transform: uppercase; }
     .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
     
-    /* KPIs */
-    .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
+    /* KPIs (AGORA COM 5 COLUNAS) */
+    .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
     .kpi-card { position: relative; overflow: hidden; min-height: 80px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
     .kpi-card.total { background: linear-gradient(135deg, #008A8C, #006869); }
     .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
+    .kpi-card.resultado { background: linear-gradient(135deg, #2563eb, #1e40af); } /* Azul Escuro */
     .kpi-card.aplicado { background: linear-gradient(135deg, #004D4E, #003334); }
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
@@ -79,13 +80,13 @@ css = """
     /* ALINHAMENTO À ESQUERDA PARA OS VALORES */
     .dual-cell { flex: 1; text-align: left; padding: 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-start; }
     
-    /* Cores das células (Previsão vs Realizado) */
+    /* Cores das células (Projeção vs Realizado) */
     .dual-cell.prev { color: #94a3b8; border-right: 1px dashed #e2e8f0; background: rgba(248, 250, 252, 0.4); }
     .dual-cell.real { color: #000000; font-weight: 600; }
     
-    /* Header Personalizado */
+    /* Header Personalizado Padrão Foto */
     .grid-header { background-color: #eaf4f4; border-bottom: 2px solid var(--primary); }
-    .grid-header .col-name { font-weight: 800; font-size: 11px; color: #000000; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
+    .grid-header .col-name { font-weight: 800; font-size: 11px; color: #172033; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
     .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: flex-start; }
     .dual-cell.real.header { font-size: 10px; font-weight: 800; color: #15803d; background: #f0fdf4; border-bottom: 2px solid #22c55e; justify-content: flex-start; }
     
@@ -117,7 +118,7 @@ css = """
     }
     .total-col .dual-cell.real { color: #000000; font-weight: 800; }
 
-    /* Níveis Hierárquicos (Sincronizando fundos das colunas congeladas) */
+    /* Níveis Hierárquicos */
     .grid-header .total-col { background-color: #eaf4f4; z-index: 3; }
 
     .lvl-macro { background-color: #e0efef; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
@@ -135,7 +136,7 @@ css = """
     .lvl-item .total-col { background-color: #fbfcfd; } 
     .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } 
 
-    /* Linhas de Resultado (Sincronizando fundos da Direita) */
+    /* Linhas de Resultado */
     .res-r1 { background-color: #f8fafc; }
     .res-r1 .col-name { background-color: #f8fafc; font-weight: 800; color: #172033; }
     .res-r1 .total-col { background-color: #f8fafc; }
@@ -223,10 +224,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (V12)
+# 4. CARGA DE DADOS (V13)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v12(ano):
+def carregar_dados_matriz_fluxo_v13(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
@@ -243,7 +244,7 @@ def carregar_dados_matriz_fluxo_v12(ano):
             df_si['Tipo'] = df_si[col_si_conta].astype(str).apply(definir_tipo)
             
             saldo_base = df_si[df_si['Tipo'].isin(['Disponível', 'Aplicação'])]['Vl'].sum()
-    except Exception as e: print("Aviso Saldo Inicial:", e)
+    except Exception: pass
 
     try:
         df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -303,7 +304,7 @@ def carregar_dados_matriz_fluxo_v12(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v12(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v13(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -360,6 +361,7 @@ injetar_html(f"""
 
 total_ano_ent = sum(tot_ent)
 total_ano_sai = sum(tot_sai)
+resultado_ano = total_ano_ent - total_ano_sai
 
 injetar_html(f"""
 <div class='kpi-row'>
@@ -375,6 +377,10 @@ injetar_html(f"""
         <div class='kpi-title'>TOTAL SAÍDAS (ANO)</div>
         <div class='kpi-value'>R$ {formatar_moeda(total_ano_sai)}</div>
     </div>
+    <div class='kpi-card resultado'>
+        <div class='kpi-title'>RESULTADO CAIXA (ANO)</div>
+        <div class='kpi-value'>R$ {formatar_moeda(resultado_ano)}</div>
+    </div>
     <div class='kpi-card aplicado'>
         <div class='kpi-title'>SALDO ATUAL DO CAIXA</div>
         <div class='kpi-value'>R$ {formatar_moeda(saldo_atual)}</div>
@@ -383,13 +389,22 @@ injetar_html(f"""
 """)
 
 # ==============================================================================
-# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (AGRUPAMENTO POR NOMENCLATURA)
+# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (C/ OVERRIDES PARA TOTAIS DE SALDO)
 # ==============================================================================
 meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
-def render_linha(nome, nivel, arr_prev, arr_real):
-    tot_p = sum(arr_prev)
-    tot_r = sum(arr_real)
+def render_linha(nome, nivel, arr_prev, arr_real, override_tot_p=None, override_tot_r=None):
+    # Se houver um valor forçado para a coluna total, usa ele. Se não, soma o array.
+    if override_tot_p is not None:
+        str_tot_p = override_tot_p if isinstance(override_tot_p, str) else formatar_moeda(override_tot_p)
+    else:
+        str_tot_p = formatar_moeda(sum(arr_prev))
+        
+    if override_tot_r is not None:
+        str_tot_r = override_tot_r if isinstance(override_tot_r, str) else formatar_moeda(override_tot_r)
+    else:
+        str_tot_r = formatar_moeda(sum(arr_real))
+        
     html = f"<div class='grid-row {nivel}'>"
     html += f"<div class='col-name'>{nome}</div>"
     
@@ -402,8 +417,8 @@ def render_linha(nome, nivel, arr_prev, arr_real):
         
     html += "<div class='col-val total-col'>"
     html += "<div class='dual-col'>"
-    html += f"<div class='dual-cell prev'>{formatar_moeda(tot_p)}</div>"
-    html += f"<div class='dual-cell real'>{formatar_moeda(tot_r)}</div>"
+    html += f"<div class='dual-cell prev'>{str_tot_p}</div>"
+    html += f"<div class='dual-cell real'>{str_tot_r}</div>"
     html += "</div></div></div>"
     return html
 
@@ -440,7 +455,7 @@ def build_drilldown(df_dados):
 # Inicia montagem da estrutura HTML
 html_matriz = "<div class='matrix-wrapper'><div class='matrix-grid'>"
 
-# Header Dinâmico de Meses e Colunas Duplas
+# Header Dinâmico (Trocado PREVISÃO por PROJEÇÃO)
 html_matriz += "<div class='grid-row grid-header'>"
 html_matriz += "<div class='col-name' style='padding-left: 15px; font-weight: 800; color: #000000;'>Fluxo de Caixa Operacional</div>"
 
@@ -449,7 +464,7 @@ for idx, m in enumerate(meses_labels):
     <div class='col-val' id='mes-{idx + 1}' style='padding:0;'>
         <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>{m.upper()}/{str(ano_selecionado)[-2:]}</div>
         <div class='dual-col'>
-            <div class='dual-cell prev header'>PREVISÃO</div>
+            <div class='dual-cell prev header'>PROJEÇÃO</div>
             <div class='dual-cell real header'>REALIZADO</div>
         </div>
     </div>
@@ -458,7 +473,7 @@ html_matriz += f'''
     <div class='col-val total-col' style='padding:0;'>
         <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>TOTAL ANUAL</div>
         <div class='dual-col'>
-            <div class='dual-cell prev header'>PREVISÃO</div>
+            <div class='dual-cell prev header'>PROJEÇÃO</div>
             <div class='dual-cell real header'>REALIZADO</div>
         </div>
     </div>
@@ -477,15 +492,18 @@ html_matriz += build_drilldown(df_saidas)
 
 html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
 
-# BLOCO DE RESULTADOS
-html_matriz += render_linha("RESULTADO CAIXA", "res-r1", dummy_prev, l1_resultado)
-html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant)
-html_matriz += render_linha("SALDO FINAL", "res-r6", dummy_prev, l3_acumulado)
+# BLOCO DE RESULTADO SIMPLIFICADO E ABSOLUTO (SEM SOMAR TOTAIS DE SALDO)
+val_saldo_ant_total = l2_saldo_ant[0] if l2_saldo_ant[0] != 0 else ""
+val_saldo_fim_total = l3_acumulado[-1]
+
+html_matriz += render_linha("(ENTRADAS - SAÍDAS)", "res-r1", dummy_prev, l1_resultado)
+html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant, override_tot_p="", override_tot_r=val_saldo_ant_total)
+html_matriz += render_linha("SALDO FINAL", "res-r6", dummy_prev, l3_acumulado, override_tot_p="", override_tot_r=val_saldo_fim_total)
 
 html_matriz += "</div></div>"
 
 injetar_html(html_matriz)
-st.markdown(f"<div style='font-size:9px; color:gray; text-align:right; margin-top:5px;'>Valores em Reais (R$) | Estrutura de previsão aguardando conexão de dados | Referência: {ano_selecionado}</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='font-size:9px; color:gray; text-align:right; margin-top:5px;'>Valores em Reais (R$) | Estrutura de projeção aguardando conexão de dados | Referência: {ano_selecionado}</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 8. SCRIPT DE AUTOSCROLL (ROLA PARA O MÊS ATUAL AUTOMATICAMENTE)
