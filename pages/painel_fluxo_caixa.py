@@ -67,7 +67,7 @@ css = """
     
     .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     
-    /* Hover SOMENTE nas linhas comuns */
+    /* Hover SOMENTE nas linhas comuns (Desativa nos Macros para não ficar branco) */
     .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
     .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
     
@@ -178,7 +178,6 @@ def formatar_moeda(valor):
         return f"{val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception: return "-"
 
-# Função para identificar exatamente o tipo de conta igual ao Dashboard Saldo
 def definir_tipo(nome): 
     n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
     if 'getnet' in n_norm: return 'Limite'
@@ -206,24 +205,28 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (V9: MATEMÁTICA IDÊNTICA AO SALDO)
+# 4. CARGA DE DADOS (V10: MATEMÁTICA IDÊNTICA AO DASH DE SALDOS)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v9(ano):
+def carregar_dados_matriz_fluxo_v10(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
     saldo_base = 0.0
     try:
+        # Mesma lógica imbatível do Dashboard_Saldo.py
         df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
         if not df_si.empty:
-            col_banco_si = df_si.columns[0]
-            col_valor_si = df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0]
-            df_si['Vl'] = df_si[col_valor_si].apply(limpa_valor_bruto)
-            df_si['Tipo'] = df_si[col_banco_si].apply(definir_tipo)
-            # Saldos apenas de Disponível e Aplicação (Sem Getnet/Limites)
+            df_si.columns = [str(c).strip() for c in df_si.columns]
+            df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
+            col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), df_si.columns[0])
+            col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0])
+            
+            df_si['Vl'] = df_si[col_si_valor].apply(limpa_valor_bruto)
+            df_si['Tipo'] = df_si[col_si_conta].astype(str).apply(definir_tipo)
+            
             saldo_base = df_si[df_si['Tipo'].isin(['Disponível', 'Aplicação'])]['Vl'].sum()
-    except Exception: pass
+    except Exception as e: print("Aviso Saldo Inicial:", e)
 
     try:
         df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -231,37 +234,27 @@ def carregar_dados_matriz_fluxo_v9(ano):
         
         while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
         
-        col_banco = df_ext.columns[0]     # (A)
-        col_data = df_ext.columns[1]      # (B)
-        col_deb = df_ext.columns[4]       # (E)
-        col_cred = df_ext.columns[5]      # (F)
-        col_tipo = df_ext.columns[7]      # (H)
-        col_classif = df_ext.columns[9]   # (J) CLASSIFICAÇÃO FINANCEIRA
-        col_operac = df_ext.columns[10]   # (K) OPERACIONALIDADE
-        col_fornecedor = df_ext.columns[12] # (M) RESUMO FORNECEDOR
+        col_banco = df_ext.columns[0]
+        col_data = df_ext.columns[1]      
+        col_deb = df_ext.columns[4]       
+        col_cred = df_ext.columns[5]      
+        col_tipo = df_ext.columns[7]      
+        col_classif = df_ext.columns[9]   
+        col_operac = df_ext.columns[10]   
+        col_fornecedor = df_ext.columns[12] 
 
-        # Tratamento da Data e Valores
         df_ext['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce')
         df_ext = df_ext.dropna(subset=['Data']).copy()
         df_ext['Ano'] = df_ext['Data'].dt.year
         df_ext['Mes'] = df_ext['Data'].dt.month
         df_ext['Vl_Deb'] = df_ext[col_deb].apply(limpa_valor_bruto)
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
-        
-        # Identificação de Contas (Igual Painel Saldo)
-        df_ext['Banco'] = df_ext[col_banco].astype(str)
-        df_ext['Tipo_Conta'] = df_ext['Banco'].apply(definir_tipo)
-        
-        # Filtra Transferências
-        def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
-        serie_tipo = df_ext[col_tipo].apply(norm_txt)
-        is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+        df_ext['Tipo_Conta'] = df_ext[col_banco].astype(str).apply(definir_tipo)
         
         # ---------------------------------------------------------------------
-        # PASSO 1: CALCULAR SALDOS GLOBAIS ABSOLUTOS (INCLUINDO NÃO-OP)
+        # PASSO 1: CALCULAR SALDOS GLOBAIS ABSOLUTOS (IGUAL AO PAINEL SALDO)
         # ---------------------------------------------------------------------
-        # Apenas transferências são excluídas do cálculo do saldo global
-        df_valid_balance = df_ext[(~is_transf) & (df_ext['Tipo_Conta'].isin(['Disponível', 'Aplicação']))].copy()
+        df_valid_balance = df_ext[df_ext['Tipo_Conta'].isin(['Disponível', 'Aplicação'])].copy()
 
         df_before = df_valid_balance[df_valid_balance['Data'] < f"{ano}-01-01"]
         saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
@@ -270,9 +263,14 @@ def carregar_dados_matriz_fluxo_v9(ano):
         saldo_atual_caixa = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
         # ---------------------------------------------------------------------
-        # PASSO 2: FILTRAR DADOS APENAS DA MATRIZ OPERACIONAL (ANO SELECIONADO)
+        # PASSO 2: FILTRAR DADOS APENAS DA MATRIZ OPERACIONAL
         # ---------------------------------------------------------------------
-        df_op = df_ext[(~is_transf)].copy()
+        def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
+        serie_tipo = df_ext[col_tipo].apply(norm_txt)
+        is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+        
+        df_op = df_ext[~is_transf].copy()
+        
         df_op['Operacional'] = df_op[col_operac].fillna('').astype(str).str.strip().str.upper()
         df_op = df_op[df_op['Operacional'] == 'OPERACIONAL'].copy()
         
@@ -293,7 +291,7 @@ def carregar_dados_matriz_fluxo_v9(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v9(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v10(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -321,12 +319,11 @@ for m in range(1, 13):
     tot_ent[idx] = df_entradas[df_entradas['Mes'] == m]['Valor_Op'].sum()
     tot_sai[idx] = df_saidas[df_saidas['Mes'] == m]['Valor_Op'].sum()
 
-# Calcula Resultados Finais da Matriz Operacional
+# Calcula Resultados Finais
 l1_resultado = [tot_ent[i] - tot_sai[i] for i in range(12)]
 l2_saldo_ant = [0]*12
 l3_acumulado = [0]*12
 
-# O saldo de Jan utiliza a variável que tem exata mesma matemática do Dash de Saldos
 l2_saldo_ant[0] = saldo_inicio_ano
 for i in range(12):
     if i > 0: l2_saldo_ant[i] = l3_acumulado[i-1]
