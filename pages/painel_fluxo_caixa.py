@@ -67,7 +67,7 @@ css = """
     
     .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     
-    /* Hover SOMENTE nas linhas comuns (Desativa nos Macros para não ficar branco) */
+    /* Hover SOMENTE nas linhas comuns */
     .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
     .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
     
@@ -113,11 +113,11 @@ css = """
     .lvl-macro .dual-cell.prev, .lvl-macro .dual-cell.real { color: #ffffff; font-weight: 800; border-color: rgba(255,255,255,0.2); background: transparent;}
     
     .lvl-subgrupo { background-color: #ffffff; }
-    .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #172033; }
+    .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #000000; } /* Textos Pretos */
     
     .lvl-item { background-color: #fbfcfd; }
-    .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #6b7280; font-weight: 500; }
-    .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } /* Valor real em transações preto */
+    .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #000000; font-weight: 500; } /* Textos Pretos */
+    .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } 
 
     /* Linhas de Resultado */
     .res-r1 { background-color: #f8fafc; }
@@ -198,7 +198,7 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS
+# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E AGRUPAMENTO V7)
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados_matriz_fluxo_v7(ano):
@@ -359,7 +359,7 @@ def render_linha(nome, nivel, arr_prev, arr_real):
     for p, r in zip(arr_prev, arr_real):
         html += "<div class='col-val'>"
         html += "<div class='dual-col'>"
-        # Exibição sem R$
+        # Exibição limpa, sem string 'R$'
         html += f"<div class='dual-cell prev'>{formatar_moeda(p)}</div>"
         html += f"<div class='dual-cell real'>{formatar_moeda(r)}</div>"
         html += "</div></div>"
@@ -373,7 +373,6 @@ def render_linha(nome, nivel, arr_prev, arr_real):
 
 def build_drilldown(df_dados):
     html = ""
-    # Agrupa pelo Nível 1: CLASSIFICAÇÃO FINANCEIRA (Coluna J)
     classificacoes = sorted(df_dados['Classificacao'].unique())
     
     for classif in classificacoes:
@@ -387,7 +386,6 @@ def build_drilldown(df_dados):
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real)
             html += "</summary>"
             
-            # Nível 2 Agrupado: Soma todas as transações com a mesma nomenclatura (Coluna M)
             forn_totais = df_classif.groupby('Descricao_Trans')['Valor_Op'].sum().sort_values(ascending=False)
             
             for trans_name in forn_totais.index:
@@ -465,7 +463,6 @@ if ano_selecionado == ano_atual:
             var targetCol = docs.getElementById('mes-{mes_atual}');
             
             if (wrapper && targetCol) {{
-                // Pega a posição da coluna do mês e desconta a largura da coluna congelada
                 var offset = targetCol.offsetLeft - 300; 
                 wrapper.scrollTo({{left: offset, behavior: 'smooth'}});
             }}
