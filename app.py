@@ -9,7 +9,7 @@ st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page
 # ==============================================================================
 # 1. REGISTRO OFICIAL DE PÁGINAS (EXIGÊNCIA DO STREAMLIT CLOUD)
 # ==============================================================================
-pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos")
+pg_saldos = st.Page("dashboard/pages/Dashboard_Saldo.py", title="Dashboard de Saldos")
 pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico")
 pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos")
 
