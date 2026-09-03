@@ -1,4 +1,8 @@
 import streamlit as st
+
+# O set_page_config OBRIGATORIAMENTE tem que ser a primeira coisa do arquivo
+st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
+
 import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
@@ -15,18 +19,8 @@ try:
     from database import conectar_sheets
 except Exception as e:
     def conectar_sheets():
-        st.error(f"Erro ao carregar 'database.py'. Detalhe técnico: {e}")
+        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
         return None
-
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
-
-# Exibe um alerta imediatamente se a conexão falhar, impedindo a tela de ficar em branco
-conn_test = None
-try:
-    conn_test = conectar_sheets()
-except Exception as base_error:
-    st.error(f"⚠️ A página tentou carregar, mas a sua conexão com o Google Sheets falhou e travou o sistema. Erro: {base_error}")
 
 # --- CUSTOM CSS ---
 css = """
@@ -35,23 +29,21 @@ css = """
         --bg: #f5f7fb;
         --surface: #ffffff;
         --surface-soft: #f8fafc;
-        --border: #d0e3e4; /* Borda Ciano Suave (SOS Cardio) */
-        --text: #172033; /* Cinza Escuro Principal */
+        --border: #d0e3e4;
+        --text: #172033;
         --muted: #6b7280;
-        --primary: #008A8C; /* Cor da Logo SOS Cardio */
+        --primary: #008A8C;
         --success: #1cc88a;
         --danger: #e74a3b;
         --warning: #c58a16;
         --shadow: 0 4px 15px rgba(0, 138, 140, 0.15);
     }
-
     html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
     .main { background: var(--bg); }
     .main .block-container { padding-top: 0.8rem; padding-bottom: 0.7rem; max-width: 97%; }
     div[data-testid="stVerticalBlock"] > div { gap: 0.38rem !important; }
     .stPlotlyChart { background: transparent !important; }
     .js-plotly-plot, .plot-container { margin: 0 auto; }
-
     /* Cabeçalho */
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
     .header-period { min-width: 200px; }
@@ -63,62 +55,40 @@ css = """
     .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
     .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
     .update-badge b { font-size: 12px; font-weight: 800; }
-
-    /* KPIs com a Paleta Institucional (S.O.S. Cardio) */
+    /* KPIs */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
-    
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
     .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
     .kpi-card.aplicado { background: linear-gradient(135deg, #008A8C, #006869); }
     .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
-    
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
-
-    /* Badges de Variação */
     .kpi-var { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; letter-spacing: 0.5px;}
     .kpi-var.up { background: rgba(74, 222, 128, 0.2); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
     .kpi-var.down { background: rgba(248, 113, 113, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
     .kpi-var.neutral { background: rgba(255, 255, 255, 0.15); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
-
-    /* Seções Harmonizadas com Fonte Cinza Escura */
     .section-title { display: flex; align-items: center; min-height: 25px; margin-bottom: 5px; padding: 0 0 5px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 7px; border-radius: 4px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     .movement-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f4fafa; }
-
-    /* Tabelas Gerais (Bancos e Aplicações) */
     .tabela-container { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 12px; width: 100%; margin-bottom: 8px; }
-    
-    /* Container Diário Otimizado para caber 100% na largura sem scroll lateral */
     .tabela-container-scroll { overflow-x: hidden; overflow-y: auto; max-height: 815px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(0, 138, 140, 0.04); font-size: 11px; width: 100%; margin-bottom: 8px; }
-    
     .tabela-container-scroll .tabela-financeira th { padding: 8px 4px !important; font-size: 9px !important; }
     .tabela-container-scroll .tabela-financeira td { padding: 8px 4px !important; font-size: 15px !important; font-weight: 750 !important; }
-
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; }
     .tabela-financeira th { background: #eaf4f4; color: #596274; font-size: 10px; font-weight: 800; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; }
     .tabela-financeira td { padding: 10px 8px; border-bottom: 1px solid #ebf2f2; font-size: 13px; font-weight: 550; color: #273043; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #f0f7f7; }
-    
     .tabela-financeira .linha-total { background: #e0efef; border-top: 2px solid #008A8C; }
     .tabela-financeira .linha-total td { color: var(--text); font-weight: 800; }
-    
     .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: left !important; font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
     .tabela-financeira td.valor-destaque { font-size: 16px !important; font-weight: 800; color: var(--text); }
-    
     hr { border: 0 !important; border-top: 1px solid var(--border) !important; margin: 15px 0 !important; }
-
-    /* MODO IMPRESSÃO (PDF) */
     @media print {
         [data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
         .main .block-container { max-width: 100% !important; padding: 10px !important; }
-        * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-        }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
         .kpi-card, .tabela-container, .tabela-container-scroll, .movement-card { break-inside: avoid; max-height: none !important; overflow: visible !important; }
     }
 </style>
@@ -383,7 +353,10 @@ def carregar_dados(data_inicio, data_fim):
 # ==============================================================================
 df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta, entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel = carregar_dados(data_inicio_filtro, data_fim_filtro)
 if not col_conta: col_conta = 'Conta Bancária'
-if df_consolidado.empty: st.stop()
+
+if df_consolidado.empty:
+    st.warning("⚠️ Os dados não foram carregados ou a planilha está vazia.")
+    st.stop()
 
 # ==============================================================================
 # 3. CÁLCULOS DOS KPIs MENSAIS E VARIAÇÕES (%)
@@ -647,7 +620,6 @@ with col_diario:
         sinal_delta = "+" if d_rs > 0 else ""
         delta_str = f"{sinal_delta}{d_pct:.1f}%" if d_rs != 0 else "-"
         
-        # Todas as células de valores usam a mesma classe e padronização visual unificada
         html_diario += f'<tr>' \
                        f'<td style="font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
                        f'<td class="valores">{formatar_moeda(row["Saldo Inicial"]).replace("R$ ", "")}</td>' \
