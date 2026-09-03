@@ -66,7 +66,9 @@ css = """
     .matrix-grid { min-width: 2200px; display: flex; flex-direction: column; }
     
     .grid-row { display: grid; grid-template-columns: minmax(280px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
-    .grid-row:hover { background-color: #f0f7f7; }
+    
+    /* Hover SOMENTE nas linhas que não são Macro (Para não ficar branco) */
+    .grid-row:not(.lvl-macro):hover { background-color: #f0f7f7; }
     
     /* Configuração Colunas Duplas */
     .col-val { padding: 0; display: flex; flex-direction: column; justify-content: center; border-right: 2px solid #cbd5e1; }
@@ -85,7 +87,7 @@ css = """
     .total-col { background-color: #f8fafc; border-right: none; }
     .total-col .dual-cell.real { color: #172033; font-weight: 800; }
 
-    /* Níveis Hierárquicos */
+    /* Níveis Hierárquicos (Macro, Subgrupo, Transação) */
     .lvl-macro { background-color: var(--primary); color: #ffffff; }
     .lvl-macro .col-name { color: #ffffff !important; font-weight: 800 !important; font-size: 12px; border-right: none; background: transparent !important;}
     .lvl-macro .dual-cell.prev, .lvl-macro .dual-cell.real { color: #ffffff; font-weight: 800; border-color: rgba(255,255,255,0.2); background: transparent;}
@@ -93,24 +95,15 @@ css = """
     .lvl-subgrupo { background-color: #ffffff; }
     .lvl-subgrupo .col-name { font-weight: 700; color: #172033; }
     
-    .lvl-fornecedor { background-color: #fbfcfd; }
-    .lvl-fornecedor .col-name { padding-left: 35px; font-weight: 600; color: #4b5563; }
-    
-    .lvl-item { background-color: #ffffff; }
-    .lvl-item .col-name { padding-left: 60px; font-size: 10px; color: #6b7280; font-weight: 500; }
+    .lvl-item { background-color: #fbfcfd; }
+    .lvl-item .col-name { padding-left: 35px; font-size: 10px; color: #6b7280; font-weight: 500; }
     .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #6b7280; }
 
-    /* Linhas de Resultado (Sem Números Iniciais) */
+    /* Linhas de Resultado */
     .res-r1 { background-color: #f8fafc; }
     .res-r1 .col-name, .res-r1 .dual-cell.real { font-weight: 800; color: #172033; }
     .res-r2 { background-color: #ffffff; }
     .res-r2 .col-name, .res-r2 .dual-cell.real { font-weight: 800; color: var(--primary); }
-    .res-r3 { background-color: #eaf4f4; }
-    .res-r3 .col-name, .res-r3 .dual-cell.real { font-weight: 800; color: #172033; }
-    .res-r4 { background-color: #ffffff; }
-    .res-r4 .col-name, .res-r4 .dual-cell.real { font-weight: 800; color: var(--danger); }
-    .res-r5 { background-color: #ffffff; }
-    .res-r5 .col-name, .res-r5 .dual-cell.real { font-weight: 800; color: #3b82f6; }
     .res-r6 { background-color: #004D4E; }
     .res-r6 .col-name, .res-r6 .dual-cell.prev, .res-r6 .dual-cell.real { font-weight: 800; color: #ffffff !important; background: transparent; border-color: rgba(255,255,255,0.2);}
 
@@ -179,20 +172,13 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS COM BLINDAGEM DE CACHE
+# 4. CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v2(ano):
+def carregar_dados_matriz_fluxo_v3(ano):
     conn = conectar_sheets()
-    if not conn: return pd.DataFrame(), pd.DataFrame(), [], [], [], 0.0, 0.0
+    if not conn: return pd.DataFrame(), 0.0, 0.0
     
-    linhas_fixas = []
-    try:
-        df_regras = conn.read(worksheet="Regras_Fluxo", ttl=0)
-        if not df_regras.empty and len(df_regras.columns) > 1:
-            linhas_fixas = df_regras.iloc[:, 1].dropna().astype(str).str.strip().str.upper().unique().tolist()
-    except Exception as e: print("Aviso Regras_Fluxo:", e)
-
     saldo_base = 0.0
     try:
         df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
@@ -203,13 +189,15 @@ def carregar_dados_matriz_fluxo_v2(ano):
 
     try:
         df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
-        if df_ext.empty: return pd.DataFrame(), pd.DataFrame(), linhas_fixas, [], [], saldo_base, 0.0
+        if df_ext.empty: return pd.DataFrame(), saldo_base, 0.0
         
         while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
-        col_data = df_ext.columns[1]; col_desc = df_ext.columns[2]
-        col_deb = df_ext.columns[4]; col_cred = df_ext.columns[5]
-        col_tipo = df_ext.columns[7]; col_subgrupo = df_ext.columns[11]
-        col_fornecedor = df_ext.columns[12]
+        col_data = df_ext.columns[1]
+        col_deb = df_ext.columns[4]
+        col_cred = df_ext.columns[5]
+        col_tipo = df_ext.columns[7]
+        col_classif = df_ext.columns[9]   # (J) CLASSIFICAÇÃO FINANCEIRA
+        col_fornecedor = df_ext.columns[12] # (M) RESUMO FORNECEDOR
 
         df_ext['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce')
         df_ext = df_ext.dropna(subset=['Data']).copy()
@@ -217,25 +205,19 @@ def carregar_dados_matriz_fluxo_v2(ano):
         df_ext['Mes'] = df_ext['Data'].dt.month
         df_ext['Vl_Deb'] = df_ext[col_deb].apply(limpa_valor_bruto)
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
-        df_ext['SubGrupo'] = df_ext[col_subgrupo].fillna('OUTROS').astype(str).str.strip().str.upper()
-        df_ext['Fornecedor'] = df_ext[col_fornecedor].fillna('NÃO IDENTIFICADO').astype(str).str.strip().str.upper()
-        df_ext['Descricao'] = df_ext[col_desc].fillna('').astype(str).str.strip()
         
+        # Mapeando Colunas Solicitadas
+        df_ext['Classificacao'] = df_ext[col_classif].fillna('NÃO CLASSIFICADO').astype(str).str.strip().str.upper()
+        df_ext.loc[df_ext['Classificacao'] == '', 'Classificacao'] = 'NÃO CLASSIFICADO'
+        
+        df_ext['Descricao_Trans'] = df_ext[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip()
+        df_ext.loc[df_ext['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
+        
+        # Filtra Transferências
         def norm_txt(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
         serie_tipo = df_ext[col_tipo].apply(norm_txt)
         is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
         df_ext = df_ext[~is_transf]
-
-        regras_entradas = []
-        regras_saidas = []
-        for r in linhas_fixas:
-            tc = df_ext[df_ext['SubGrupo'] == r]['Vl_Cred'].sum()
-            td = df_ext[df_ext['SubGrupo'] == r]['Vl_Deb'].sum()
-            if tc > 0 or td > 0:
-                if tc >= td: regras_entradas.append(r)
-                else: regras_saidas.append(r)
-            else:
-                regras_saidas.append(r)
 
         df_before = df_ext[df_ext['Data'] < f"{ano}-01-01"]
         saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
@@ -244,44 +226,36 @@ def carregar_dados_matriz_fluxo_v2(ano):
         saldo_atual_todas = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
         df_ano = df_ext[df_ext['Ano'] == ano].copy()
-        mask_emp = df_ano['SubGrupo'].str.contains("EMPRESTIMO|EMPRÉSTIMO|FINANCIAMENTO")
-        df_emprestimos = df_ano[mask_emp].copy()
-        df_operacional = df_ano[~mask_emp].copy()
             
-        return df_operacional, df_emprestimos, linhas_fixas, regras_entradas, regras_saidas, saldo_inicio_ano, saldo_atual_todas
+        return df_ano, saldo_inicio_ano, saldo_atual_todas
     except Exception as e:
         st.error(f"Erro interno: {e}")
-        return pd.DataFrame(), pd.DataFrame(), [], [], [], 0.0, 0.0
+        return pd.DataFrame(), 0.0, 0.0
 
-# Inicialização segura
-df_op, df_emp = pd.DataFrame(), pd.DataFrame()
-linhas_fixas, regras_entradas, regras_saidas = [], [], []
-saldo_inicio_ano, saldo_atual = 0.0, 0.0
+df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v2(ano_selecionado)
-    if len(res) == 7:
-        df_op, df_emp, linhas_fixas, regras_entradas, regras_saidas, saldo_inicio_ano, saldo_atual = res
+    res = carregar_dados_matriz_fluxo_v3(ano_selecionado)
+    if len(res) == 3:
+        df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
     st.error(f"Erro ao extrair pacote de dados: {e}")
 
-if df_op.empty and df_emp.empty:
+if df_ano.empty:
     st.warning(f"⚠️ Nenhuma movimentação encontrada para o ano de {ano_selecionado}.")
     st.stop()
 
 # ==============================================================================
 # 5. CONSTRUÇÃO DA LÓGICA DE DADOS (JAN A DEZ)
 # ==============================================================================
-df_entradas = df_op[df_op['Vl_Cred'] > 0].copy()
+df_entradas = df_ano[df_ano['Vl_Cred'] > 0].copy()
 df_entradas['Valor_Op'] = df_entradas['Vl_Cred']
 
-df_saidas = df_op[df_op['Vl_Deb'] > 0].copy()
+df_saidas = df_ano[df_ano['Vl_Deb'] > 0].copy()
 df_saidas['Valor_Op'] = df_saidas['Vl_Deb']
 
 tot_ent = [0]*12
 tot_sai = [0]*12
-nec_emp = [0]*12
-pag_emp = [0]*12
 
 dummy_prev = [0]*12
 
@@ -289,21 +263,16 @@ for m in range(1, 13):
     idx = m - 1
     tot_ent[idx] = df_entradas[df_entradas['Mes'] == m]['Valor_Op'].sum()
     tot_sai[idx] = df_saidas[df_saidas['Mes'] == m]['Valor_Op'].sum()
-    
-    df_m_emp = df_emp[df_emp['Mes'] == m]
-    nec_emp[idx] = df_m_emp['Vl_Cred'].sum()
-    pag_emp[idx] = df_m_emp['Vl_Deb'].sum()
 
+# Calcula Resultados Finais
 l1_resultado = [tot_ent[i] - tot_sai[i] for i in range(12)]
 l2_saldo_ant = [0]*12
 l3_acumulado = [0]*12
-l6_saldo_fim = [0]*12
 
 l2_saldo_ant[0] = saldo_inicio_ano
 for i in range(12):
-    if i > 0: l2_saldo_ant[i] = l6_saldo_fim[i-1]
+    if i > 0: l2_saldo_ant[i] = l3_acumulado[i-1]
     l3_acumulado[i] = l1_resultado[i] + l2_saldo_ant[i]
-    l6_saldo_fim[i] = l3_acumulado[i] + nec_emp[i] - pag_emp[i]
 
 # ==============================================================================
 # 6. HEADER E KPIS
@@ -328,7 +297,7 @@ total_ano_sai = sum(tot_sai)
 injetar_html(f"""
 <div class='kpi-row'>
     <div class='kpi-card inicial'>
-        <div class='kpi-title'>SALDO INICIAL 2026</div>
+        <div class='kpi-title'>SALDO INICIAL {ano_selecionado}</div>
         <div class='kpi-value'>R$ {formatar_moeda(saldo_inicio_ano)}</div>
     </div>
     <div class='kpi-card total'>
@@ -347,7 +316,7 @@ injetar_html(f"""
 """)
 
 # ==============================================================================
-# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (DUAL COLUMN)
+# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (DUAL COLUMN E 2 NÍVEIS)
 # ==============================================================================
 meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -371,75 +340,30 @@ def render_linha(nome, nivel, arr_prev, arr_real, is_item=False):
     html += "</div></div></div>"
     return html
 
-def build_drilldown(lista_regras, df_dados, titulo_outros):
+def build_drilldown(df_dados):
     html = ""
-    for regra in lista_regras:
-        df_regra = df_dados[df_dados['SubGrupo'] == regra]
+    classificacoes = sorted(df_dados['Classificacao'].unique())
+    
+    for classif in classificacoes:
+        df_classif = df_dados[df_dados['Classificacao'] == classif]
         arr_real = [0]*12
         for m in range(1, 13):
-            arr_real[m-1] = df_regra[df_regra['Mes'] == m]['Valor_Op'].sum()
+            arr_real[m-1] = df_classif[df_classif['Mes'] == m]['Valor_Op'].sum()
             
-        if sum(arr_real) == 0:
-            html += render_linha(regra, "lvl-subgrupo", dummy_prev, arr_real)
-        else:
+        if sum(arr_real) > 0:
             html += "<details><summary>"
-            html += render_linha(f"<span class='icon-expand'></span>{regra}", "lvl-subgrupo", dummy_prev, arr_real)
+            html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real)
             html += "</summary>"
             
-            forn_tot = df_regra.groupby('Fornecedor')['Valor_Op'].sum().sort_values(ascending=False)
-            for forn in forn_tot.index:
-                df_forn = df_regra[df_regra['Fornecedor'] == forn]
-                arr_forn_real = [0]*12
-                for m in range(1, 13):
-                    arr_forn_real[m-1] = df_forn[df_forn['Mes'] == m]['Valor_Op'].sum()
-                    
-                html += "<details><summary>"
-                html += render_linha(f"<span class='icon-expand'></span>{forn}", "lvl-fornecedor", dummy_prev, arr_forn_real)
-                html += "</summary>"
-                
-                df_forn_sorted = df_forn.sort_values('Data')
-                for _, row in df_forn_sorted.iterrows():
-                    arr_trans_real = [0]*12
-                    arr_trans_real[row['Mes'] - 1] = row['Valor_Op']
-                    dt_s = row['Data'].strftime('%d/%m')
-                    desc = row['Descricao'][:45] + ("..." if len(row['Descricao']) > 45 else "")
-                    html += render_linha(f"↳ {dt_s} | {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
-                html += "</details>"
+            df_classif_sorted = df_classif.sort_values('Data')
+            for _, row in df_classif_sorted.iterrows():
+                arr_trans_real = [0]*12
+                arr_trans_real[row['Mes'] - 1] = row['Valor_Op']
+                dt_s = row['Data'].strftime('%d/%m')
+                desc = row['Descricao_Trans'][:65] + ("..." if len(row['Descricao_Trans']) > 65 else "")
+                html += render_linha(f"↳ {dt_s} | {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
             html += "</details>"
             
-    # Processa "OUTRAS" (Lançamentos que não estão nas regras fixas)
-    df_outros = df_dados[~df_dados['SubGrupo'].isin(lista_regras)]
-    if not df_outros.empty:
-        arr_out = [0]*12
-        for m in range(1, 13):
-            arr_out[m-1] = df_outros[df_outros['Mes'] == m]['Valor_Op'].sum()
-            
-        if sum(arr_out) > 0:
-            html += "<details><summary>"
-            html += render_linha(f"<span class='icon-expand'></span>{titulo_outros}", "lvl-subgrupo", dummy_prev, arr_out)
-            html += "</summary>"
-            
-            sub_tot = df_outros.groupby('SubGrupo')['Valor_Op'].sum().sort_values(ascending=False)
-            for sub in sub_tot.index:
-                df_sub = df_outros[df_outros['SubGrupo'] == sub]
-                arr_sub = [0]*12
-                for m in range(1, 13):
-                    arr_sub[m-1] = df_sub[df_sub['Mes'] == m]['Valor_Op'].sum()
-                    
-                html += "<details><summary>"
-                html += render_linha(f"<span class='icon-expand'></span>{sub}", "lvl-fornecedor", dummy_prev, arr_sub)
-                html += "</summary>"
-                
-                df_sub_sorted = df_sub.sort_values('Data')
-                for _, row in df_sub_sorted.iterrows():
-                    arr_trans = [0]*12
-                    arr_trans[row['Mes'] - 1] = row['Valor_Op']
-                    dt_s = row['Data'].strftime('%d/%m')
-                    desc = row['Descricao'][:40] + ("..." if len(row['Descricao']) > 40 else "")
-                    forn_s = row['Fornecedor'][:15]
-                    html += render_linha(f"↳ {dt_s} | {forn_s} | {desc}", "lvl-item", dummy_prev, arr_trans, is_item=True)
-                html += "</details>"
-            html += "</details>"
     return html
 
 # Inicia montagem da estrutura HTML
@@ -472,23 +396,20 @@ html_matriz += f'''
 
 # BLOCO ENTRADAS
 html_matriz += render_linha("ENTRADAS OPERACIONAIS", "lvl-macro", dummy_prev, tot_ent)
-html_matriz += build_drilldown(regras_entradas, df_entradas, "OUTRAS ENTRADAS")
+html_matriz += build_drilldown(df_entradas)
 
 html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
 
 # BLOCO SAÍDAS
 html_matriz += render_linha("SAÍDAS OPERACIONAIS", "lvl-macro", dummy_prev, tot_sai)
-html_matriz += build_drilldown(regras_saidas, df_saidas, "OUTRAS SAÍDAS")
+html_matriz += build_drilldown(df_saidas)
 
 html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
 
-# BLOCO DE RESULTADO (Sem os números iniciais)
+# BLOCO DE RESULTADO
 html_matriz += render_linha("(ENTRADAS - SAÍDAS)", "res-r1", dummy_prev, l1_resultado)
 html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant)
-html_matriz += render_linha("SALDO ACUMULADO", "res-r3", dummy_prev, l3_acumulado)
-html_matriz += render_linha("NECESSIDADE DE EMPRÉSTIMOS", "res-r4", dummy_prev, nec_emp)
-html_matriz += render_linha("PAGAMENTO DE EMPRÉSTIMOS", "res-r5", dummy_prev, pag_emp)
-html_matriz += render_linha("SALDO FINAL", "res-r6", dummy_prev, l6_saldo_fim)
+html_matriz += render_linha("RESULTADO CAIXA", "res-r6", dummy_prev, l3_acumulado)
 
 html_matriz += "</div></div>"
 
