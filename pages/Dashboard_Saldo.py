@@ -52,9 +52,6 @@ css = """
     .header-center { text-align: center; }
     .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; }
     .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
-    .update-badge { min-width: 105px; padding: 6px 12px; text-align: center; border: 1px solid #ccebdc; border-radius: 8px; background: #ecfdf5; color: #23795d; }
-    .update-badge span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .update-badge b { font-size: 12px; font-weight: 800; }
     /* KPIs */
     .kpi-card { position: relative; overflow: hidden; min-height: 90px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
     .kpi-card.total { background: linear-gradient(135deg, #004D4E, #003334); }
@@ -408,10 +405,10 @@ fig_donut.update_layout(
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
-    y=df_graficos['Saldo Final'],
-    name='Saldo Diário',
+    y=df_graficos['Saldo Inicial'],
+    name='Saldo Diário Inicial',
     marker_color='#004D4E', 
-    text=[formatar_abreviado(v) for v in df_graficos['Saldo Final']],
+    text=[formatar_abreviado(v) for v in df_graficos['Saldo Inicial']],
     textposition='outside',
     textfont=dict(size=13, color="#1a2035", weight="bold"),
     opacity=0.9,
@@ -441,10 +438,7 @@ st.markdown(f"""
         <h1>PAINEL FINANCEIRO MENSAL</h1>
         <p>Controle Consolidado de Bancos</p>
     </div>
-    <div class="update-badge">
-        <span>Atualização</span><br>
-        <b>{data_hoje}</b>
-    </div>
+    <div style="min-width: 200px;"></div> <!-- Placeholder para manter o título centralizado -->
 </div>
 """, unsafe_allow_html=True)
 
@@ -637,4 +631,4 @@ with col_diario:
     html_diario += '</tbody></table></div>'
     st.markdown(html_diario, unsafe_allow_html=True)
 
-st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados atualizados em {data_hoje}</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='font-size:9px; color:gray; margin-top:10px; text-align:right;'>Valores em Reais (R$) | Dados referenciados do período selecionado</div>", unsafe_allow_html=True)
