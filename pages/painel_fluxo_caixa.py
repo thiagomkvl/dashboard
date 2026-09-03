@@ -63,7 +63,7 @@ css = """
 
     /* MATRIZ CSS GRID EXPANSÍVEL (PREV x REAL) */
     .matrix-wrapper { overflow-x: auto; width: 100%; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); background: var(--surface); margin-bottom: 30px;}
-    .matrix-grid { min-width: 2200px; display: flex; flex-direction: column; } /* Espaço para 26 colunas */
+    .matrix-grid { min-width: 2200px; display: flex; flex-direction: column; }
     
     .grid-row { display: grid; grid-template-columns: minmax(280px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     .grid-row:hover { background-color: #f0f7f7; }
@@ -151,7 +151,7 @@ def limpa_valor_bruto(valor):
         return float(v_str)
     except Exception: return 0.0
 
-def formata_num(valor):
+def formatar_moeda(valor):
     try:
         val = float(valor)
         if val == 0: return "-"
@@ -179,7 +179,7 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS COM BLINDAGEM DE CACHE (NOVO NOME PARA FORÇAR LIMPEZA)
+# 4. CARGA DE DADOS COM BLINDAGEM DE CACHE
 # ==============================================================================
 @st.cache_data(ttl=60)
 def carregar_dados_matriz_fluxo_v2(ano):
@@ -253,7 +253,7 @@ def carregar_dados_matriz_fluxo_v2(ano):
         st.error(f"Erro interno: {e}")
         return pd.DataFrame(), pd.DataFrame(), [], [], [], 0.0, 0.0
 
-# Inicialização segura para garantir que as variáveis existam
+# Inicialização segura
 df_op, df_emp = pd.DataFrame(), pd.DataFrame()
 linhas_fixas, regras_entradas, regras_saidas = [], [], []
 saldo_inicio_ano, saldo_atual = 0.0, 0.0
@@ -283,7 +283,6 @@ tot_sai = [0]*12
 nec_emp = [0]*12
 pag_emp = [0]*12
 
-# Array auxiliar para PREVISÕES (Zerado até conectarmos com a base de previsão)
 dummy_prev = [0]*12
 
 for m in range(1, 13):
@@ -329,7 +328,7 @@ total_ano_sai = sum(tot_sai)
 injetar_html(f"""
 <div class='kpi-row'>
     <div class='kpi-card inicial'>
-        <div class='kpi-title'>SALDO INICIAL ({ano_selecionado})</div>
+        <div class='kpi-title'>SALDO INICIAL 2026</div>
         <div class='kpi-value'>R$ {formatar_moeda(saldo_inicio_ano)}</div>
     </div>
     <div class='kpi-card total'>
