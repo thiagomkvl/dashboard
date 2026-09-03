@@ -614,11 +614,16 @@ with col_diario:
                   
     for _, row in df_diario_view.iterrows():
         d_rs = row['Delta R$']
-        d_pct = row['Delta %']
         
         cor_delta = "#1cc88a" if d_rs >= 0 else "#e74a3b"
-        sinal_delta = "+" if d_rs > 0 else ""
-        delta_str = f"{sinal_delta}{d_pct:.1f}%" if d_rs != 0 else "-"
+        
+        if d_rs > 0:
+            delta_str = f"+{formatar_moeda(d_rs).replace('R$ ', '')}"
+        elif d_rs < 0:
+            # O formatar_moeda já adiciona o sinal de '-' para números negativos
+            delta_str = formatar_moeda(d_rs).replace('R$ ', '')
+        else:
+            delta_str = "-"
         
         html_diario += f'<tr>' \
                        f'<td style="font-weight:750; color:#273043;">{row["Data_Label"]}</td>' \
