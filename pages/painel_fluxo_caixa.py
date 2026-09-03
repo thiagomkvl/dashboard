@@ -67,7 +67,7 @@ css = """
     
     .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
     
-    /* Hover SOMENTE nas linhas que não são Macro ou Resultado Final */
+    /* Hover SOMENTE nas linhas comuns (Desativa nos Macros para não ficar branco) */
     .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
     .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
     
@@ -78,7 +78,7 @@ css = """
     .dual-cell.prev { color: #94a3b8; border-right: 1px dashed #e2e8f0; background: rgba(248, 250, 252, 0.4); }
     .dual-cell.real { color: #4b5563; font-weight: 600; }
     
-    /* Header Personalizado */
+    /* Header Personalizado Padrão Foto */
     .grid-header { background-color: #eaf4f4; border-bottom: 2px solid var(--primary); }
     .grid-header .col-name { font-weight: 800; font-size: 11px; color: #172033; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
     .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: center; }
@@ -194,10 +194,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS (LEITURA APENAS DE CLASSIFICAÇÃO E RESUMO FORNECEDOR)
+# 4. CARGA DE DADOS (FILTRO DE OPERAÇÃO E USO EXCLUSIVO DA COLUNA M)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v4(ano):
+def carregar_dados_matriz_fluxo_v5(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), 0.0, 0.0
     
@@ -213,25 +213,37 @@ def carregar_dados_matriz_fluxo_v4(ano):
         df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
         if df_ext.empty: return pd.DataFrame(), saldo_base, 0.0
         
+        # Garante que as colunas existem
         while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
-        col_data = df_ext.columns[1]
-        col_deb = df_ext.columns[4]
-        col_cred = df_ext.columns[5]
-        col_tipo = df_ext.columns[7]
+        
+        # Mapeamento estrito das colunas necessárias (A coluna C foi totalmente descartada)
+        col_data = df_ext.columns[1]      # (B)
+        col_deb = df_ext.columns[4]       # (E)
+        col_cred = df_ext.columns[5]      # (F)
+        col_tipo = df_ext.columns[7]      # (H)
         col_classif = df_ext.columns[9]   # (J) CLASSIFICAÇÃO FINANCEIRA
-        col_fornecedor = df_ext.columns[12] # (M) RESUMO FORNECEDOR (USADO COMO DESCRIÇÃO)
+        col_operac = df_ext.columns[10]   # (K) OPERACIONALIDADE
+        col_fornecedor = df_ext.columns[12] # (M) RESUMO FORNECEDOR
 
+        # Tratamento da Data
         df_ext['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce')
         df_ext = df_ext.dropna(subset=['Data']).copy()
         df_ext['Ano'] = df_ext['Data'].dt.year
         df_ext['Mes'] = df_ext['Data'].dt.month
+        
+        # Tratamento de Valores
         df_ext['Vl_Deb'] = df_ext[col_deb].apply(limpa_valor_bruto)
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
         
-        # Mapeando Colunas (C ignorada)
+        # FILTRO CRÍTICO: APENAS OPERACIONAL (Coluna K)
+        df_ext['Operacional'] = df_ext[col_operac].fillna('').astype(str).str.strip().str.upper()
+        df_ext = df_ext[df_ext['Operacional'] == 'OPERACIONAL'].copy()
+        
+        # Mapeamento do Nível 1: Classificação (Coluna J)
         df_ext['Classificacao'] = df_ext[col_classif].fillna('NÃO CLASSIFICADO').astype(str).str.strip().str.upper()
         df_ext.loc[df_ext['Classificacao'] == '', 'Classificacao'] = 'NÃO CLASSIFICADO'
         
+        # Mapeamento do Nível 2: Transação / Fornecedor (Exclusivamente Coluna M)
         df_ext['Descricao_Trans'] = df_ext[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip()
         df_ext.loc[df_ext['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
         
@@ -241,15 +253,19 @@ def carregar_dados_matriz_fluxo_v4(ano):
         is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
         df_ext = df_ext[~is_transf]
 
+        # Calcula Saldo Operacional Histórico (Antes do ano selecionado)
         df_before = df_ext[df_ext['Data'] < f"{ano}-01-01"]
         saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
 
+        # Calcula Saldo Operacional Atual
         df_up_to_now = df_ext[df_ext['Data'] <= pd.to_datetime(datetime.now().date())]
-        saldo_atual_todas = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
+        saldo_atual_op = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
+        # Isola os dados do ano selecionado
         df_ano = df_ext[df_ext['Ano'] == ano].copy()
             
-        return df_ano, saldo_inicio_ano, saldo_atual_todas
+        return df_ano, saldo_inicio_ano, saldo_atual_op
+    
     except Exception as e:
         st.error(f"Erro interno: {e}")
         return pd.DataFrame(), 0.0, 0.0
@@ -257,14 +273,14 @@ def carregar_dados_matriz_fluxo_v4(ano):
 df_ano, saldo_inicio_ano, saldo_atual = pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v4(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v5(ano_selecionado)
     if len(res) == 3:
         df_ano, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
     st.error(f"Erro ao extrair pacote de dados: {e}")
 
 if df_ano.empty:
-    st.warning(f"⚠️ Nenhuma movimentação encontrada para o ano de {ano_selecionado}.")
+    st.warning(f"⚠️ Nenhuma movimentação operacional encontrada para o ano de {ano_selecionado}.")
     st.stop()
 
 # ==============================================================================
@@ -278,7 +294,6 @@ df_saidas['Valor_Op'] = df_saidas['Vl_Deb']
 
 tot_ent = [0]*12
 tot_sai = [0]*12
-
 dummy_prev = [0]*12
 
 for m in range(1, 13):
@@ -307,7 +322,7 @@ injetar_html(f"""
     </div>
     <div class="header-center">
         <h1>MATRIZ DE FLUXO DE CAIXA</h1>
-        <p>Visão Consolidada de Recebimentos e Pagamentos</p>
+        <p>Visão Consolidada de Operações</p>
     </div>
     <div style="min-width: 200px;"></div>
 </div>
@@ -331,14 +346,14 @@ injetar_html(f"""
         <div class='kpi-value'>R$ {formatar_moeda(total_ano_sai)}</div>
     </div>
     <div class='kpi-card aplicado'>
-        <div class='kpi-title'>SALDO ATUAL DO CAIXA</div>
+        <div class='kpi-title'>SALDO ATUAL OPERACIONAL</div>
         <div class='kpi-value'>R$ {formatar_moeda(saldo_atual)}</div>
     </div>
 </div>
 """)
 
 # ==============================================================================
-# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (DUAL COLUMN E 2 NÍVEIS)
+# 7. RENDERIZAÇÃO DA MATRIZ CSS GRID (2 NÍVEIS)
 # ==============================================================================
 meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -364,6 +379,7 @@ def render_linha(nome, nivel, arr_prev, arr_real, is_item=False):
 
 def build_drilldown(df_dados):
     html = ""
+    # Agrupa pelo Nível 1: CLASSIFICAÇÃO (Coluna J)
     classificacoes = sorted(df_dados['Classificacao'].unique())
     
     for classif in classificacoes:
@@ -377,11 +393,13 @@ def build_drilldown(df_dados):
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real)
             html += "</summary>"
             
+            # Nível 2 direto: TRANSAÇÃO (Coluna M) e Data
             df_classif_sorted = df_classif.sort_values('Data')
             for _, row in df_classif_sorted.iterrows():
                 arr_trans_real = [0]*12
                 arr_trans_real[row['Mes'] - 1] = row['Valor_Op']
                 dt_s = row['Data'].strftime('%d/%m')
+                # Usa unicamente a Descrição retirada da Coluna M
                 desc = row['Descricao_Trans'][:65] + ("..." if len(row['Descricao_Trans']) > 65 else "")
                 html += render_linha(f"↳ {dt_s} | {desc}", "lvl-item", dummy_prev, arr_trans_real, is_item=True)
             html += "</details>"
@@ -391,12 +409,11 @@ def build_drilldown(df_dados):
 # Inicia montagem da estrutura HTML
 html_matriz = "<div class='matrix-wrapper'><div class='matrix-grid'>"
 
-# Header Dinâmico de Meses e Colunas Duplas (C/ ID DE MÊS PARA O SCROLL)
+# Header Dinâmico de Meses e Colunas Duplas (C/ ID DE MÊS PARA O SCROLL INTELIGENTE)
 html_matriz += "<div class='grid-row grid-header'>"
 html_matriz += "<div class='col-name' style='padding-left: 15px;'>DESCRIÇÃO DOS LANÇAMENTOS</div>"
 
 for idx, m in enumerate(meses_labels): 
-    # Adicionamos id='mes-X' para o JavaScript encontrar a coluna
     html_matriz += f'''
     <div class='col-val' id='mes-{idx + 1}' style='padding:0;'>
         <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px;'>{m.upper()}/{str(ano_selecionado)[-2:]}</div>
@@ -429,7 +446,7 @@ html_matriz += build_drilldown(df_saidas)
 
 html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
 
-# BLOCO DE RESULTADO
+# BLOCO DE RESULTADO SIMPLIFICADO
 html_matriz += render_linha("(ENTRADAS - SAÍDAS)", "res-r1", dummy_prev, l1_resultado)
 html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant)
 html_matriz += render_linha("RESULTADO CAIXA", "res-r6", dummy_prev, l3_acumulado)
@@ -451,7 +468,7 @@ if ano_selecionado == ano_atual:
             var targetCol = docs.getElementById('mes-{mes_atual}');
             
             if (wrapper && targetCol) {{
-                // Pega a posição da coluna do mês e desconta 300px da coluna congelada
+                // Pega a posição da coluna do mês e desconta a largura da coluna congelada
                 var offset = targetCol.offsetLeft - 300; 
                 wrapper.scrollTo({{left: offset, behavior: 'smooth'}});
             }}
