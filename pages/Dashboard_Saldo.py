@@ -333,10 +333,20 @@ def carregar_dados(data_inicio, data_fim):
                 
                 def check_nome_app(nome): return 'aplicacao' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower() or 'investimento' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
                 mask_is_app = df_app_full['Conta Bancária'].apply(check_nome_app)
-                mask_has_data = (df_app_full['Aplicações_Val'] != 0) | (df_app_full['Impostos_Val'] != 0) | (df_app_full['Rendimentos_Val'] != 0) | (df_app_full['Resgates_Val'] != 0) | (df_app_full['Saldo Inicial'] != 0) | (df_app_full['Saldo Final'] != 0)
                 
-                df_aplicacoes_nova = df_app_full[mask_is_app & mask_has_data].copy()
+                # MUDANÇA: Oculta linhas onde não houve movimentação NENHUMA e nem mudança no Saldo
+                mask_has_movimentacao = (
+                    (df_app_full['Aplicações_Val'] != 0) | 
+                    (df_app_full['Impostos_Val'] != 0) | 
+                    (df_app_full['Rendimentos_Val'] != 0) | 
+                    (df_app_full['Resgates_Val'] != 0) | 
+                    (round(df_app_full['Saldo Inicial'], 2) != round(df_app_full['Saldo Final'], 2))
+                )
+                
+                df_aplicacoes_nova = df_app_full[mask_is_app & mask_has_movimentacao].copy()
                 df_aplicacoes_nova = df_aplicacoes_nova.rename(columns={'Conta Bancária': 'banco', 'Saldo Inicial': 'inicial', 'Aplicações_Val': 'aplicaç', 'Impostos_Val': 'imposto', 'Rendimentos_Val': 'rendimento', 'Resgates_Val': 'resgate', 'Saldo Final': 'atual'})
+                
+                # O Total no KPI superior continua somando as contas visíveis e ocultas!
                 saldo_aplicado_kpi = df_app_full[mask_is_app]['Saldo Final'].sum()
         except Exception as e: print("Erro ao processar Aplicações do Extrato:", e)
 
@@ -382,7 +392,6 @@ resultado_liquido_mes = entradas_mes - saidas_mes
 # ==============================================================================
 # 4. GRÁFICOS E VARIÁVEIS DE DATA
 # ==============================================================================
-data_hoje = datetime.now().strftime('%d/%m/%Y %H:%M')
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
@@ -438,7 +447,7 @@ st.markdown(f"""
         <h1>PAINEL FINANCEIRO MENSAL</h1>
         <p>Controle Consolidado de Bancos</p>
     </div>
-    <div style="min-width: 200px;"></div> <!-- Placeholder para manter o título centralizado -->
+    <div style="min-width: 200px;"></div> <!-- Placeholder invisível para centralização correta -->
 </div>
 """, unsafe_allow_html=True)
 
@@ -531,7 +540,7 @@ with c3:
         html_app += '</tbody></table></div>'
         st.markdown(html_app, unsafe_allow_html=True)
     else:
-        st.markdown("<div class='tabela-container' style='display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc; padding: 20px;'>Nenhuma aplicação encontrada no período.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='tabela-container' style='display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; border: 1px dashed #ccc; padding: 20px;'>Nenhuma movimentação em aplicações encontrada no período.</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
