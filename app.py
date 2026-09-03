@@ -7,29 +7,18 @@ import textwrap
 st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page_icon="🏢")
 
 # ==============================================================================
-# 1. FUNÇÕES DE NAVEGAÇÃO E IMAGENS (ROTEAMENTO ABSOLUTO - ANTI-BUG CLOUD)
+# 1. REGISTRO OFICIAL DE PÁGINAS (EXIGÊNCIA DO STREAMLIT CLOUD)
 # ==============================================================================
-def acessar_painel(nome_arquivo):
-    """
-    Constrói o caminho absoluto do arquivo para driblar o bug de diretório 
-    do Streamlit Cloud quando o app está hospedado em subpastas.
-    """
-    # Descobre a pasta raiz exata onde este app.py está rodando no servidor
-    caminho_base = os.path.dirname(os.path.abspath(__file__))
-    
-    # Monta a rota absoluta (Ex: /mount/src/dashboard/pages/Dashboard_Saldo.py)
-    caminho_absoluto = os.path.join(caminho_base, "pages", nome_arquivo)
-    
-    try:
-        # Tenta rotear pelo caminho absoluto primeiro (Garantia no Linux/Cloud)
-        st.switch_page(caminho_absoluto)
-    except Exception:
-        try:
-            # Fallback para o comportamento normal caso rode no seu Windows
-            st.switch_page(f"pages/{nome_arquivo}")
-        except Exception as e:
-            st.error(f"Erro no servidor ao tentar acessar '{nome_arquivo}'. Rota tentada: {caminho_absoluto}")
+pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos")
+pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico")
+pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos")
 
+# Oculta o menu lateral feio e gerencia as rotas internamente
+st.navigation([pg_saldos, pg_fluxo, pg_pagar], position="hidden")
+
+# ==============================================================================
+# 2. FUNÇÃO PARA CARREGAR IMAGENS LOCAIS
+# ==============================================================================
 def get_img_b64(filepath):
     if os.path.exists(filepath):
         with open(filepath, "rb") as f:
@@ -40,7 +29,6 @@ def get_img_b64(filepath):
     else:
         return "linear-gradient(135deg, #eff6ff, #bfdbfe)"
 
-# --- CAMINHOS DAS IMAGENS ---
 img_saldos = get_img_b64("assets/preview_saldos.png")
 img_fluxo = get_img_b64("assets/preview_fluxo.png")
 img_pagar = get_img_b64("assets/preview_pagar.png")
@@ -51,9 +39,8 @@ def bg_style(img_data):
     else:
         return f"background-image: url('{img_data}');"
 
-
 # ==============================================================================
-# 2. CUSTOM CSS — ESTILO DOS CARTÕES (ADAPTADO PARA COMPONENTES NATIVOS)
+# 3. CUSTOM CSS — ESTILO DOS CARTÕES
 # ==============================================================================
 css = """
 <style>
@@ -80,7 +67,6 @@ header[data-testid="stHeader"] { display: none !important; }
 .hub-header h1 { font-size: 28px; font-weight: 800; color: var(--primary-dark); margin: 0 0 4px 0; letter-spacing: -0.5px; }
 .hub-header p { font-size: 14px; color: var(--text-muted); font-weight: 500; margin: 0; }
 
-/* ÁREA DA FOTO (PREVIEW) */
 .card-image {
     width: 100%;
     height: 160px;
@@ -98,7 +84,6 @@ header[data-testid="stHeader"] { display: none !important; }
     border-radius: 12px 12px 0 0;
 }
 
-/* ÁREA DE TEXTO DO CARTÃO NATIVO */
 .card-title {
     font-size: 16px;
     font-weight: 800;
@@ -115,7 +100,6 @@ header[data-testid="stHeader"] { display: none !important; }
     padding: 0 20px;
 }
 
-/* Modifica a borda padrão do container do Streamlit para parecer um cartão clicável */
 [data-testid="stVerticalBlockBorderWrapper"] {
     background-color: var(--surface);
     border: 1px solid var(--border) !important;
@@ -130,7 +114,6 @@ header[data-testid="stHeader"] { display: none !important; }
     border-color: #bfdbfe !important;
 }
 
-/* Estiliza o botão do Streamlit para parecer a setinha */
 .stButton > button {
     border: none !important;
     background: transparent !important;
@@ -152,7 +135,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 3. CONSTRUÇÃO DO PORTAL (SEM SENHA)
+# 4. CONSTRUÇÃO DO PORTAL (COM NAVEGAÇÃO SEGURA)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -162,7 +145,6 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-# Grid de cartões usando as estruturas nativas do Streamlit
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -171,7 +153,7 @@ with c1:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_saldos", use_container_width=True):
-            acessar_painel("Dashboard_Saldo.py")
+            st.switch_page(pg_saldos)
 
 with c2:
     with st.container(border=True):
@@ -179,7 +161,7 @@ with c2:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_fluxo", use_container_width=True):
-            acessar_painel("painel_fluxo_caixa.py")
+            st.switch_page(pg_fluxo)
 
 with c3:
     with st.container(border=True):
@@ -187,4 +169,4 @@ with c3:
         st.markdown("<div class='card-title' style='margin-top:20px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
         if st.button("Acessar Painel ➔", key="btn_pagar", use_container_width=True):
-            acessar_painel("painel_pagar.py")
+            st.switch_page(pg_pagar)
