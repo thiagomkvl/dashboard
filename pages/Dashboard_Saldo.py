@@ -10,16 +10,23 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import textwrap
 
-# Tente importar a conexão
+# BLINDAGEM MÁXIMA DE CONEXÃO
 try:
     from database import conectar_sheets
-except ImportError:
+except Exception as e:
     def conectar_sheets():
-        st.error("Arquivo 'database.py' não encontrado.")
+        st.error(f"Erro ao carregar 'database.py'. Detalhe técnico: {e}")
         return None
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
+
+# Exibe um alerta imediatamente se a conexão falhar, impedindo a tela de ficar em branco
+conn_test = None
+try:
+    conn_test = conectar_sheets()
+except Exception as base_error:
+    st.error(f"⚠️ A página tentou carregar, mas a sua conexão com o Google Sheets falhou e travou o sistema. Erro: {base_error}")
 
 # --- CUSTOM CSS ---
 css = """
