@@ -9,9 +9,9 @@ st.set_page_config(page_title="Portal Financeiro Executivo", layout="wide", page
 # ==============================================================================
 # 1. REGISTRO OFICIAL DE PÁGINAS (EXIGÊNCIA DO STREAMLIT CLOUD)
 # ==============================================================================
-pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos")
-pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico")
-pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos")
+pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Dashboard de Saldos", icon="📊")
+pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰")
+pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
 
 # Gerencia as rotas internamente e oculta o menu lateral padrão
 st.navigation([pg_saldos, pg_fluxo, pg_pagar], position="hidden")
@@ -102,7 +102,7 @@ header[data-testid="stHeader"] { display: none !important; }
     color: var(--text-muted);
     line-height: 1.5;
     font-weight: 500;
-    margin-bottom: 5px;
+    margin-bottom: 15px;
     padding: 0 20px;
 }
 
@@ -121,20 +121,20 @@ header[data-testid="stHeader"] { display: none !important; }
     border-color: #bfdbfe !important;
 }
 
-/* Estiliza o botão do Streamlit para parecer a setinha */
-.stButton > button {
-    border: none !important;
-    background: transparent !important;
-    color: #cbd5e1 !important;
-    font-weight: bold !important;
-    text-align: right !important;
+/* Alinha o st.page_link perfeitamente à direita dentro do cartão */
+.stPageLink {
     display: flex !important;
     justify-content: flex-end !important;
-    box-shadow: none !important;
     padding-right: 20px !important;
-    margin-top: 10px !important;
+    margin-bottom: 15px !important;
 }
-.stButton > button:hover {
+.stPageLink a {
+    color: #cbd5e1 !important;
+    font-weight: bold !important;
+    text-decoration: none !important;
+    transition: color 0.3s ease !important;
+}
+.stPageLink a:hover {
     color: var(--primary) !important;
 }
 </style>
@@ -143,7 +143,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 4. CONSTRUÇÃO DO PORTAL (DIRETO E SEM SENHA)
+# 4. CONSTRUÇÃO DO PORTAL (COM ST.PAGE_LINK NATIVO RESPONSIVO)
 # ==============================================================================
 st.markdown("""
 <div class="hub-header">
@@ -152,7 +152,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Grid de cartões utilizando as rotas seguras do st.Page
+# Grid de cartões utilizando st.page_link para navegação instantânea garantida
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -160,21 +160,18 @@ with c1:
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_saldos)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:20px;'>Dashboard de Saldos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.</div>", unsafe_allow_html=True)
-        if st.button("Acessar Painel ➔", key="btn_saldos", use_container_width=True):
-            st.switch_page(pg_saldos)
+        st.page_link(pg_saldos, label="Acessar Painel ➔")
 
 with c2:
     with st.container(border=True):
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_fluxo)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:20px;'>Fluxo de Caixa Analítico</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.</div>", unsafe_allow_html=True)
-        if st.button("Acessar Painel ➔", key="btn_fluxo", use_container_width=True):
-            st.switch_page(pg_fluxo)
+        st.page_link(pg_fluxo, label="Acessar Painel ➔")
 
 with c3:
     with st.container(border=True):
         st.markdown(f'<div class="image-container"><div class="card-image" style="{bg_style(img_pagar)}"></div></div>', unsafe_allow_html=True)
         st.markdown("<div class='card-title' style='margin-top:20px;'>Painel de Pagamentos</div>", unsafe_allow_html=True)
         st.markdown("<div class='card-desc'>Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.</div>", unsafe_allow_html=True)
-        if st.button("Acessar Painel ➔", key="btn_pagar", use_container_width=True):
-            st.switch_page(pg_pagar)
+        st.page_link(pg_pagar, label="Acessar Painel ➔")
