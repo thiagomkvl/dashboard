@@ -107,6 +107,9 @@ css = """
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
+def injetar_html(codigo_html):
+    st.markdown(codigo_html.replace('\n', ''), unsafe_allow_html=True)
+
 # ==============================================================================
 # 2. FUNÇÕES DE LIMPEZA E CÁLCULO
 # ==============================================================================
@@ -192,8 +195,11 @@ def preparar_dados_matriz(ano):
         df_ext['Vl_Cred'] = df_ext[col_cred].apply(limpa_valor_bruto)
         df_ext['SubGrupo'] = df_ext[col_subgrupo].fillna('OUTROS').astype(str).str.strip().str.upper()
         
-        # Filtra Transferências
-        serie_tipo = df_ext[col_tipo].astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ASCII', 'ignore').decode('utf-8'))
+        # Filtra Transferências usando a regra robusta que não quebra com campos nulos
+        def normalizar_texto(txt): 
+            return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
+        
+        serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
         is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
         df_ext = df_ext[~is_transf]
 
