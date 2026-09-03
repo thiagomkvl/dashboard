@@ -57,7 +57,7 @@ css = """
     .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
     .kpi-card.total { background: linear-gradient(135deg, #008A8C, #006869); }
     .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
-    .kpi-card.resultado { background: linear-gradient(135deg, #2563eb, #1e40af); } /* Azul Escuro */
+    .kpi-card.resultado { background: linear-gradient(135deg, #006E6F, #004b4c); } /* Azul Escuro */
     .kpi-card.aplicado { background: linear-gradient(135deg, #004D4E, #003334); }
     .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
     .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
