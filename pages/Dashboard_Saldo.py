@@ -204,8 +204,8 @@ def carregar_dados(data_inicio, data_fim):
             
         df_extratos = None
         df_fim_mes = pd.DataFrame()
-        entradas_operacionais = 0.0
-        saidas_operacionais = 0.0
+        entradas_periodo = 0.0
+        saidas_periodo = 0.0
         df_process = pd.DataFrame()
         df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %'])
 
@@ -249,9 +249,19 @@ def carregar_dados(data_inicio, data_fim):
                 df_period = df_process[(df_process['Data'] >= dt_ini_pd) & (df_process['Data'] <= dt_fim_pd)].copy()
                 df_extratos = df_period 
 
+                def definir_tipo_aux(nome): 
+                    n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                    if 'getnet' in n_norm: return 'Limite'
+                    return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
+
                 if not df_period.empty:
                     df_period_grouped = df_period.groupby('Conta Bancária').agg({'Cred_Op': 'sum', 'Deb_Op': 'sum', 'Cred_Tr': 'sum', 'Deb_Tr': 'sum'}).reset_index()
                     df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
+                    
+                    # Totais gerais de caixa considerando Contas Disponíveis e Aplicações (Sem restrição estrita de "Operacional" para bater com o saldo diário)
+                    df_period_caixa = df_period[df_period['Conta Bancária'].apply(definir_tipo_aux).isin(['Disponível', 'Aplicação']) & (~df_period['É Transf'])]
+                    entradas_periodo = df_period_caixa['Vl Crédito'].sum()
+                    saidas_periodo = df_period_caixa['Vl Débito'].sum()
                 else:
                     for c in ['Cred_Op', 'Deb_Op', 'Cred_Tr', 'Deb_Tr']: df_fim_mes[c] = 0.0
                 
@@ -306,9 +316,6 @@ def carregar_dados(data_inicio, data_fim):
             df_graficos['Delta %'] = delta_pct
             df_graficos['Data_Label'] = df_graficos['Data'].dt.strftime('%d/%m')
 
-        entradas_operacionais = df_fim_mes['Entrada Op'].sum()
-        saidas_operacionais = df_fim_mes['Saída Op'].sum()
-
         df_aplicacoes_nova = pd.DataFrame()
         saldo_aplicado_kpi = 0.0
         try:
@@ -347,7 +354,7 @@ def carregar_dados(data_inicio, data_fim):
                 saldo_aplicado_kpi = df_app_full[mask_is_app]['Saldo Final'].sum()
         except Exception as e: print("Erro ao processar Aplicações do Extrato:", e)
 
-        return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_operacionais, saidas_operacionais, data_inicio, data_fim
+        return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_periodo, saidas_periodo, data_inicio, data_fim
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
