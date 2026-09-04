@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO COM CORES CLARAS E COLUNA CONGELADA)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM Z-INDEX E STICKY CORRIGIDOS)
 # ==============================================================================
 css = """
 <style>
@@ -61,27 +61,37 @@ css = """
         justify-content: space-between;
     }
     
-    .chart-subtitle-total {
-        font-size: 12px;
+    .chart-header-integrated {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .chart-totals-badge {
+        font-size: 11px;
         font-weight: 600;
         color: var(--text-muted);
-        margin-bottom: 10px;
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        padding: 4px 10px;
+        border-radius: 6px;
     }
     
-    /* KPIS COM CORES PASTEL SUAVES */
+    /* KPIS COM CORES PASTEL */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
     .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
     .kpi-item.bg-blue { background: #f0f9ff; border-color: #bae6fd; }
     .kpi-item.bg-green { background: #f0fdf4; border-color: #bbf7d0; }
     .kpi-item.bg-yellow { background: #fefce8; border-color: #fef08a; }
-    .kpi-item.bg-red { background: #fef2f2; border-color: #fecaca; }
     
     .kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .kpi-value { font-size: 22px; font-weight: 800; color: var(--text-dark); margin: 6px 0 2px 0; }
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* TABELA DE FASES COM COLUNA CONGELADA (STICKY) */
+    /* TABELA DE FASES COM STICKY CORRIGIDO (SEM SOBREPOSIÇÃO) */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -92,14 +102,27 @@ css = """
         box-shadow: var(--shadow-sm);
     }
     .fases-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
-    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 3; text-align: left; }
+    
+    /* Cabeçalho fixo topo e colunas esquerda */
+    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 10; text-align: left; }
     .fases-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); background: #ffffff; }
     
-    /* Congela as duas primeiras colunas (Obra e Tarefa) */
-    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 2; background: #f8fafc; border-right: 1px solid var(--border-color); }
+    /* Congelando as colunas 1, 2, 3 e 4 com z-index adequado para não vazar texto */
+    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
     .fases-table td:nth-child(1) { background: #ffffff; }
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 120px; z-index: 2; background: #f8fafc; border-right: 2px solid var(--border-color); }
+    .fases-table th:nth-child(1) { z-index: 20; }
+
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 110px; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
     .fases-table td:nth-child(2) { background: #ffffff; }
+    .fases-table th:nth-child(2) { z-index: 20; }
+
+    .fases-table th:nth-child(3), .fases-table td:nth-child(3) { position: sticky; left: 320px; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
+    .fases-table td:nth-child(3) { background: #ffffff; }
+    .fases-table th:nth-child(3) { z-index: 20; }
+
+    .fases-table th:nth-child(4), .fases-table td:nth-child(4) { position: sticky; left: 410px; z-index: 5; background: #f8fafc; border-right: 2px solid var(--border-color); }
+    .fases-table td:nth-child(4) { background: #ffffff; }
+    .fases-table th:nth-child(4) { z-index: 20; }
 
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { font-weight: 900; background: #e2e8f0 !important; border-top: 2px solid var(--border-color); color: var(--text-dark); }
@@ -284,9 +307,7 @@ kpi_html = (
 )
 st.markdown(kpi_html, unsafe_allow_html=True)
 
-# --- LINHA 2: Gráfico de Linha com Totalizador Abaixo da Data ---
-st.markdown("<div class='section-title'>EVOLUÇÃO MENSAL: ORÇADO VS REALIZADO</div>", unsafe_allow_html=True)
-
+# --- LINHA 2: Gráfico de Linha Mensal COM TOTALIZADORES INTEGRADOS NO CABEÇALHO ---
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
 if obra_selecionada != "Todas":
@@ -306,10 +327,11 @@ tot_orc_grafico = df_linha['Valor_Orcado'].sum()
 tot_real_grafico = df_linha['Valor_Realizado'].dropna().sum()
 
 st.markdown(f"""
+<div class='section-title'>
+    <span>EVOLUÇÃO MENSAL: ORÇADO VS REALIZADO</span>
+    <span class='chart-totals-badge'>Total Período — Orçado: <b style='color:var(--blue-main);'>{formatar_moeda(tot_orc_grafico)}</b> | Realizado: <b style='color:var(--green-main);'>{formatar_moeda(tot_real_grafico)}</b></span>
+</div>
 <div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm); margin-bottom:20px;'>
-    <div class='chart-subtitle-total'>
-        <b>Totalizadores no Período:</b> Orçado: <span style='color:var(--blue-main);'>{formatar_moeda(tot_orc_grafico)}</span> | Realizado: <span style='color:var(--green-main);'>{formatar_moeda(tot_real_grafico)}</span>
-    </div>
 """, unsafe_allow_html=True)
 
 meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
@@ -339,7 +361,7 @@ st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': F
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) COM FORMATO CORRIGIDO
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
 # ==============================================================================
 st.markdown("<div class='section-title'>DETALHAMENTO DO ORÇADO X REALIZADO - FASES DA OBRA</div>", unsafe_allow_html=True)
 
@@ -360,10 +382,8 @@ if not df_fases.empty:
         html_fases += f"<tr class='{tr_class}'>"
         for i, val in enumerate(row.values):
             val_str = str(val) if pd.notna(val) else "-"
-            # Se for coluna de valor monetário (índice 2 ou >= 4 dependendo da estrutura)
             try:
                 num_v = float(val_str.replace('.', '').replace(',', '.'))
-                # Se não for a coluna de percentual (%) nem índice 3
                 if i != 3 and num_v > 99:
                     val_str = formatar_moeda(num_v)
                 elif i == 3 and num_v <= 1:
@@ -384,6 +404,8 @@ st.markdown("<div class='section-title'>DETALHAMENTO DE PAGAMENTOS REALIZADOS</d
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
+    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
+    
     html_real = """
     <div style='max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: #ffffff;'>
     <table class='realizado-table'>
@@ -398,7 +420,6 @@ if not df_real_detalhe.empty:
         </thead>
         <tbody>
     """
-    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
     for _, tr in df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True]).iterrows():
         html_real += f"""
         <tr>
