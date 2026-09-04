@@ -68,10 +68,6 @@ css = """
     .kpi-value { font-size: 24px; font-weight: 800; color: var(--text-dark); margin: 8px 0 4px 0; }
     .kpi-subtitle { font-size: 12px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
-    .kpi-icon { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;}
-    .icon-red { background: #fee2e2; color: var(--red-main); }
-    .icon-green { background: #d1fae5; color: var(--green-main); }
-    .icon-blue { background: #dbeafe; color: var(--blue-main); }
     
     /* TABELA STATUS DAS OBRAS */
     .status-table { width: 100%; border-collapse: collapse; }
@@ -85,16 +81,18 @@ css = """
     .prog-bar-bg { flex-grow: 1; background: #e5e7eb; height: 6px; border-radius: 4px; overflow: hidden; position: relative; }
     .prog-bar-fill { height: 100%; border-radius: 4px; }
     
-    /* CHIPS DE STATUS */
-    .status-chip { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-align: center; display: inline-block; white-space: nowrap; }
-    .chip-andamento { background: var(--blue-soft); color: var(--blue-main); }
-    .chip-atencao { background: #fef3c7; color: var(--yellow-main); }
-    .chip-estourado { background: #fee2e2; color: var(--red-main); }
-    
     .inv-text-main { font-size: 13px; font-weight: 800; color: var(--text-dark); }
     .inv-text-sub { font-size: 11px; font-weight: 500; color: var(--text-muted); }
 
-    /* DETALHAMENTO DE FORNECEDORES (DRILL-DOWN) */
+    /* DETALHAMENTO DE FORNECEDORES (SCROLL) */
+    .scrollable-container {
+        max-height: 450px;
+        overflow-y: auto;
+        padding-right: 8px;
+    }
+    .scrollable-container::-webkit-scrollbar { width: 6px; }
+    .scrollable-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+    
     .forn-group { margin-bottom: 15px; }
     .forn-obra-title { font-size: 14px; font-weight: 800; color: var(--blue-main); margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 8px;}
     details.forn-details { background: #f9fafb; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
@@ -128,6 +126,9 @@ def limpa_valor(valor):
 
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+def formatar_moeda_curta(valor):
+    return f"R$ {valor:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def extract_month(m):
     try:
@@ -215,12 +216,39 @@ if obra_selecionada != "Todas":
     df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
 
 # ==============================================================================
-# 5. CÁLCULOS GERAIS
+# 5. CÁLCULOS GERAIS E ANÁLISE MÊS A MÊS (MoM)
 # ==============================================================================
 total_orcado = df_orc_filtrado['Valor_Orcado'].sum()
 total_realizado = df_real_filtrado['Valor_Realizado'].sum()
+saldo_orcamento = total_orcado - total_realizado
 consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
-qtd_obras_ativas = len([o for o in lista_obras if (obra_selecionada == "Todas" or o == obra_selecionada)])
+
+# Lógica MoM (Mês Atual vs Mês Anterior)
+mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (df_realizado['Mes'].max() if not df_realizado.empty else 0)
+mes_anterior = mes_atual - 1
+
+# Usa dataframe original para o MoM para ignorar o filtro "Acumulado" e focar no mês isolado
+df_real_mom = df_realizado.copy()
+if obra_selecionada != "Todas":
+    df_real_mom = df_real_mom[df_real_mom['Obra'] == obra_selecionada]
+
+realizado_atual = df_real_mom[df_real_mom['Mes'] == mes_atual]['Valor_Realizado'].sum()
+realizado_anterior = df_real_mom[df_real_mom['Mes'] == mes_anterior]['Valor_Realizado'].sum()
+
+if realizado_anterior > 0:
+    mom_pct = ((realizado_atual / realizado_anterior) - 1) * 100
+else:
+    mom_pct = 100 if realizado_atual > 0 else 0
+
+if mom_pct > 0:
+    mom_str = f"↗ +{mom_pct:.1f}% vs Mês {mes_anterior:02d}"
+    mom_color = "var(--red-main)" # Vermelho pois o gasto aumentou
+elif mom_pct < 0:
+    mom_str = f"↘ {mom_pct:.1f}% vs Mês {mes_anterior:02d}"
+    mom_color = "var(--green-main)" # Verde pois o gasto reduziu
+else:
+    mom_str = f"→ 0.0% vs Mês {mes_anterior:02d}"
+    mom_color = "var(--text-muted)"
 
 # Tabela Matriz
 df_orc_grp = df_orc_filtrado.groupby('Obra')['Valor_Orcado'].sum().reset_index()
@@ -242,10 +270,10 @@ st.markdown("""
 # --- LINHA 1: KPIs ---
 kpi_html = (
     "<div class='kpi-grid'>"
-    f"<div class='kpi-item'><div class='kpi-title'>Obras em Execução</div><div class='kpi-value'>{qtd_obras_ativas}</div><div class='kpi-subtitle'>Projetos ativos</div><div class='kpi-icon icon-red'>O</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado acumulado</div><div class='kpi-icon icon-red'>$</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Investimento Realizado</div><div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div><div class='kpi-icon icon-green'>%</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Consumo Médio</div><div class='kpi-value'>{consumo_geral_perc:.1f}%</div><div class='kpi-subtitle'>Média financeira global</div><div class='kpi-icon icon-blue'>M</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Investimento Realizado</div><div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Restante Orçamento Obra</div><div class='kpi-value' style='color: {'var(--red-main)' if saldo_orcamento < 0 else 'var(--text-dark)'};'>{formatar_moeda(saldo_orcamento)}</div><div class='kpi-subtitle'>Saldo disponível</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Pagamento Mês ({mes_atual:02d})</div><div class='kpi-value'>{formatar_moeda(realizado_atual)}</div><div class='kpi-subtitle' style='color: {mom_color}; font-weight: 600;'>{mom_str}</div></div>"
     "</div>"
 )
 st.markdown(kpi_html, unsafe_allow_html=True)
@@ -258,32 +286,23 @@ with c1:
         "<div class='base-card'>"
         "<div class='card-header'>STATUS DAS OBRAS (ORÇAMENTO VS REALIZADO)</div>"
         "<table class='status-table'>"
-        "<thead><tr><th>Obra</th><th>Orçamento Consumido</th><th style='text-align:center;'>Status</th><th>Investimento Realizado</th></tr></thead>"
+        "<thead><tr><th>Obra</th><th>Orçamento Consumido</th><th>Investimento Realizado</th></tr></thead>"
         "<tbody>"
     )
     
     for _, row in df_matriz.sort_values('Valor_Orcado', ascending=False).iterrows():
         cons = row['Consumo (%)']
         
-        if cons < 80:
-            status_txt = "Em Andamento"
-            chip_class = "chip-andamento"
-            bar_color = "var(--blue-main)"
-        elif cons <= 100:
-            status_txt = "Atenção"
-            chip_class = "chip-atencao"
-            bar_color = "var(--yellow-main)"
-        else:
-            status_txt = "Estourado"
-            chip_class = "chip-estourado"
-            bar_color = "var(--red-main)"
+        # Cor da barra
+        if cons < 80: bar_color = "var(--blue-main)"
+        elif cons <= 100: bar_color = "var(--yellow-main)"
+        else: bar_color = "var(--red-main)"
             
         html_status += (
             "<tr>"
             f"<td><div class='obra-name'>{row['Obra']}</div></td>"
             f"<td><div class='prog-container'><div class='prog-text'>{cons:.0f}%</div>"
             f"<div class='prog-bar-bg'><div class='prog-bar-fill' style='width: {min(cons, 100):.1f}%; background-color: {bar_color};'></div></div></div></td>"
-            f"<td style='text-align:center;'><span class='status-chip {chip_class}'>{status_txt}</span></td>"
             f"<td><div class='inv-text-main'>{formatar_moeda(row['Valor_Realizado'])}</div><div class='inv-text-sub'>de {formatar_moeda(row['Valor_Orcado'])}</div></td>"
             "</tr>"
         )
@@ -293,14 +312,18 @@ with c1:
 
 with c2:
     st.markdown("<div class='base-card' style='padding-bottom: 0;'><div class='card-header'>DISTRIBUIÇÃO DO INVESTIMENTO</div>", unsafe_allow_html=True)
-    df_donut = df_matriz[df_matriz['Valor_Realizado'] > 0]
+    df_donut = df_matriz[df_matriz['Valor_Realizado'] > 0].copy()
     
     if not df_donut.empty:
+        # Cria a string com o valor em R$ para exibir dentro do gráfico
+        text_labels = [formatar_moeda_curta(v) for v in df_donut['Valor_Realizado']]
+        
         fig_donut = go.Figure(data=[go.Pie(
             values=df_donut['Valor_Realizado'], 
             labels=df_donut['Obra'], 
             hole=0.6,
-            textinfo='none',
+            textinfo='text',
+            text=text_labels,
             hoverinfo='label+percent'
         )])
         fig_donut.update_layout(
@@ -308,20 +331,20 @@ with c2:
             legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
             margin=dict(t=0, b=0, l=0, r=0), 
             height=300,
-            annotations=[dict(text=f"<b>R$ {total_realizado/1000000:.1f} mi</b><br>Total Realizado", x=0.5, y=0.5, font_size=12, showarrow=False)]
+            annotations=[dict(text=f"<b>R$ {total_realizado/1000000:.1f} mi</b><br>Total", x=0.5, y=0.5, font_size=12, showarrow=False)]
         )
         st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Sem dados de investimento para plotar.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- LINHA 3: Pagamentos por Fornecedor (Expansível / Drill-Down) ---
+# --- LINHA 3: Pagamentos por Fornecedor (Expansível / Drill-Down e com Limite Scroll) ---
 st.markdown("<div class='base-card'><div class='card-header'>TOTAL DE PAGAMENTOS REALIZADOS POR FORNECEDOR</div>", unsafe_allow_html=True)
 
 df_drill = df_real_filtrado[df_real_filtrado['Obra'].isin(lista_obras)].copy()
 
 if not df_drill.empty:
-    html_forn = ""
+    html_forn = "<div class='scrollable-container'>"
     for obra in sorted(df_drill['Obra'].unique()):
         df_obra = df_drill[df_drill['Obra'] == obra]
         
@@ -343,6 +366,8 @@ if not df_drill.empty:
             html_forn += "</tbody></table></details>"
             
         html_forn += "</div>"
+        
+    html_forn += "</div>" # fecha a div do scroll
     st.markdown(html_forn, unsafe_allow_html=True)
 else:
     st.info("Não há pagamentos realizados para os filtros selecionados.")
