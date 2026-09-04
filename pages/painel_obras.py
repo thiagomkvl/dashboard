@@ -8,7 +8,7 @@ import textwrap
 # ==============================================================================
 # 0. CONFIGURAÇÃO DA PÁGINA
 # ==============================================================================
-st.set_page_config(page_title="Acompanhamento de Obras", layout="wide", page_icon="🏗️", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Acompanhamento de Obras", layout="wide", initial_sidebar_state="expanded")
 
 # BLINDAGEM MÁXIMA DE CONEXÃO
 try:
@@ -68,7 +68,7 @@ css = """
     .kpi-value { font-size: 24px; font-weight: 800; color: var(--text-dark); margin: 8px 0 4px 0; }
     .kpi-subtitle { font-size: 12px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
-    .kpi-icon { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .kpi-icon { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold;}
     .icon-red { background: #fee2e2; color: var(--red-main); }
     .icon-green { background: #d1fae5; color: var(--green-main); }
     .icon-blue { background: #dbeafe; color: var(--blue-main); }
@@ -246,25 +246,25 @@ kpi_html = f"""
         <div class='kpi-title'>Obras em Execução</div>
         <div class='kpi-value'>{qtd_obras_ativas}</div>
         <div class='kpi-subtitle'>Projetos ativos</div>
-        <div class='kpi-icon icon-red'>🏗️</div>
+        <div class='kpi-icon icon-red'>O</div>
     </div>
     <div class='kpi-item'>
         <div class='kpi-title'>Orçamento Total</div>
         <div class='kpi-value'>{formatar_moeda(total_orcado)}</div>
         <div class='kpi-subtitle'>Valor planejado acumulado</div>
-        <div class='kpi-icon icon-red'>💰</div>
+        <div class='kpi-icon icon-red'>$</div>
     </div>
     <div class='kpi-item'>
         <div class='kpi-title'>Investimento Realizado</div>
         <div class='kpi-value'>{formatar_moeda(total_realizado)}</div>
         <div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div>
-        <div class='kpi-icon icon-green'>📈</div>
+        <div class='kpi-icon icon-green'>%</div>
     </div>
     <div class='kpi-item'>
         <div class='kpi-title'>Consumo Médio</div>
         <div class='kpi-value'>{consumo_geral_perc:.1f}%</div>
         <div class='kpi-subtitle'>Média financeira global</div>
-        <div class='kpi-icon icon-blue'>📊</div>
+        <div class='kpi-icon icon-blue'>M</div>
     </div>
 </div>
 """
@@ -306,11 +306,10 @@ with c1:
             chip_class = "chip-estourado"
             bar_color = "var(--red-main)"
             
-        # Adicionado o limitador de casas decimais na largura da barra de progresso (.1f)
         html_status += f"""
             <tr>
                 <td>
-                    <div class='obra-name'>🏢 {row['Obra']}</div>
+                    <div class='obra-name'>{row['Obra']}</div>
                 </td>
                 <td>
                     <div class='prog-container'>
@@ -372,7 +371,7 @@ if not df_drill.empty:
         df_obra = df_drill[df_drill['Obra'] == obra]
         
         html_forn += f"<div class='forn-group'>"
-        html_forn += f"<div class='forn-obra-title'><span>🏗️</span> {obra}</div>"
+        html_forn += f"<div class='forn-obra-title'>{obra}</div>"
         
         # Agrupa os fornecedores dessa obra e ordena pelo maior valor pago
         fornecedores_soma = df_obra.groupby('Fornecedor')['Valor_Realizado'].sum().sort_values(ascending=False)
