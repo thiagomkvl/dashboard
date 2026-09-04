@@ -117,7 +117,7 @@ css = """
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
-    /* TABELA DE FASES COM STICKY CORRIGIDO */
+    /* TABELA DE FASES / REALIZADO COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -159,17 +159,9 @@ css = """
     .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
     .fases-table td:nth-child(1) { background: #ffffff; }
 
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 150px; z-index: 10; background: #ffffff; border-right: 1px solid var(--border-color); }
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 150px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
     .fases-table th:nth-child(2) { z-index: 20; background: #f8fafc; }
     .fases-table td:nth-child(2) { background: #ffffff; }
-
-    .fases-table th:nth-child(3), .fases-table td:nth-child(3) { position: sticky; left: 320px; z-index: 10; background: #ffffff; border-right: 1px solid var(--border-color); }
-    .fases-table th:nth-child(3) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(3) { background: #ffffff; }
-
-    .fases-table th:nth-child(4), .fases-table td:nth-child(4) { position: sticky; left: 440px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
-    .fases-table th:nth-child(4) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(4) { background: #ffffff; }
 
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { 
@@ -504,7 +496,7 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTILO EXPANSÍVEL / DRLL-DOWN)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTREITAMENTE POR OBRA)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
@@ -512,8 +504,9 @@ df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
     map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
     
-    df_group = df_real_detalhe.groupby(['Obra', 'Fornecedor', 'Mes'])['Valor_Realizado'].sum().reset_index()
-    df_matrix = df_group.pivot_table(index=['Obra', 'Fornecedor'], columns='Mes', values='Valor_Realizado', fill_value=0)
+    # Agrupa estritamente por Obra e Mês (sem poluir com fornecedores na tabela principal)
+    df_group = df_real_detalhe.groupby(['Obra', 'Mes'])['Valor_Realizado'].sum().reset_index()
+    df_matrix = df_group.pivot_table(index='Obra', columns='Mes', values='Valor_Realizado', fill_value=0)
     
     for m in range(2, 13):
         if m not in df_matrix.columns:
@@ -524,9 +517,9 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
     
-    # Renderiza com o mesmo padrão visual (fases-table-container) e st.expander para cada fornecedor/obra
+    # Renderiza no mesmo padrão visual compacto (fases-table-container)
     html_matrix = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    html_matrix += "<th>Obra / Categoria</th><th>Fornecedor</th><th style='text-align:right;'>TOTAL</th>"
+    html_matrix += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
         html_matrix += f"<th style='text-align:right;'>{col_m}</th>"
     html_matrix += "</tr></thead><tbody>"
@@ -535,16 +528,17 @@ if not df_real_detalhe.empty:
     
     for _, row in df_matrix.iterrows():
         obra_r = row['Obra']
-        forn_r = row['Fornecedor']
         tot_r = row['TOTAL']
         
-        with st.expander(f"{obra_r}  |  {forn_r}  —  Total: {formatar_moeda(tot_r)}"):
-            df_trans_esp = df_real_detalhe[(df_real_detalhe['Obra'] == obra_r) & (df_real_detalhe['Fornecedor'] == forn_r)].sort_values('Mes')
+        # Expander limpo para abrir os fornecedores e notas fiscais daquela obra ao clicar
+        with st.expander(f"📁 {obra_r}  —  Total Realizado: {formatar_moeda(tot_r)}"):
+            df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor'])
             st.markdown("""
             <table class='transacao-subtable'>
                 <thead>
                     <tr>
                         <th>Data Pgto</th>
+                        <th>Fornecedor</th>
                         <th>NF / Doc</th>
                         <th>Mês Ref.</th>
                         <th style='text-align:right;'>Valor Realizado</th>
@@ -556,6 +550,7 @@ if not df_real_detalhe.empty:
                 st.markdown(f"""
                 <tr>
                     <td>{tr['Data_Pgto']}</td>
+                    <td><b>{tr['Fornecedor']}</b></td>
                     <td>{tr['NF']}</td>
                     <td>Mês {tr['Mes']:02d}</td>
                     <td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>
@@ -563,7 +558,7 @@ if not df_real_detalhe.empty:
                 """, unsafe_allow_html=True)
             st.markdown("</tbody></table>", unsafe_allow_html=True)
 
-        row_html = f"<tr><td><b>{obra_r}</b></td><td>{forn_r}</td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
+        row_html = f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
         for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
             val_m = row[col_m]
             row_html += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
@@ -572,7 +567,7 @@ if not df_real_detalhe.empty:
         
     # Linha de Total Geral
     tot_geral_real = df_matrix['TOTAL'].sum()
-    total_row_html = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td></td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
+    total_row_html = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
         tot_col_m = df_matrix[col_m].sum()
         total_row_html += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
