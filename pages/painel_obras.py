@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM Z-INDEX E STICKY CORRIGIDOS)
 # ==============================================================================
 css = """
 <style>
@@ -82,6 +82,17 @@ css = """
         box-shadow: var(--shadow-sm);
         margin-bottom: 20px;
     }
+    
+    .monthly-total-card {
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 8px 2px;
+        text-align: center;
+    }
+    .m-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+    .m-orc { font-size: 10px; font-weight: 800; color: var(--blue-main); }
+    .m-real { font-size: 10px; font-weight: 800; color: var(--green-main); }
     
     /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
@@ -378,7 +389,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES MÊS A MÊS ALINHADOS VIA PLOTLY X-AXIS TICKS
+# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES MÊS A MÊS ABAIXO (VIA ST.COLUMNS)
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -424,7 +435,7 @@ fig_linha.update_layout(
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
-# GRID DE TOTALIZADORES MÊS A MÊS ALINHADOS EXATAMENTE 1:1 COM AS 11 COLUNAS DO GRÁFICO
+# GRID DE TOTALIZADORES MÊS A MÊS COM ST.COLUMNS (ESTÁVEL)
 cols_meses = st.columns(11)
 for idx, r in df_linha.iterrows():
     m_nome = r['Mes_Nome']
