@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO LIMPO)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM UNIDADE ÚNICA MÊS A MÊS)
 # ==============================================================================
 css = """
 <style>
@@ -73,6 +73,50 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
+    /* TABELA UNIFICADA DE TOTALIZADORES MÊS A MÊS */
+    .unified-summary-box {
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+        margin-top: 10px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .unified-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        text-align: center;
+    }
+    .unified-table th {
+        background: #f8fafc;
+        color: var(--text-dark);
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 10px 4px;
+        border-bottom: 2px solid var(--border-color);
+        border-right: 1px solid #f1f5f9;
+    }
+    .unified-table th:last-child { border-right: none; }
+    .unified-table td {
+        padding: 10px 4px;
+        border-bottom: 1px solid #f1f5f9;
+        border-right: 1px solid #f1f5f9;
+    }
+    .unified-table td:last-child { border-right: none; }
+    .row-label {
+        text-align: left;
+        padding-left: 15px !important;
+        font-weight: 700;
+        color: var(--text-muted);
+        background: #fafaf9;
+        width: 130px;
+        border-right: 2px solid var(--border-color) !important;
+    }
+    .val-real { font-weight: 800; color: var(--green-main); }
+    .val-orc { font-weight: 800; color: var(--blue-main); }
+
     /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
@@ -368,7 +412,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL SEM RÓTULOS REPETITIVOS E COM LINHA ÚNICA NATIVA
+# LINHA 2: GRÁFICO DE LINHA MENSAL E TABELA UNIFICADA 3 LINHAS (MÊS, REALIZADO, ORÇADO)
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -413,24 +457,30 @@ fig_linha.update_layout(
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
-# LINHA ÚNICA DE TOTALIZADORES MÊS A MÊS COM ST.COLUMNS NATIVO (ESTÁVEL)
-cols_meses = st.columns(11)
-for idx, r in df_linha.iterrows():
-    m_nome = r['Mes_Nome']
-    v_orc = r['Valor_Orcado']
+# TABELA UNIFICADA 3 LINHAS (MÊS, REALIZADO, ORÇADO)
+html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
+html_unified += "<th class='row-label' style='background:#f8fafc;'>Mês</th>"
+for _, r in df_linha.iterrows():
+    html_unified += f"<th>{r['Mes_Nome']}</th>"
+html_unified += "</tr></thead><tbody>"
+
+# Linha Realizado
+html_unified += "<tr><td class='row-label'>Realizado</td>"
+for _, r in df_linha.iterrows():
     v_real = r['Valor_Realizado']
     val_real_str = formatar_moeda_curta(v_real) if pd.notna(v_real) else "-"
-    
-    with cols_meses[idx]:
-        st.markdown(f"""
-        <div style='background:#ffffff; border:1px solid var(--border-color); border-radius:6px; padding:8px 4px; text-align:center; box-shadow:var(--shadow-sm);'>
-            <div style='font-size:11px; font-weight:800; color:var(--text-dark); text-transform:uppercase; margin-bottom:6px; border-bottom:1px solid #e2e8f0; padding-bottom:4px;'>{m_nome}</div>
-            <div style='font-size:9px; font-weight:700; color:var(--text-muted);'>Realizado</div>
-            <div style='font-size:11px; font-weight:800; color:var(--green-main);'>{val_real_str}</div>
-            <div style='font-size:9px; font-weight:700; color:var(--text-muted); margin-top:4px;'>Orçado</div>
-            <div style='font-size:11px; font-weight:800; color:var(--blue-main);'>{formatar_moeda_curta(v_orc)}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    html_unified += f"<td class='val-real'>{val_real_str}</td>"
+html_unified += "</tr>"
+
+# Linha Orçado
+html_unified += "<tr><td class='row-label'>Orçado</td>"
+for _, r in df_linha.iterrows():
+    v_orc = r['Valor_Orcado']
+    html_unified += f"<td class='val-orc'>{formatar_moeda_curta(v_orc)}</td>"
+html_unified += "</tr>"
+
+html_unified += "</tbody></table></div>"
+st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
 # 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
