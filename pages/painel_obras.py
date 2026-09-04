@@ -73,7 +73,7 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* GRÁFICO CONTAINER */
+    /* GRÁFICO COM TOTALIZADORES INTEGRADOS */
     .chart-container {
         background: #ffffff;
         border: 1px solid var(--border-color);
@@ -82,26 +82,40 @@ css = """
         box-shadow: var(--shadow-sm);
         margin-bottom: 20px;
     }
-    
-    /* TOTALIZADORES MÊS A MÊS ABAIXO DO GRÁFICO */
-    .monthly-totals-grid {
-        display: grid;
-        grid-template-columns: repeat(11, 1fr);
-        gap: 6px;
-        margin-top: 15px;
-        padding-top: 12px;
-        border-top: 1px solid var(--border-color);
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+        gap: 12px;
     }
-    .monthly-total-card {
+    .chart-title {
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--text-dark);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding-left: 10px;
+        border-left: 4px solid var(--blue-main);
+    }
+    .chart-totals {
+        display: flex;
+        gap: 20px;
         background: #f8fafc;
         border: 1px solid var(--border-color);
+        padding: 10px 15px;
         border-radius: 6px;
-        padding: 8px 4px;
-        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
     }
-    .m-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-    .m-orc { font-size: 10px; font-weight: 800; color: var(--blue-main); }
-    .m-real { font-size: 10px; font-weight: 800; color: var(--green-main); }
+    .total-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+    .total-label { color: var(--text-muted); }
+    .total-value { font-weight: 800; }
     
     /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
@@ -121,6 +135,7 @@ css = """
         background: #ffffff;
     }
     
+    /* Cabeçalho topo fixo */
     .fases-table thead { position: sticky; top: 0; z-index: 15; }
     .fases-table th { 
         background: #f8fafc; 
@@ -134,6 +149,7 @@ css = """
         top: 0;
         z-index: 15;
     }
+    
     .fases-table td { 
         padding: 10px; 
         border-bottom: 1px solid #f1f5f9; 
@@ -141,22 +157,69 @@ css = """
         background: #ffffff;
     }
     
-    /* Colunas congeladas com z-index adequado */
-    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
-    .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(1) { background: #ffffff; }
+    /* Coluna 1 congelada */
+    .fases-table th:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 2px solid var(--border-color);
+    }
+    .fases-table td:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 2px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 150px; z-index: 10; background: #ffffff; border-right: 1px solid var(--border-color); }
-    .fases-table th:nth-child(2) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(2) { background: #ffffff; }
+    /* Coluna 2 congelada */
+    .fases-table th:nth-child(2) { 
+        position: sticky; 
+        left: 150px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 1px solid var(--border-color);
+    }
+    .fases-table td:nth-child(2) { 
+        position: sticky; 
+        left: 150px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 1px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(3), .fases-table td:nth-child(3) { position: sticky; left: 320px; z-index: 10; background: #ffffff; border-right: 1px solid var(--border-color); }
-    .fases-table th:nth-child(3) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(3) { background: #ffffff; }
+    /* Coluna 3 congelada */
+    .fases-table th:nth-child(3) { 
+        position: sticky; 
+        left: 320px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 1px solid var(--border-color);
+    }
+    .fases-table td:nth-child(3) { 
+        position: sticky; 
+        left: 320px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 1px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(4), .fases-table td:nth-child(4) { position: sticky; left: 440px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
-    .fases-table th:nth-child(4) { z-index: 20; background: #f8fafc; }
-    .fases-table td:nth-child(4) { background: #ffffff; }
+    /* Coluna 4 congelada */
+    .fases-table th:nth-child(4) { 
+        position: sticky; 
+        left: 440px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 2px solid var(--border-color);
+    }
+    .fases-table td:nth-child(4) { 
+        position: sticky; 
+        left: 440px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 2px solid var(--border-color);
+    }
 
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { 
@@ -230,19 +293,6 @@ def formatar_moeda(valor):
         if val == 0: 
             return "-"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except:
-        return "-"
-
-def formatar_moeda_curta(valor):
-    try:
-        val = float(valor)
-        if val == 0:
-            return "-"
-        if abs(val) >= 1_000_000:
-            return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
-        elif abs(val) >= 1_000:
-            return f"R$ {val/1_000:.0f}K".replace('.', ',')
-        return f"R$ {val:.0f}"
     except:
         return "-"
 
@@ -399,7 +449,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES MÊS A MÊS ABAIXO
+# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES INTEGRADOS NO HEADER
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -416,11 +466,29 @@ df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
 ultimo_mes_com_real = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
 df_linha.loc[df_linha['Mes'] > ultimo_mes_com_real, 'Valor_Realizado'] = None
 
+tot_orc_grafico = df_linha['Valor_Orcado'].sum()
+tot_real_grafico = df_linha['Valor_Realizado'].dropna().sum()
+
+# Container do gráfico com totalizadores integrados
+st.markdown("""
+<div class='chart-container'>
+    <div class='chart-header'>
+        <div class='chart-title'>Evolução Mensal: Orçado vs Realizado</div>
+        <div class='chart-totals'>
+            <div class='total-item'>
+                <span class='total-label'>Total Período — Orçado:</span>
+                <span class='total-value' style='color: var(--blue-main);'>""" + formatar_moeda(tot_orc_grafico) + """</span>
+            </div>
+            <div class='total-item'>
+                <span class='total-label'>Realizado:</span>
+                <span class='total-value' style='color: var(--green-main);'>""" + formatar_moeda(tot_real_grafico) + """</span>
+            </div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
 meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
-
-st.markdown("<div class='section-title'>Evolução Mensal: Orçado vs Realizado</div>", unsafe_allow_html=True)
-st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
 
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(
@@ -435,7 +503,7 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=280,
+    height=320,
     margin=dict(l=10, r=10, t=10, b=10),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
@@ -444,30 +512,12 @@ fig_linha.update_layout(
     xaxis=dict(showgrid=False, showline=False)
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
-
-# GRID DE TOTALIZADORES MÊS A MÊS ABAIXO DO GRÁFICO
-html_cards_mes = "<div class='monthly-totals-grid'>"
-for _, r in df_linha.iterrows():
-    m_nome = r['Mes_Nome']
-    v_orc = r['Valor_Orcado']
-    v_real = r['Valor_Realizado']
-    val_real_str = formatar_moeda_curta(v_real) if pd.notna(v_real) else "-"
-    
-    html_cards_mes += f"""
-    <div class='monthly-total-card'>
-        <div class='m-title'>{m_nome}</div>
-        <div class='m-orc'>{formatar_moeda_curta(v_orc)}</div>
-        <div class='m-real'>{val_real_str}</div>
-    </div>
-    """
-html_cards_mes += "</div>"
-st.markdown(html_cards_mes, unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
 # ==============================================================================
-st.markdown("<div class='section-title'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>DETALHAMENTO DO ORÇADO X REALIZADO - FASES DA OBRA</div>", unsafe_allow_html=True)
 
 if not df_fases.empty:
     df_fases_view = df_fases.copy()
@@ -502,18 +552,20 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS - CORRIGIDO
 # ==============================================================================
-st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>DETALHAMENTO DE PAGAMENTOS REALIZADOS</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
     tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
     
+    # Gerar HTML correto da tabela
     html_real = "<div class='realizado-container'><table class='realizado-table'><thead><tr>"
     html_real += "<th>Data Pgto</th><th>Obra / Categoria</th><th>Fornecedor</th><th>NF / Doc</th><th style='text-align:right;'>Valor Realizado</th>"
     html_real += "</tr></thead><tbody>"
     
+    # Ordenar dados
     df_sorted = df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True])
     
     for _, tr in df_sorted.iterrows():
@@ -525,6 +577,7 @@ if not df_real_detalhe.empty:
         html_real += f"<td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>"
         html_real += "</tr>"
     
+    # Linha total
     html_real += f"<tr class='realizado-total-row'>"
     html_real += f"<td colspan='4'>TOTAL DOS PAGAMENTOS LISTADOS</td>"
     html_real += f"<td style='text-align:right;'>{formatar_moeda(tot_real_detalhe)}</td>"
