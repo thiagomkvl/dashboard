@@ -43,7 +43,7 @@ css = """
     .main { background: var(--bg-main); }
     .main .block-container { padding-top: 1rem; max-width: 98%; }
     
-    /* HEADER E TÍTULOS */
+    /* HEADER E TÍTULOS LIMPOS SEM RETÂNGULOS */
     .dash-header { margin-bottom: 20px; }
     .dash-header h1 { font-size: 22px; font-weight: 800; color: var(--text-dark); margin: 0; }
     .dash-header p { font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0; font-weight: 500; }
@@ -54,7 +54,7 @@ css = """
         color: var(--text-dark);
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        margin-bottom: 15px;
+        margin: 25px 0 12px 0;
         padding-left: 10px;
         border-left: 4px solid var(--blue-main);
         display: flex;
@@ -71,9 +71,9 @@ css = """
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
     /* TABELA STATUS DAS OBRAS EXPANSÍVEL (DRYWALL) */
-    .status-table { width: 100%; border-collapse: collapse; }
-    .status-table th { text-align: left; padding: 10px 8px; font-size: 10px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; border-bottom: 2px solid var(--border-color); background: #f8fafc; }
-    .status-table td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .status-table { width: 100%; border-collapse: collapse; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color); }
+    .status-table th { text-align: left; padding: 10px 12px; font-size: 10px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; border-bottom: 2px solid var(--border-color); background: #f8fafc; }
+    .status-table td { padding: 12px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
     .linha-total-tabela td { font-weight: 800; background: #f8fafc; border-top: 2px solid var(--border-color); border-bottom: none; color: var(--text-dark); }
     
     /* BARRA DE PROGRESSO */
@@ -85,28 +85,21 @@ css = """
     .inv-text-main { font-size: 12px; font-weight: 800; color: var(--text-dark); }
     .inv-text-sub { font-size: 10px; font-weight: 500; color: var(--text-muted); }
 
-    /* DETALHAMENTO DE FORNECEDORES DENTRO DA TABELA */
-    .scrollable-container {
-        max-height: 480px;
+    /* TABELA DE FASES DA OBRA */
+    .fases-table-container {
+        max-height: 450px;
         overflow-y: auto;
-        padding-right: 5px;
-        background: #ffffff;
         border: 1px solid var(--border-color);
         border-radius: 8px;
+        background: #ffffff;
     }
-    .scrollable-container::-webkit-scrollbar { width: 5px; }
-    .scrollable-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
-    
-    details.obra-details { background: #ffffff; border-bottom: 1px solid #f1f5f9; }
-    details.obra-details > summary { padding: 12px 8px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; outline: none; transition: background 0.2s; }
-    details.obra-details > summary::-webkit-details-marker { display: none; }
-    details.obra-details > summary:hover { background: #f8fafc; }
-    details.obra-details[open] > summary { background: #f8fafc; border-bottom: 1px solid var(--border-color); }
-    
-    .forn-sub-details { background: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; margin: 8px 12px; overflow: hidden; }
-    .forn-sub-details > summary { padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: var(--text-dark); list-style: none; outline: none; }
-    .forn-sub-details > summary:hover { background: #f1f5f9; }
-    
+    .fases-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 8px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 2; }
+    .fases-table td { padding: 8px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); }
+    .fases-table tr:hover td { background: #f8fafc; }
+    .fases-table .total-fase td { font-weight: 800; background: #f1f5f9; border-top: 2px solid var(--border-color); }
+
+    /* DETALHAMENTO DE FORNECEDORES */
     .transacao-table { width: 100%; border-collapse: collapse; font-size: 11px; background: #ffffff; }
     .transacao-table th { text-align: left; padding: 6px 12px; color: var(--text-muted); font-weight: 700; border-bottom: 1px solid var(--border-color); background: #f8fafc;}
     .transacao-table td { padding: 6px 12px; color: var(--text-dark); border-bottom: 1px solid #f1f5f9; }
@@ -132,9 +125,6 @@ def limpa_valor(valor):
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-def formatar_moeda_curta(valor):
-    return f"R$ {valor:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-
 def extract_month(m):
     try:
         s = str(m).strip()
@@ -148,10 +138,10 @@ def extract_month(m):
 @st.cache_data(ttl=60)
 def carregar_dados_obras_detalhado():
     conn = conectar_sheets()
-    if not conn: return pd.DataFrame(), pd.DataFrame()
+    if not conn: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     try:
-        # --- ORÇADO ---
+        # --- ORÇADO (Mantém compatibilidade com Orçamento_Obra) ---
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc = df_orc[df_orc['RESUMO OBRAS'].astype(str).str.upper() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc['RESUMO OBRAS'].astype(str).str.upper().str.strip()
@@ -164,6 +154,22 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
+        # --- FASES DA OBRA (Nova aba Fases_Obra) ---
+        df_fases = pd.DataFrame()
+        try:
+            df_fases = conn.read(worksheet="Fases_Obra", ttl=0)
+            if not df_fases.empty:
+                # Normaliza colunas principais
+                col_obra_f = next((c for c in df_fases.columns if 'obra' in c.lower()), df_fases.columns[0])
+                col_fase_f = next((c for c in df_fases.columns if 'fase' in c.lower() or 'tarefa' in c.lower() or 'atividade' in c.lower()), df_fases.columns[1])
+                col_custo_f = next((c for c in df_fases.columns if 'custo' in c.lower() or 'total' in c.lower()), df_fases.columns[2])
+                
+                df_fases['Obra'] = df_fases[col_obra_f].fillna('').astype(str).str.upper().str.strip()
+                df_fases['Fase'] = df_fases[col_fase_f].fillna('').astype(str).str.strip()
+                df_fases['Custo'] = df_fases[col_custo_f].apply(limpa_valor)
+        except Exception as e:
+            print("Aviso: Aba Fases_Obra não encontrada ou vazia:", e)
+
         # --- REALIZADO ---
         df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
@@ -178,13 +184,13 @@ def carregar_dados_obras_detalhado():
         df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
         df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
         
-        return df_orc_melt, df_real
+        return df_orc_melt, df_real, df_fases
         
     except Exception as e:
         st.error(f"Erro ao processar dados de obras: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-df_orcado, df_realizado = carregar_dados_obras_detalhado()
+df_orcado, df_realizado, df_fases = carregar_dados_obras_detalhado()
 
 if df_orcado.empty and df_realizado.empty:
     st.warning("Nenhum dado encontrado nas abas do banco de dados.")
@@ -210,6 +216,7 @@ with st.sidebar:
 # Aplicação de Filtros Globais
 df_orc_filtrado = df_orcado.copy()
 df_real_filtrado = df_realizado.copy()
+df_fases_filtrado = df_fases.copy()
 
 if mes_selecionado != "Todos":
     df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
@@ -218,6 +225,8 @@ if mes_selecionado != "Todos":
 if obra_selecionada != "Todas":
     df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
     df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
+    if not df_fases_filtrado.empty:
+        df_fases_filtrado = df_fases_filtrado[df_fases_filtrado['Obra'] == obra_selecionada]
 
 # ==============================================================================
 # 5. CÁLCULOS E ANÁLISE MÊS A MÊS (MoM)
@@ -272,7 +281,7 @@ st.markdown("""
 # --- LINHA 1: KPIs ---
 kpi_html = (
     "<div class='kpi-grid'>"
-    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total do Ano</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado</div></div>"
     f"<div class='kpi-item'><div class='kpi-title'>Investimento Realizado</div><div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div></div>"
     f"<div class='kpi-item'><div class='kpi-title'>Restante Orçamento Obra</div><div class='kpi-value' style='color: {'var(--red-main)' if saldo_orcamento < 0 else 'var(--text-dark)'};'>{formatar_moeda(saldo_orcamento)}</div><div class='kpi-subtitle'>Saldo disponível</div></div>"
     f"<div class='kpi-item'><div class='kpi-title'>Pagamento Mês ({mes_atual:02d})</div><div class='kpi-value'>{formatar_moeda(realizado_atual)}</div><div class='kpi-subtitle' style='color: {mom_color}; font-weight: 600;'>{mom_str}</div></div>"
@@ -280,98 +289,9 @@ kpi_html = (
 )
 st.markdown(kpi_html, unsafe_allow_html=True)
 
-# --- LINHA 2: Tabela de Status Expansível & Gráfico Donut ---
-c1, c2 = st.columns([2.2, 1])
-
-with c1:
-    st.markdown("<div class='section-title'>STATUS DAS OBRAS & DETALHAMENTO DE FORNECEDORES</div>", unsafe_allow_html=True)
-    
-    html_status = "<div class='scrollable-container'><table class='status-table'><thead><tr><th>Obra</th><th>Orçamento Consumido</th><th>Investimento Realizado</th></tr></thead><tbody>"
-    
-    tot_orc_tab = df_matriz['Valor_Orcado'].sum()
-    tot_real_tab = df_matriz['Valor_Realizado'].sum()
-    
-    st.markdown(html_status, unsafe_allow_html=True)
-    
-    # Renderiza cada obra como um item expansível em HTML/Streamlit
-    for _, row in df_matriz.sort_values('Valor_Orcado', ascending=False).iterrows():
-        obra_nome = row['Obra']
-        cons = row['Consumo (%)']
-        if cons < 80: bar_color = "var(--blue-main)"
-        elif cons <= 100: bar_color = "var(--yellow-main)"
-        else: bar_color = "var(--red-main)"
-            
-        with st.expander(f"{obra_nome}  |  Consumo: {cons:.0f}%  |  Realizado: {formatar_moeda(row['Valor_Realizado'])}"):
-            # Filtra os fornecedores desta obra específica
-            df_obra_forn = df_real_filtrado[df_real_filtrado['Obra'] == obra_nome]
-            if not df_obra_forn.empty:
-                forn_soma = df_obra_forn.groupby('Fornecedor')['Valor_Realizado'].sum().sort_values(ascending=False)
-                for forn, tot_pago in forn_soma.items():
-                    df_trans = df_obra_forn[df_obra_forn['Fornecedor'] == forn].sort_values('Mes')
-                    with st.container():
-                        st.markdown(f"""
-                        <details class='forn-sub-details'>
-                            <summary><span><b>{forn}</b></span><span><b>{formatar_moeda(tot_pago)}</b></span></summary>
-                            <table class='transacao-table'>
-                                <thead><tr><th>Data</th><th>NF</th><th>Mês</th><th style='text-align:right;'>Valor</th></tr></thead>
-                                <tbody>
-                        """, unsafe_allow_html=True)
-                        for _, tr in df_trans.iterrows():
-                            st.markdown(f"<tr><td>{tr['Data_Pgto']}</td><td>{tr['NF']}</td><td>Mês {tr['Mes']:02d}</td><td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td></tr>", unsafe_allow_html=True)
-                        st.markdown("</tbody></table></details>", unsafe_allow_html=True)
-            else:
-                st.info("Nenhum pagamento registrado para esta obra.")
-
-    # Linha de Total Geral abaixo
-    cons_tot = (tot_real_tab / tot_orc_tab * 100) if tot_orc_tab > 0 else 0
-    html_total = f"""
-    <table class='status-table' style='margin-top:0;'>
-        <tr class='linha-total-tabela'>
-            <td style='width: 35%;'>TOTAL GERAL</td>
-            <td style='width: 35%;'>
-                <div class='prog-container'><div class='prog-text'>{cons_tot:.0f}%</div>
-                <div class='prog-bar-bg'><div class='prog-bar-fill' style='width: {min(cons_tot, 100):.1f}%; background-color: var(--blue-main);'></div></div></div>
-            </td>
-            <td style='width: 30%;'>
-                <div class='inv-text-main'>{formatar_moeda(tot_real_tab)}</div>
-                <div class='inv-text-sub'>de {formatar_moeda(tot_orc_tab)}</div>
-            </td>
-        </tr>
-    </table>
-    </div>
-    """
-    st.markdown(html_total, unsafe_allow_html=True)
-
-with c2:
-    st.markdown("<div class='section-title'>DISTRIBUIÇÃO DO INVESTIMENTO</div>", unsafe_allow_html=True)
-    st.markdown("<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:15px; box-shadow:var(--shadow-sm);'>", unsafe_allow_html=True)
-    df_donut = df_matriz[df_matriz['Valor_Realizado'] > 0].copy()
-    
-    if not df_donut.empty:
-        text_labels = [formatar_moeda_curta(v) for v in df_donut['Valor_Realizado']]
-        fig_donut = go.Figure(data=[go.Pie(
-            values=df_donut['Valor_Realizado'], 
-            labels=df_donut['Obra'], 
-            hole=0.6,
-            textinfo='text',
-            text=text_labels,
-            hoverinfo='label+percent'
-        )])
-        fig_donut.update_layout(
-            showlegend=True, 
-            legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=9)),
-            margin=dict(t=0, b=0, l=0, r=0), 
-            height=280,
-            annotations=[dict(text=f"<b>R$ {total_realizado/1000000:.1f} mi</b><br>Total", x=0.5, y=0.5, font_size=11, showarrow=False)]
-        )
-        st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.info("Sem dados de investimento para plotar.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# --- LINHA 3: Gráfico de Linha Mensal (Respeitando Filtro de Obra) ---
+# --- LINHA 2: Gráfico de Linha Mensal (Abaixo dos blocos iniciais) ---
 st.markdown("<div class='section-title'>EVOLUÇÃO MENSAL: ORÇADO VS REALIZADO</div>", unsafe_allow_html=True)
-st.markdown("<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm);'>", unsafe_allow_html=True)
+st.markdown("<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm); margin-bottom:20px;'>", unsafe_allow_html=True)
 
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -404,7 +324,7 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=320,
+    height=300,
     margin=dict(l=10, r=10, t=10, b=10),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
@@ -413,3 +333,103 @@ fig_linha.update_layout(
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 st.markdown("</div>", unsafe_allow_html=True)
+
+# --- LINHA 3: Status das Obras & Fornecedores (Sem a Distribuição de Investimento) ---
+st.markdown("<div class='section-title'>STATUS DAS OBRAS & DETALHAMENTO DE FORNECEDORES</div>", unsafe_allow_html=True)
+
+html_status = "<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; box-shadow:var(--shadow-sm);'><table class='status-table'><thead><tr><th>Obra</th><th>Orçamento Consumido</th><th>Investimento Realizado</th></tr></thead><tbody>"
+tot_orc_tab = df_matriz['Valor_Orcado'].sum()
+tot_real_tab = df_matriz['Valor_Realizado'].sum()
+
+st.markdown(html_status, unsafe_allow_html=True)
+
+for _, row in df_matriz.sort_values('Valor_Orcado', ascending=False).iterrows():
+    obra_nome = row['Obra']
+    cons = row['Consumo (%)']
+    if cons < 80: bar_color = "var(--blue-main)"
+    elif cons <= 100: bar_color = "var(--yellow-main)"
+    else: bar_color = "var(--red-main)"
+        
+    with st.expander(f"{obra_nome}  |  Consumo: {cons:.0f}%  |  Realizado: {formatar_moeda(row['Valor_Realizado'])}"):
+        df_obra_forn = df_real_filtrado[df_real_filtrado['Obra'] == obra_nome]
+        if not df_obra_forn.empty:
+            forn_soma = df_obra_forn.groupby('Fornecedor')['Valor_Realizado'].sum().sort_values(ascending=False)
+            for forn, tot_pago in forn_soma.items():
+                df_trans = df_obra_forn[df_obra_forn['Fornecedor'] == forn].sort_values('Mes')
+                with st.container():
+                    st.markdown(f"""
+                    <details style='background: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; margin: 6px 0; overflow: hidden;'>
+                        <summary style='padding: 10px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: var(--text-dark);'><span>{forn}</span><span>{formatar_moeda(tot_pago)}</span></summary>
+                        <table class='transacao-table'>
+                            <thead><tr><th>Data</th><th>NF</th><th>Mês</th><th style='text-align:right;'>Valor</th></tr></thead>
+                            <tbody>
+                    """, unsafe_allow_html=True)
+                    for _, tr in df_trans.iterrows():
+                        st.markdown(f"<tr><td>{tr['Data_Pgto']}</td><td>{tr['NF']}</td><td>Mês {tr['Mes']:02d}</td><td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td></tr>", unsafe_allow_html=True)
+                    st.markdown("</tbody></table></details>", unsafe_allow_html=True)
+        else:
+            st.info("Nenhum pagamento registrado para esta obra.")
+
+cons_tot = (tot_real_tab / tot_orc_tab * 100) if tot_orc_tab > 0 else 0
+html_total = f"""
+<table class='status-table' style='margin-top:0;'>
+    <tr class='linha-total-tabela'>
+        <td style='width: 35%;'>TOTAL GERAL</td>
+        <td style='width: 35%;'>
+            <div class='prog-container'><div class='prog-text'>{cons_tot:.0f}%</div>
+            <div class='prog-bar-bg'><div class='prog-bar-fill' style='width: {min(cons_tot, 100):.1f}%; background-color: var(--blue-main);'></div></div></div>
+        </td>
+        <td style='width: 30%;'>
+            <div class='inv-text-main'>{formatar_moeda(tot_real_tab)}</div>
+            <div class='inv-text-sub'>de {formatar_moeda(tot_orc_tab)}</div>
+        </td>
+    </tr>
+</table>
+</div>
+"""
+st.markdown(html_total, unsafe_allow_html=True)
+
+# ==============================================================================
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
+# ==============================================================================
+st.markdown("<div class='section-title'>DETALHAMENTO DO ORÇADO X REALIZADO - FASES DA OBRA</div>", unsafe_allow_html=True)
+
+if not df_fases_filtrado.empty:
+    html_fases = """
+    <div class='fases-table-container'>
+    <table class='fases-table'>
+        <thead>
+            <tr>
+                <th>Obra</th>
+                <th>Fase / Tarefa / Atividade</th>
+                <th style='text-align:right;'>Custo R$</th>
+                <th style='text-align:right;'>%</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    for _, row in df_fases_filtrado.iterrows():
+        obra_f = row.get('Obra', '')
+        fase_f = row.get('Fase', '')
+        custo_f = row.get('Custo', 0.0)
+        
+        # Calcula % se houver total da obra
+        total_obra_f = df_fases_filtrado[df_fases_filtrado['Obra'] == obra_f]['Custo'].sum()
+        pct_f = (custo_f / total_obra_f * 100) if total_obra_f > 0 else 0.0
+        
+        # Se for linha de total da fase
+        is_total = 'total' in fase_f.lower()
+        tr_class = "total-fase" if is_total else ""
+        
+        html_fases += f"""
+        <tr class='{tr_class}'>
+            <td><b>{obra_f}</b></td>
+            <td>{fase_f}</td>
+            <td style='text-align:right; font-weight:{'800' if is_total else '600'};'>{formatar_moeda(custo_f)}</td>
+            <td style='text-align:right;'>{pct_f:.2f}%</td>
+        </tr>
+        """
+    html_fases += "</tbody></table></div>"
+    st.markdown(html_fases, unsafe_allow_html=True)
+else:
+    st.info("Aba 'Fases_Obra' não detectada ou sem dados no Google Sheets. Adicione a aba 'Fases_Obra' com as colunas de fases para visualizar o detalhamento completo.")
