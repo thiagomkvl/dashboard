@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO COM COLUNAS CONGELADAS E MATRIZ)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM UNIDADE ÚNICA MÊS A MÊS)
 # ==============================================================================
 css = """
 <style>
@@ -73,7 +73,51 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* TABELAS COM STICKY CORRIGIDO */
+    /* TABELA UNIFICADA DE TOTALIZADORES MÊS A MÊS */
+    .unified-summary-box {
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+        margin-top: 10px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .unified-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        text-align: center;
+    }
+    .unified-table th {
+        background: #f8fafc;
+        color: var(--text-dark);
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 10px 4px;
+        border-bottom: 2px solid var(--border-color);
+        border-right: 1px solid #f1f5f9;
+    }
+    .unified-table th:last-child { border-right: none; }
+    .unified-table td {
+        padding: 10px 4px;
+        border-bottom: 1px solid #f1f5f9;
+        border-right: 1px solid #f1f5f9;
+    }
+    .unified-table td:last-child { border-right: none; }
+    .row-label {
+        text-align: left;
+        padding-left: 15px !important;
+        font-weight: 700;
+        color: var(--text-muted);
+        background: #fafaf9;
+        width: 130px;
+        border-right: 2px solid var(--border-color) !important;
+    }
+    .val-real { font-weight: 800; color: var(--green-main); }
+    .val-orc { font-weight: 800; color: var(--blue-main); }
+
+    /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -135,34 +179,41 @@ css = """
         color: var(--text-dark); 
     }
 
-    /* DETALHAMENTO DE PAGAMENTOS (MATRIZ INTERATIVA) */
-    .realizado-matrix-container {
-        max-height: 500px;
+    /* TABELA DE PAGAMENTOS REALIZADOS */
+    .realizado-container {
+        max-height: 450px;
         overflow-y: auto;
-        overflow-x: auto;
         border: 1px solid var(--border-color);
         border-radius: 8px;
         background: #ffffff;
         box-shadow: var(--shadow-sm);
     }
-    .transacao-subtable {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 11px;
-        background: #f8fafc;
-        margin: 5px 0;
+    .realizado-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        font-size: 11px; 
+        background: #ffffff;
     }
-    .transacao-subtable th {
-        background: #e2e8f0;
-        color: var(--text-dark);
-        font-weight: 700;
-        padding: 6px 10px;
-        border-bottom: 1px solid var(--border-color);
+    .realizado-table thead { position: sticky; top: 0; z-index: 15; }
+    .realizado-table th { 
+        background: #f8fafc; 
+        color: var(--text-muted); 
+        font-weight: 800; 
+        text-transform: uppercase; 
+        padding: 11px 10px; 
+        border-bottom: 2px solid var(--border-color); 
         text-align: left;
     }
-    .transacao-subtable td {
-        padding: 6px 10px;
-        border-bottom: 1px solid #e2e8f0;
+    .realizado-table td { 
+        padding: 9px 10px; 
+        border-bottom: 1px solid #f1f5f9; 
+        color: var(--text-dark);
+    }
+    .realizado-table tr:hover td { background: #f8fafc; }
+    .realizado-total-row {
+        font-weight: 900;
+        background: #f8fafc !important;
+        border-top: 2px solid var(--border-color);
         color: var(--text-dark);
     }
 </style>
@@ -361,7 +412,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL E TABELA UNIFICADA 3 LINHAS
+# LINHA 2: GRÁFICO DE LINHA MENSAL E TABELA UNIFICADA 3 LINHAS (MÊS, REALIZADO, ORÇADO)
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -469,77 +520,35 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (MATRIZ INTERATIVA COM CLIQUE)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
-    # Agrupa por Obra e Fornecedor / Categoria para montar a matriz mês a mês
-    map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
+    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
     
-    df_group = df_real_detalhe.groupby(['Obra', 'Fornecedor', 'Mes'])['Valor_Realizado'].sum().reset_index()
-    df_matrix = df_group.pivot_table(index=['Obra', 'Fornecedor'], columns='Mes', values='Valor_Realizado', fill_value=0)
+    html_real = "<div class='realizado-container'><table class='realizado-table'><thead><tr>"
+    html_real += "<th>Data Pgto</th><th>Obra / Categoria</th><th>Fornecedor</th><th>NF / Doc</th><th style='text-align:right;'>Valor Realizado</th>"
+    html_real += "</tr></thead><tbody>"
     
-    for m in range(2, 13):
-        if m not in df_matrix.columns:
-            df_matrix[m] = 0.0
-            
-    df_matrix = df_matrix[list(range(2, 13))]
-    df_matrix.columns = [map_m_inv[m] for m in range(2, 13)]
-    df_matrix['TOTAL'] = df_matrix.sum(axis=1)
-    df_matrix = df_matrix.reset_index()
+    df_sorted = df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True])
     
-    html_matrix = "<div class='realizado-matrix-container'><table class='fases-table'><thead><tr>"
-    html_matrix += "<th>Obra</th><th>Fornecedor / Categoria</th><th style='text-align:right;'>TOTAL</th>"
-    for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-        html_matrix += f"<th style='text-align:right;'>{col_m}</th>"
-    html_matrix += "</tr></thead><tbody>"
+    for _, tr in df_sorted.iterrows():
+        html_real += "<tr>"
+        html_real += f"<td>{tr['Data_Pgto']}</td>"
+        html_real += f"<td><b>{tr['Obra']}</b></td>"
+        html_real += f"<td>{tr['Fornecedor']}</td>"
+        html_real += f"<td>{tr['NF']}</td>"
+        html_real += f"<td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>"
+        html_real += "</tr>"
     
-    for _, row in df_matrix.iterrows():
-        obra_r = row['Obra']
-        forn_r = row['Fornecedor']
-        tot_r = row['TOTAL']
-        
-        with st.expander(f"{obra_r}  |  {forn_r}  —  Total: {formatar_moeda(tot_r)}"):
-            df_trans_esp = df_real_detalhe[(df_real_detalhe['Obra'] == obra_r) & (df_real_detalhe['Fornecedor'] == forn_r)].sort_values('Mes')
-            st.markdown("""
-            <table class='transacao-subtable'>
-                <thead>
-                    <tr>
-                        <th>Data Pgto</th>
-                        <th>NF / Doc</th>
-                        <th>Mês Ref.</th>
-                        <th style='text-align:right;'>Valor Realizado</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """, unsafe_allow_html=True)
-            for _, tr in df_trans_esp.iterrows():
-                st.markdown(f"""
-                <tr>
-                    <td>{tr['Data_Pgto']}</td>
-                    <td>{tr['NF']}</td>
-                    <td>Mês {tr['Mes']:02d}</td>
-                    <td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>
-                </tr>
-                """, unsafe_allow_html=True)
-            st.markdown("</tbody></table>", unsafe_allow_html=True)
-
-        html_matrix += f"<tr><td><b>{obra_r}</b></td><td>{forn_r}</td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
-        for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-            val_m = row[col_m]
-            html_matrix += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
-        html_matrix += "</tr>"
-        
-    # Linha Total Geral
-    tot_geral_real = df_matrix['TOTAL'].sum()
-    html_matrix += f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td></td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
-    for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-        tot_col_m = df_matrix[col_m].sum()
-        html_matrix += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
-    html_matrix += "</tr></tbody></table></div>"
+    html_real += f"<tr class='realizado-total-row'>"
+    html_real += f"<td colspan='4'>TOTAL DOS PAGAMENTOS LISTADOS</td>"
+    html_real += f"<td style='text-align:right;'>{formatar_moeda(tot_real_detalhe)}</td>"
+    html_real += "</tr>"
     
-    st.markdown(html_matrix, unsafe_allow_html=True)
+    html_real += "</tbody></table></div>"
+    st.markdown(html_real, unsafe_allow_html=True)
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
