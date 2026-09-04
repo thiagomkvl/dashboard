@@ -61,16 +61,6 @@ css = """
         justify-content: space-between;
     }
     
-    .chart-totals-badge {
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--text-muted);
-        background: #f8fafc;
-        border: 1px solid var(--border-color);
-        padding: 4px 10px;
-        border-radius: 6px;
-    }
-    
     /* KPIS COM CORES PASTEL */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
     .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
@@ -83,6 +73,50 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
+    /* GRÁFICO COM TOTALIZADORES INTEGRADOS */
+    .chart-container {
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 20px;
+    }
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .chart-title {
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--text-dark);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding-left: 10px;
+        border-left: 4px solid var(--blue-main);
+    }
+    .chart-totals {
+        display: flex;
+        gap: 20px;
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        padding: 10px 15px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .total-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+    .total-label { color: var(--text-muted); }
+    .total-value { font-weight: 800; }
+    
     /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
@@ -93,29 +127,145 @@ css = """
         background: #ffffff;
         box-shadow: var(--shadow-sm);
     }
-    .fases-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+    .fases-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        font-size: 11px; 
+        white-space: nowrap;
+        background: #ffffff;
+    }
     
-    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 10; text-align: left; }
-    .fases-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); background: #ffffff; }
+    /* Cabeçalho topo fixo */
+    .fases-table thead { position: sticky; top: 0; z-index: 15; }
+    .fases-table th { 
+        background: #f8fafc; 
+        color: var(--text-muted); 
+        font-weight: 800; 
+        text-transform: uppercase; 
+        padding: 12px 10px; 
+        border-bottom: 2px solid var(--border-color); 
+        text-align: left;
+        position: sticky;
+        top: 0;
+        z-index: 15;
+    }
     
-    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
-    .fases-table td:nth-child(1) { background: #ffffff; }
-    .fases-table th:nth-child(1) { z-index: 20; }
+    .fases-table td { 
+        padding: 10px; 
+        border-bottom: 1px solid #f1f5f9; 
+        color: var(--text-dark); 
+        background: #ffffff;
+    }
+    
+    /* Coluna 1 congelada */
+    .fases-table th:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 2px solid var(--border-color);
+    }
+    .fases-table td:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 2px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 110px; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
-    .fases-table td:nth-child(2) { background: #ffffff; }
-    .fases-table th:nth-child(2) { z-index: 20; }
+    /* Coluna 2 congelada */
+    .fases-table th:nth-child(2) { 
+        position: sticky; 
+        left: 150px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 1px solid var(--border-color);
+    }
+    .fases-table td:nth-child(2) { 
+        position: sticky; 
+        left: 150px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 1px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(3), .fases-table td:nth-child(3) { position: sticky; left: 320px; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
-    .fases-table td:nth-child(3) { background: #ffffff; }
-    .fases-table th:nth-child(3) { z-index: 20; }
+    /* Coluna 3 congelada */
+    .fases-table th:nth-child(3) { 
+        position: sticky; 
+        left: 320px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 1px solid var(--border-color);
+    }
+    .fases-table td:nth-child(3) { 
+        position: sticky; 
+        left: 320px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 1px solid var(--border-color);
+    }
 
-    .fases-table th:nth-child(4), .fases-table td:nth-child(4) { position: sticky; left: 410px; z-index: 5; background: #f8fafc; border-right: 2px solid var(--border-color); }
-    .fases-table td:nth-child(4) { background: #ffffff; }
-    .fases-table th:nth-child(4) { z-index: 20; }
+    /* Coluna 4 congelada */
+    .fases-table th:nth-child(4) { 
+        position: sticky; 
+        left: 440px; 
+        z-index: 20;
+        background: #f8fafc;
+        border-right: 2px solid var(--border-color);
+    }
+    .fases-table td:nth-child(4) { 
+        position: sticky; 
+        left: 440px; 
+        z-index: 10;
+        background: #ffffff;
+        border-right: 2px solid var(--border-color);
+    }
 
     .fases-table tr:hover td { background: #f8fafc; }
-    .total-geral-row td { font-weight: 900; background: #e2e8f0 !important; border-top: 2px solid var(--border-color); color: var(--text-dark); }
+    .total-geral-row td { 
+        font-weight: 900; 
+        background: #e2e8f0 !important; 
+        border-top: 2px solid var(--border-color); 
+        color: var(--text-dark); 
+    }
+
+    /* TABELA DE PAGAMENTOS REALIZADOS */
+    .realizado-container {
+        max-height: 450px;
+        overflow-y: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: var(--shadow-sm);
+    }
+    .realizado-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        font-size: 11px; 
+        background: #ffffff;
+    }
+    .realizado-table thead { position: sticky; top: 0; z-index: 15; }
+    .realizado-table th { 
+        background: #f8fafc; 
+        color: var(--text-muted); 
+        font-weight: 800; 
+        text-transform: uppercase; 
+        padding: 11px 10px; 
+        border-bottom: 2px solid var(--border-color); 
+        text-align: left;
+    }
+    .realizado-table td { 
+        padding: 9px 10px; 
+        border-bottom: 1px solid #f1f5f9; 
+        color: var(--text-dark);
+    }
+    .realizado-table tr:hover td { background: #f8fafc; }
+    .realizado-total-row {
+        font-weight: 900;
+        background: #f8fafc !important;
+        border-top: 2px solid var(--border-color);
+        color: var(--text-dark);
+    }
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
@@ -125,7 +275,8 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 # ==============================================================================
 def limpa_valor(valor):
     try:
-        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "None"]: return 0.0
+        if pd.isna(valor) or str(valor).strip() in ["", "-", "nan", "None"]: 
+            return 0.0
         v_str = str(valor).strip().replace('R$', '')
         v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
         if '.' in v_str and ',' in v_str:
@@ -133,12 +284,14 @@ def limpa_valor(valor):
         elif ',' in v_str:
             v_str = v_str.replace(',', '.')
         return float(v_str)
-    except: return 0.0
+    except: 
+        return 0.0
 
 def formatar_moeda(valor):
     try:
         val = float(valor)
-        if val == 0: return "-"
+        if val == 0: 
+            return "-"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except:
         return "-"
@@ -146,9 +299,11 @@ def formatar_moeda(valor):
 def extract_month(m):
     try:
         s = str(m).strip()
-        if '.' in s: return int(float(s.split('.')[-1]))
+        if '.' in s: 
+            return int(float(s.split('.')[-1]))
         return int(float(s))
-    except: return 0
+    except: 
+        return 0
 
 # ==============================================================================
 # 3. CARGA DOS DADOS E TRATAMENTO
@@ -156,7 +311,8 @@ def extract_month(m):
 @st.cache_data(ttl=60)
 def carregar_dados_obras_detalhado():
     conn = conectar_sheets()
-    if not conn: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    if not conn: 
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     try:
         # --- ORÇADO ---
@@ -292,7 +448,9 @@ kpi_html = (
 )
 st.markdown(kpi_html, unsafe_allow_html=True)
 
-# --- LINHA 2: Gráfico de Linha Mensal COM TOTALIZADORES INTEGRADOS NO CABEÇALHO ---
+# ==============================================================================
+# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES INTEGRADOS NO HEADER
+# ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
 if obra_selecionada != "Todas":
@@ -311,12 +469,22 @@ df_linha.loc[df_linha['Mes'] > ultimo_mes_com_real, 'Valor_Realizado'] = None
 tot_orc_grafico = df_linha['Valor_Orcado'].sum()
 tot_real_grafico = df_linha['Valor_Realizado'].dropna().sum()
 
-st.markdown(f"""
-<div class='section-title'>
-    <span>EVOLUÇÃO MENSAL: ORÇADO VS REALIZADO</span>
-    <span class='chart-totals-badge'>Total Período — Orçado: <b style='color:var(--blue-main);'>{formatar_moeda(tot_orc_grafico)}</b> | Realizado: <b style='color:var(--green-main);'>{formatar_moeda(tot_real_grafico)}</b></span>
-</div>
-<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm); margin-bottom:20px;'>
+# Container do gráfico com totalizadores integrados
+st.markdown("""
+<div class='chart-container'>
+    <div class='chart-header'>
+        <div class='chart-title'>Evolução Mensal: Orçado vs Realizado</div>
+        <div class='chart-totals'>
+            <div class='total-item'>
+                <span class='total-label'>Total Período — Orçado:</span>
+                <span class='total-value' style='color: var(--blue-main);'>""" + formatar_moeda(tot_orc_grafico) + """</span>
+            </div>
+            <div class='total-item'>
+                <span class='total-label'>Realizado:</span>
+                <span class='total-value' style='color: var(--green-main);'>""" + formatar_moeda(tot_real_grafico) + """</span>
+            </div>
+        </div>
+    </div>
 """, unsafe_allow_html=True)
 
 meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
@@ -335,12 +503,13 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=280,
+    height=320,
     margin=dict(l=10, r=10, t=10, b=10),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)),
-    yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ")
+    yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False),
+    xaxis=dict(showgrid=False, showline=False)
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 st.markdown("</div>", unsafe_allow_html=True)
@@ -383,21 +552,38 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (VIA DATAFRAME NATIVO)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS - CORRIGIDO
 # ==============================================================================
 st.markdown("<div class='section-title'>DETALHAMENTO DE PAGAMENTOS REALIZADOS</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
-    df_display = df_real_detalhe[['Data_Pgto', 'Obra', 'Fornecedor', 'NF', 'Valor_Realizado']].sort_values(['Mes', 'Obra'], ascending=[False, True]).copy()
-    df_display.columns = ['Data Pagamento', 'Obra / Categoria', 'Fornecedor', 'Nota Fiscal / Doc', 'Valor Realizado (R$)']
+    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
     
-    # Formata os valores monetários para exibição limpa no dataframe nativo
-    df_display['Valor Realizado (R$)'] = df_display['Valor Realizado (R$)'].apply(formatar_moeda)
+    # Gerar HTML correto da tabela
+    html_real = "<div class='realizado-container'><table class='realizado-table'><thead><tr>"
+    html_real += "<th>Data Pgto</th><th>Obra / Categoria</th><th>Fornecedor</th><th>NF / Doc</th><th style='text-align:right;'>Valor Realizado</th>"
+    html_real += "</tr></thead><tbody>"
     
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    # Ordenar dados
+    df_sorted = df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True])
     
-    tot_real_detalhe = df_real_filtrado['Valor_Realizado'].sum()
-    st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 13px; margin-top: 5px; color: var(--text-dark);'>Total Geral Listado: {formatar_moeda(tot_real_detalhe)}</div>", unsafe_allow_html=True)
+    for _, tr in df_sorted.iterrows():
+        html_real += "<tr>"
+        html_real += f"<td>{tr['Data_Pgto']}</td>"
+        html_real += f"<td><b>{tr['Obra']}</b></td>"
+        html_real += f"<td>{tr['Fornecedor']}</td>"
+        html_real += f"<td>{tr['NF']}</td>"
+        html_real += f"<td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>"
+        html_real += "</tr>"
+    
+    # Linha total
+    html_real += f"<tr class='realizado-total-row'>"
+    html_real += f"<td colspan='4'>TOTAL DOS PAGAMENTOS LISTADOS</td>"
+    html_real += f"<td style='text-align:right;'>{formatar_moeda(tot_real_detalhe)}</td>"
+    html_real += "</tr>"
+    
+    html_real += "</tbody></table></div>"
+    st.markdown(html_real, unsafe_allow_html=True)
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
