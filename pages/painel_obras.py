@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO COM Z-INDEX E STICKY CORRIGIDOS)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO LIMPO - SEM RETÂNGULOS)
 # ==============================================================================
 css = """
 <style>
@@ -63,7 +63,7 @@ css = """
     
     /* KPIS COM CORES PASTEL */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-    .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+    .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); background: #ffffff; }
     .kpi-item.bg-blue { background: #f0f9ff; border-color: #bae6fd; }
     .kpi-item.bg-green { background: #f0fdf4; border-color: #bbf7d0; }
     .kpi-item.bg-yellow { background: #fefce8; border-color: #fef08a; }
@@ -73,22 +73,14 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* GRÁFICO CONTAINER */
-    .chart-container {
-        background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 18px;
-        box-shadow: var(--shadow-sm);
-        margin-bottom: 20px;
-    }
-    
+    /* CARDS DE TOTALIZADORES MÊS A MÊS */
     .monthly-total-card {
-        background: #f8fafc;
+        background: #ffffff;
         border: 1px solid var(--border-color);
         border-radius: 6px;
         padding: 8px 2px;
         text-align: center;
+        box-shadow: var(--shadow-sm);
     }
     .m-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
     .m-orc { font-size: 10px; font-weight: 800; color: var(--blue-main); }
@@ -389,7 +381,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL COM TOTALIZADORES MÊS A MÊS ABAIXO (VIA ST.COLUMNS)
+# LINHA 2: GRÁFICO DE LINHA MENSAL ALINHADO E SEM RETÂNGULO
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -410,7 +402,6 @@ meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'A
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
 
 st.markdown("<div class='section-title'>Evolução Mensal: Orçado vs Realizado</div>", unsafe_allow_html=True)
-st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
 
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(
@@ -425,17 +416,17 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=280,
-    margin=dict(l=10, r=10, t=10, b=10),
+    height=270,
+    margin=dict(l=20, r=20, t=10, b=10),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)),
     yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False),
-    xaxis=dict(showgrid=False, showline=False)
+    xaxis=dict(showgrid=False, showline=False, range=[-0.2, 10.2]) # Trava o eixo X colado nas extremidades
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
-# GRID DE TOTALIZADORES MÊS A MÊS COM ST.COLUMNS (ESTÁVEL)
+# GRID DE TOTALIZADORES MÊS A MÊS ALINHADOS 1:1 EXATAMENTE ABAIXO DAS COLUNAS DO GRÁFICO
 cols_meses = st.columns(11)
 for idx, r in df_linha.iterrows():
     m_nome = r['Mes_Nome']
@@ -451,8 +442,6 @@ for idx, r in df_linha.iterrows():
             <div class='m-real'>{val_real_str}</div>
         </div>
         """, unsafe_allow_html=True)
-
-st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
