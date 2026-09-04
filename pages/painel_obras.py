@@ -117,7 +117,7 @@ css = """
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
-    /* TABELA DE FASES / REALIZADO COM STICKY CORRIGIDO */
+    /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -496,7 +496,7 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTREITAMENTE POR OBRA)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTRUTURA IDÊNTICA ÀS FASES)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
@@ -504,7 +504,6 @@ df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
     map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
     
-    # Agrupa estritamente por Obra e Mês (sem poluir com fornecedores na tabela principal)
     df_group = df_real_detalhe.groupby(['Obra', 'Mes'])['Valor_Realizado'].sum().reset_index()
     df_matrix = df_group.pivot_table(index='Obra', columns='Mes', values='Valor_Realizado', fill_value=0)
     
@@ -517,7 +516,6 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
     
-    # Renderiza no mesmo padrão visual compacto (fases-table-container)
     html_matrix = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
     html_matrix += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
@@ -530,8 +528,8 @@ if not df_real_detalhe.empty:
         obra_r = row['Obra']
         tot_r = row['TOTAL']
         
-        # Expander limpo para abrir os fornecedores e notas fiscais daquela obra ao clicar
-        with st.expander(f"📁 {obra_r}  —  Total Realizado: {formatar_moeda(tot_r)}"):
+        # Expander limpo sem emojis, exatamente no mesmo design padrão
+        with st.expander(f"{obra_r}  —  Total Realizado: {formatar_moeda(tot_r)}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor'])
             st.markdown("""
             <table class='transacao-subtable'>
