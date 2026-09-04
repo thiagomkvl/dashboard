@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO IDÊNTICO À TABELA DE FASES)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM COLUNAS CONGELADAS E PADRÃO FASES)
 # ==============================================================================
 css = """
 <style>
@@ -516,11 +516,10 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
     
-    # Inicia a tabela principal no mesmo layout da tabela de fases
     html_matrix = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    html_matrix += "<th>Obra / Categoria</th><th>TOTAL</th>"
+    html_matrix += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-        html_matrix += f"<th>{col_m}</th>"
+        html_matrix += f"<th style='text-align:right;'>{col_m}</th>"
     html_matrix += "</tr></thead><tbody>"
     
     st.markdown(html_matrix, unsafe_allow_html=True)
@@ -529,7 +528,6 @@ if not df_real_detalhe.empty:
         obra_r = row['Obra']
         tot_r = row['TOTAL']
         
-        # Linha principal da obra no padrão de fases
         row_html = f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
         for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
             val_m = row[col_m]
@@ -537,9 +535,10 @@ if not df_real_detalhe.empty:
         row_html += "</tr>"
         st.markdown(row_html, unsafe_allow_html=True)
         
-        # Expander limpo sem emojis para detalhar os fornecedores/transações daquela obra
         with st.expander(f"Ver pagamentos e fornecedores de {obra_r}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor'])
+            
+            # Montamos a sub-tabela inteira em uma única string HTML para evitar o bug de renderização crua
             sub_table_html = """
             <table class='transacao-subtable'>
                 <thead>
@@ -566,7 +565,6 @@ if not df_real_detalhe.empty:
             sub_table_html += "</tbody></table>"
             st.markdown(sub_table_html, unsafe_allow_html=True)
         
-    # Linha de Total Geral idêntica à de fases
     tot_geral_real = df_matrix['TOTAL'].sum()
     total_row_html = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
