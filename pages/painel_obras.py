@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO MODERNO - SEM CAIXAS EXTERNAS)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM CORES CLARAS E COLUNA CONGELADA)
 # ==============================================================================
 css = """
 <style>
@@ -36,14 +36,13 @@ css = """
         --yellow-main: #f59e0b;
         --red-main: #ef4444;
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
-        --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.04);
     }
     
     html, body, [class*="css"] { font-family: "Inter", sans-serif; }
     .main { background: var(--bg-main); }
     .main .block-container { padding-top: 1rem; max-width: 98%; }
     
-    /* HEADER E TÍTULOS LIMPOS SEM RETÂNGULOS */
+    /* HEADER E TÍTULOS */
     .dash-header { margin-bottom: 20px; }
     .dash-header h1 { font-size: 22px; font-weight: 800; color: var(--text-dark); margin: 0; }
     .dash-header p { font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0; font-weight: 500; }
@@ -62,17 +61,29 @@ css = """
         justify-content: space-between;
     }
     
-    /* KPIs NO TOPO */
+    .chart-subtitle-total {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+    }
+    
+    /* KPIS COM CORES PASTEL SUAVES */
     .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-    .kpi-item { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+    .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+    .kpi-item.bg-blue { background: #f0f9ff; border-color: #bae6fd; }
+    .kpi-item.bg-green { background: #f0fdf4; border-color: #bbf7d0; }
+    .kpi-item.bg-yellow { background: #fefce8; border-color: #fef08a; }
+    .kpi-item.bg-red { background: #fef2f2; border-color: #fecaca; }
+    
     .kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .kpi-value { font-size: 22px; font-weight: 800; color: var(--text-dark); margin: 6px 0 2px 0; }
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* TABELA DE FASES DA OBRA (ESTILO EXCEL CORPORATIVO) */
+    /* TABELA DE FASES COM COLUNA CONGELADA (STICKY) */
     .fases-table-container {
-        max-height: 520px;
+        max-height: 500px;
         overflow-y: auto;
         overflow-x: auto;
         border: 1px solid var(--border-color);
@@ -81,10 +92,22 @@ css = """
         box-shadow: var(--shadow-sm);
     }
     .fases-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
-    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 2; text-align: left; }
-    .fases-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); }
+    .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 3; text-align: left; }
+    .fases-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); background: #ffffff; }
+    
+    /* Congela as duas primeiras colunas (Obra e Tarefa) */
+    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 2; background: #f8fafc; border-right: 1px solid var(--border-color); }
+    .fases-table td:nth-child(1) { background: #ffffff; }
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 120px; z-index: 2; background: #f8fafc; border-right: 2px solid var(--border-color); }
+    .fases-table td:nth-child(2) { background: #ffffff; }
+
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { font-weight: 900; background: #e2e8f0 !important; border-top: 2px solid var(--border-color); color: var(--text-dark); }
+
+    /* TABELA DE PAGAMENTOS REALIZADOS */
+    .realizado-table { width: 100%; border-collapse: collapse; font-size: 11px; background: #ffffff; }
+    .realizado-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px; border-bottom: 2px solid var(--border-color); text-align: left; }
+    .realizado-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); }
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
@@ -128,7 +151,7 @@ def carregar_dados_obras_detalhado():
     if not conn: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     try:
-        # --- ORÇADO (Para KPIs e Evolução Mensal) ---
+        # --- ORÇADO ---
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc = df_orc[df_orc['RESUMO OBRAS'].astype(str).str.upper() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc['RESUMO OBRAS'].astype(str).str.upper().str.strip()
@@ -141,12 +164,11 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
-        # --- FASES DA OBRA (Aba detalhada Fases_Obra ou Orçamento_Obra adaptada) ---
+        # --- FASES DA OBRA ---
         df_fases = pd.DataFrame()
         try:
             df_fases = conn.read(worksheet="Fases_Obra", ttl=0)
         except Exception:
-            # Se a aba Fases_Obra não existir ainda, criamos uma estrutura base com base no Orçamento_Obra
             df_fases = pd.DataFrame()
 
         # --- REALIZADO ---
@@ -154,6 +176,14 @@ def carregar_dados_obras_detalhado():
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
         df_real['Mes'] = df_real['MÊS'].apply(extract_month)
         df_real['Valor_Realizado'] = df_real['Valor'].apply(limpa_valor)
+        
+        col_forn = next((c for c in df_real.columns if 'forn' in c.lower()), 'Fornecedor')
+        col_nf = next((c for c in df_real.columns if 'nf' in c.lower()), 'NF')
+        col_data = next((c for c in df_real.columns if 'data' in c.lower()), 'DATA PGTO')
+        
+        df_real['Fornecedor'] = df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.upper()
+        df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
+        df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
         
         return df_orc_melt, df_real, df_fases
         
@@ -187,6 +217,7 @@ with st.sidebar:
 # Aplicação de Filtros Globais
 df_orc_filtrado = df_orcado.copy()
 df_real_filtrado = df_realizado.copy()
+df_fases_filtrado = df_fases.copy()
 
 if mes_selecionado != "Todos":
     df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
@@ -195,6 +226,9 @@ if mes_selecionado != "Todos":
 if obra_selecionada != "Todas":
     df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
     df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
+    if not df_fases_filtrado.empty:
+        col_o_f = df_fases_filtrado.columns[0]
+        df_fases_filtrado = df_fases_filtrado[df_fases_filtrado[col_o_f].astype(str).str.upper().str.strip() == obra_selecionada]
 
 # ==============================================================================
 # 5. CÁLCULOS E ANÁLISE MÊS A MÊS (MoM)
@@ -239,20 +273,19 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- LINHA 1: KPIs ---
+# --- LINHA 1: KPIs COM CORES PASTEL ---
 kpi_html = (
     "<div class='kpi-grid'>"
-    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total do Ano</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Investimento Realizado</div><div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Restante Orçamento Obra</div><div class='kpi-value' style='color: {'var(--red-main)' if saldo_orcamento < 0 else 'var(--text-dark)'};'>{formatar_moeda(saldo_orcamento)}</div><div class='kpi-subtitle'>Saldo disponível</div></div>"
-    f"<div class='kpi-item'><div class='kpi-title'>Pagamento Mês ({mes_atual:02d})</div><div class='kpi-value'>{formatar_moeda(realizado_atual)}</div><div class='kpi-subtitle' style='color: {mom_color}; font-weight: 600;'>{mom_str}</div></div>"
+    "<div class='kpi-item bg-blue'><div class='kpi-title'>Orçamento Total do Ano</div>" + f"<div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado</div></div>"
+    "<div class='kpi-item bg-green'><div class='kpi-title'>Investimento Realizado</div>" + f"<div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div></div>"
+    "<div class='kpi-item bg-yellow'><div class='kpi-title'>Orçamento Disponível</div>" + f"<div class='kpi-value' style='color: {'var(--red-main)' if saldo_orcamento < 0 else 'var(--text-dark)'};'>{formatar_moeda(saldo_orcamento)}</div><div class='kpi-subtitle'>Saldo disponível</div></div>"
+    "<div class='kpi-item bg-blue'><div class='kpi-title'>Pagamento Mês (" + f"{mes_atual:02d}" + ")</div>" + f"<div class='kpi-value'>{formatar_moeda(realizado_atual)}</div><div class='kpi-subtitle' style='color: {mom_color}; font-weight: 600;'>{mom_str}</div></div>"
     "</div>"
 )
 st.markdown(kpi_html, unsafe_allow_html=True)
 
-# --- LINHA 2: Gráfico de Linha Mensal (Abaixo dos blocos iniciais) ---
+# --- LINHA 2: Gráfico de Linha com Totalizador Abaixo da Data ---
 st.markdown("<div class='section-title'>EVOLUÇÃO MENSAL: ORÇADO VS REALIZADO</div>", unsafe_allow_html=True)
-st.markdown("<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm); margin-bottom:20px;'>", unsafe_allow_html=True)
 
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -268,6 +301,16 @@ df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
 
 ultimo_mes_com_real = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
 df_linha.loc[df_linha['Mes'] > ultimo_mes_com_real, 'Valor_Realizado'] = None
+
+tot_orc_grafico = df_linha['Valor_Orcado'].sum()
+tot_real_grafico = df_linha['Valor_Realizado'].dropna().sum()
+
+st.markdown(f"""
+<div style='background:#ffffff; border:1px solid var(--border-color); border-radius:8px; padding:18px; box-shadow:var(--shadow-sm); margin-bottom:20px;'>
+    <div class='chart-subtitle-total'>
+        <b>Totalizadores no Período:</b> Orçado: <span style='color:var(--blue-main);'>{formatar_moeda(tot_orc_grafico)}</span> | Realizado: <span style='color:var(--green-main);'>{formatar_moeda(tot_real_grafico)}</span>
+    </div>
+""", unsafe_allow_html=True)
 
 meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
@@ -285,7 +328,7 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=300,
+    height=280,
     margin=dict(l=10, r=10, t=10, b=10),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
@@ -296,38 +339,35 @@ st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': F
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) COM FORMATO CORRIGIDO
 # ==============================================================================
 st.markdown("<div class='section-title'>DETALHAMENTO DO ORÇADO X REALIZADO - FASES DA OBRA</div>", unsafe_allow_html=True)
 
-try:
-    conn = conectar_sheets()
-    df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0) if conn else pd.DataFrame()
-except Exception:
-    df_fases_raw = pd.DataFrame()
-
-if not df_fases_raw.empty:
-    # Se a aba Fases_Obra existir no Google Sheets, exibe exatamente ela
+if not df_fases.empty:
+    df_fases_view = df_fases.copy()
     if obra_selecionada != "Todas":
-        col_o = df_fases_raw.columns[0]
-        df_fases_raw = df_fases_raw[df_fases_raw[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
+        col_o = df_fases_view.columns[0]
+        df_fases_view = df_fases_view[df_fases_view[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
         
     html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    for col in df_fases_raw.columns:
+    for col in df_fases_view.columns:
         html_fases += f"<th>{col}</th>"
     html_fases += "</tr></thead><tbody>"
     
-    for _, row in df_fases_raw.iterrows():
+    for _, row in df_fases_view.iterrows():
         is_total = any('total' in str(val).lower() for val in row.values)
         tr_class = "total-geral-row" if is_total else ""
         html_fases += f"<tr class='{tr_class}'>"
-        for val in row.values:
+        for i, val in enumerate(row.values):
             val_str = str(val) if pd.notna(val) else "-"
-            # Tenta formatar se parecer número grande
+            # Se for coluna de valor monetário (índice 2 ou >= 4 dependendo da estrutura)
             try:
                 num_v = float(val_str.replace('.', '').replace(',', '.'))
-                if num_v > 999:
+                # Se não for a coluna de percentual (%) nem índice 3
+                if i != 3 and num_v > 99:
                     val_str = formatar_moeda(num_v)
+                elif i == 3 and num_v <= 1:
+                    val_str = f"{num_v*100:.2f}%"
             except:
                 pass
             html_fases += f"<td>{val_str}</td>"
@@ -335,4 +375,47 @@ if not df_fases_raw.empty:
     html_fases += "</tbody></table></div>"
     st.markdown(html_fases, unsafe_allow_html=True)
 else:
-    st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets. Certifique-se de criar a aba com a estrutura idêntica à da planilha enviada para carregar o detalhamento completo.")
+    st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
+
+# ==============================================================================
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS
+# ==============================================================================
+st.markdown("<div class='section-title'>DETALHAMENTO DE PAGAMENTOS REALIZADOS</div>", unsafe_allow_html=True)
+
+df_real_detalhe = df_real_filtrado.copy()
+if not df_real_detalhe.empty:
+    html_real = """
+    <div style='max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: #ffffff;'>
+    <table class='realizado-table'>
+        <thead>
+            <tr>
+                <th>Data Pgto</th>
+                <th>Obra / Categoria</th>
+                <th>Fornecedor</th>
+                <th>NF / Doc</th>
+                <th style='text-align:right;'>Valor Realizado</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
+    for _, tr in df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True]).iterrows():
+        html_real += f"""
+        <tr>
+            <td>{tr['Data_Pgto']}</td>
+            <td><b>{tr['Obra']}</b></td>
+            <td>{tr['Fornecedor']}</td>
+            <td>{tr['NF']}</td>
+            <td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>
+        </tr>
+        """
+    html_real += f"""
+        <tr style='background:#f8fafc; font-weight:800; border-top:2px solid var(--border-color);'>
+            <td colspan='4'>TOTAL DOS PAGAMENTOS LISTADOS</td>
+            <td style='text-align:right;'>{formatar_moeda(tot_real_detalhe)}</td>
+        </tr>
+    </tbody></table></div>
+    """
+    st.markdown(html_real, unsafe_allow_html=True)
+else:
+    st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
