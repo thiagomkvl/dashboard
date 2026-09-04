@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO COM COLUNAS CONGELADAS E PADRÃO FASES)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO IDÊNTICO À TABELA DE FASES)
 # ==============================================================================
 css = """
 <style>
@@ -117,7 +117,7 @@ css = """
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
-    /* TABELA DE FASES COM STICKY CORRIGIDO */
+    /* TABELA DE FASES / REALIZADO COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -159,7 +159,7 @@ css = """
     .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
     .fases-table td:nth-child(1) { background: #ffffff; }
 
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 150px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 180px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
     .fases-table th:nth-child(2) { z-index: 20; background: #f8fafc; }
     .fases-table td:nth-child(2) { background: #ffffff; }
 
@@ -496,7 +496,7 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTRUTURA IDÊNTICA ÀS FASES)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (DESIGN IDÊNTICO ÀS FASES)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
@@ -516,6 +516,7 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
     
+    # Cabeçalho idêntico ao da tabela de fases
     html_matrix = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
     html_matrix += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
@@ -528,7 +529,7 @@ if not df_real_detalhe.empty:
         obra_r = row['Obra']
         tot_r = row['TOTAL']
         
-        # Expander limpo sem emojis, exatamente no mesmo design padrão
+        # Expander limpo sem emojis, alinhado ao layout corporativo
         with st.expander(f"{obra_r}  —  Total Realizado: {formatar_moeda(tot_r)}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor'])
             st.markdown("""
@@ -563,7 +564,7 @@ if not df_real_detalhe.empty:
         row_html += "</tr>"
         st.markdown(row_html, unsafe_allow_html=True)
         
-    # Linha de Total Geral
+    # Linha de Total Geral idêntica à de fases
     tot_geral_real = df_matrix['TOTAL'].sum()
     total_row_html = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
