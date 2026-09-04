@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO LIMPO - SEM RETÂNGULOS)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO COM LINHA ÚNICA DE TOTALIZADORES)
 # ==============================================================================
 css = """
 <style>
@@ -73,18 +73,29 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* CARDS DE TOTALIZADORES MÊS A MÊS */
-    .monthly-total-card {
+    /* LINHA ÚNICA DE TOTALIZADORES MÊS A MÊS */
+    .monthly-row-container {
+        display: flex;
         background: #ffffff;
         border: 1px solid var(--border-color);
-        border-radius: 6px;
-        padding: 8px 2px;
-        text-align: center;
+        border-radius: 8px;
         box-shadow: var(--shadow-sm);
+        margin-top: 10px;
+        margin-bottom: 20px;
+        overflow-x: auto;
     }
-    .m-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-    .m-orc { font-size: 10px; font-weight: 800; color: var(--blue-main); }
-    .m-real { font-size: 10px; font-weight: 800; color: var(--green-main); }
+    .monthly-row-col {
+        flex: 1;
+        min-width: 85px;
+        padding: 10px 4px;
+        text-align: center;
+        border-right: 1px solid #f1f5f9;
+    }
+    .monthly-row-col:last-child { border-right: none; }
+    .m-title { font-size: 11px; font-weight: 800; color: var(--text-dark); text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    .m-row-item { font-size: 9px; font-weight: 700; color: var(--text-muted); margin-top: 4px; }
+    .m-orc { font-size: 11px; font-weight: 800; color: var(--blue-main); }
+    .m-real { font-size: 11px; font-weight: 800; color: var(--green-main); }
     
     /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
@@ -381,7 +392,7 @@ kpi_html = (
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2: GRÁFICO DE LINHA MENSAL ALINHADO E SEM RETÂNGULO
+# LINHA 2: GRÁFICO DE LINHA MENSAL SEM RÓTULOS REPETITIVOS E COM LINHA ÚNICA ABAIXO
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -416,32 +427,35 @@ fig_linha.add_trace(go.Scatter(
     connectgaps=False
 ))
 fig_linha.update_layout(
-    height=270,
-    margin=dict(l=20, r=20, t=10, b=10),
+    height=250,
+    margin=dict(l=20, r=20, t=10, b=0),
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)),
     yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False),
-    xaxis=dict(showgrid=False, showline=False, range=[-0.2, 10.2]) # Trava o eixo X colado nas extremidades
+    xaxis=dict(showgrid=False, showline=False, showticklabels=False, range=[-0.2, 10.2]) # Oculta os meses repetidos do eixo X
 )
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
-# GRID DE TOTALIZADORES MÊS A MÊS ALINHADOS 1:1 EXATAMENTE ABAIXO DAS COLUNAS DO GRÁFICO
-cols_meses = st.columns(11)
-for idx, r in df_linha.iterrows():
+# LINHA ÚNICA DE TOTALIZADORES MÊS A MÊS COM DESCRIÇÃO "REALIZADO X ORÇADO"
+html_row = "<div class='monthly-row-container'>"
+for _, r in df_linha.iterrows():
     m_nome = r['Mes_Nome']
     v_orc = r['Valor_Orcado']
     v_real = r['Valor_Realizado']
     val_real_str = formatar_moeda_curta(v_real) if pd.notna(v_real) else "-"
     
-    with cols_meses[idx]:
-        st.markdown(f"""
-        <div class='monthly-total-card'>
-            <div class='m-title'>{m_nome}</div>
-            <div class='m-orc'>{formatar_moeda_curta(v_orc)}</div>
-            <div class='m-real'>{val_real_str}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    html_row += f"""
+    <div class='monthly-row-col'>
+        <div class='m-title'>{m_nome}</div>
+        <div class='m-row-item'>Realizado</div>
+        <div class='m-real'>{val_real_str}</div>
+        <div class='m-row-item' style='margin-top:6px;'>Orçado</div>
+        <div class='m-orc'>{formatar_moeda_curta(v_orc)}</div>
+    </div>
+    """
+html_row += "</div>"
+st.markdown(html_row, unsafe_allow_html=True)
 
 # ==============================================================================
 # 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
