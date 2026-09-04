@@ -240,59 +240,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- LINHA 1: KPIs ---
-kpi_html = f"""
-<div class='kpi-grid'>
-    <div class='kpi-item'>
-        <div class='kpi-title'>Obras em Execução</div>
-        <div class='kpi-value'>{qtd_obras_ativas}</div>
-        <div class='kpi-subtitle'>Projetos ativos</div>
-        <div class='kpi-icon icon-red'>O</div>
-    </div>
-    <div class='kpi-item'>
-        <div class='kpi-title'>Orçamento Total</div>
-        <div class='kpi-value'>{formatar_moeda(total_orcado)}</div>
-        <div class='kpi-subtitle'>Valor planejado acumulado</div>
-        <div class='kpi-icon icon-red'>$</div>
-    </div>
-    <div class='kpi-item'>
-        <div class='kpi-title'>Investimento Realizado</div>
-        <div class='kpi-value'>{formatar_moeda(total_realizado)}</div>
-        <div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div>
-        <div class='kpi-icon icon-green'>%</div>
-    </div>
-    <div class='kpi-item'>
-        <div class='kpi-title'>Consumo Médio</div>
-        <div class='kpi-value'>{consumo_geral_perc:.1f}%</div>
-        <div class='kpi-subtitle'>Média financeira global</div>
-        <div class='kpi-icon icon-blue'>M</div>
-    </div>
-</div>
-"""
+kpi_html = (
+    "<div class='kpi-grid'>"
+    f"<div class='kpi-item'><div class='kpi-title'>Obras em Execução</div><div class='kpi-value'>{qtd_obras_ativas}</div><div class='kpi-subtitle'>Projetos ativos</div><div class='kpi-icon icon-red'>O</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Orçamento Total</div><div class='kpi-value'>{formatar_moeda(total_orcado)}</div><div class='kpi-subtitle'>Valor planejado acumulado</div><div class='kpi-icon icon-red'>$</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Investimento Realizado</div><div class='kpi-value'>{formatar_moeda(total_realizado)}</div><div class='kpi-subtitle green'>{consumo_geral_perc:.1f}% do orçado</div><div class='kpi-icon icon-green'>%</div></div>"
+    f"<div class='kpi-item'><div class='kpi-title'>Consumo Médio</div><div class='kpi-value'>{consumo_geral_perc:.1f}%</div><div class='kpi-subtitle'>Média financeira global</div><div class='kpi-icon icon-blue'>M</div></div>"
+    "</div>"
+)
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # --- LINHA 2: Tabela de Status e Gráfico Donut ---
 c1, c2 = st.columns([2.2, 1])
 
 with c1:
-    html_status = """
-    <div class='base-card'>
-        <div class='card-header'>STATUS DAS OBRAS (ORÇAMENTO VS REALIZADO)</div>
-        <table class='status-table'>
-            <thead>
-                <tr>
-                    <th>Obra</th>
-                    <th>Orçamento Consumido</th>
-                    <th style='text-align:center;'>Status</th>
-                    <th>Investimento Realizado</th>
-                </tr>
-            </thead>
-            <tbody>
-    """
+    html_status = (
+        "<div class='base-card'>"
+        "<div class='card-header'>STATUS DAS OBRAS (ORÇAMENTO VS REALIZADO)</div>"
+        "<table class='status-table'>"
+        "<thead><tr><th>Obra</th><th>Orçamento Consumido</th><th style='text-align:center;'>Status</th><th>Investimento Realizado</th></tr></thead>"
+        "<tbody>"
+    )
     
     for _, row in df_matriz.sort_values('Valor_Orcado', ascending=False).iterrows():
         cons = row['Consumo (%)']
         
-        # Lógica de Cores e Status baseada no Consumo
         if cons < 80:
             status_txt = "Em Andamento"
             chip_class = "chip-andamento"
@@ -306,28 +278,15 @@ with c1:
             chip_class = "chip-estourado"
             bar_color = "var(--red-main)"
             
-        html_status += f"""
-            <tr>
-                <td>
-                    <div class='obra-name'>{row['Obra']}</div>
-                </td>
-                <td>
-                    <div class='prog-container'>
-                        <div class='prog-text'>{cons:.0f}%</div>
-                        <div class='prog-bar-bg'>
-                            <div class='prog-bar-fill' style='width: {min(cons, 100):.1f}%; background-color: {bar_color};'></div>
-                        </div>
-                    </div>
-                </td>
-                <td style='text-align:center;'>
-                    <span class='status-chip {chip_class}'>{status_txt}</span>
-                </td>
-                <td>
-                    <div class='inv-text-main'>{formatar_moeda(row['Valor_Realizado'])}</div>
-                    <div class='inv-text-sub'>de {formatar_moeda(row['Valor_Orcado'])}</div>
-                </td>
-            </tr>
-        """
+        html_status += (
+            "<tr>"
+            f"<td><div class='obra-name'>{row['Obra']}</div></td>"
+            f"<td><div class='prog-container'><div class='prog-text'>{cons:.0f}%</div>"
+            f"<div class='prog-bar-bg'><div class='prog-bar-fill' style='width: {min(cons, 100):.1f}%; background-color: {bar_color};'></div></div></div></td>"
+            f"<td style='text-align:center;'><span class='status-chip {chip_class}'>{status_txt}</span></td>"
+            f"<td><div class='inv-text-main'>{formatar_moeda(row['Valor_Realizado'])}</div><div class='inv-text-sub'>de {formatar_moeda(row['Valor_Orcado'])}</div></td>"
+            "</tr>"
+        )
         
     html_status += "</tbody></table></div>"
     st.markdown(html_status, unsafe_allow_html=True)
@@ -357,57 +316,30 @@ with c2:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- LINHA 3: Pagamentos por Fornecedor (Expansível / Drill-Down) ---
-st.markdown("""
-<div class='base-card'>
-    <div class='card-header'>TOTAL DE PAGAMENTOS REALIZADOS POR FORNECEDOR</div>
-""", unsafe_allow_html=True)
+st.markdown("<div class='base-card'><div class='card-header'>TOTAL DE PAGAMENTOS REALIZADOS POR FORNECEDOR</div>", unsafe_allow_html=True)
 
 df_drill = df_real_filtrado[df_real_filtrado['Obra'].isin(lista_obras)].copy()
 
 if not df_drill.empty:
     html_forn = ""
-    # Agrupa primeiro por obra para ficar organizado
     for obra in sorted(df_drill['Obra'].unique()):
         df_obra = df_drill[df_drill['Obra'] == obra]
         
-        html_forn += f"<div class='forn-group'>"
-        html_forn += f"<div class='forn-obra-title'>{obra}</div>"
+        html_forn += f"<div class='forn-group'><div class='forn-obra-title'>{obra}</div>"
         
-        # Agrupa os fornecedores dessa obra e ordena pelo maior valor pago
         fornecedores_soma = df_obra.groupby('Fornecedor')['Valor_Realizado'].sum().sort_values(ascending=False)
         
         for forn, tot_pago in fornecedores_soma.items():
             df_forn_transacoes = df_obra[df_obra['Fornecedor'] == forn].sort_values('Mes')
             
-            html_forn += f"""
-            <details class='forn-details'>
-                <summary>
-                    <div style='display:flex; align-items:center; gap:8px;'>
-                        <span style='color:var(--blue-main); font-size:16px;'>+</span>
-                        <span>{forn}</span>
-                    </div>
-                    <span>{formatar_moeda(tot_pago)}</span>
-                </summary>
-                <table class='transacao-table'>
-                    <thead>
-                        <tr>
-                            <th style='width: 20%;'>Data Pagamento</th>
-                            <th style='width: 30%;'>Nota Fiscal / Doc.</th>
-                            <th style='width: 20%;'>Mês Ref.</th>
-                            <th style='width: 30%; text-align:right;'>Valor (R$)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            """
+            html_forn += (
+                f"<details class='forn-details'>"
+                f"<summary><div style='display:flex; align-items:center; gap:8px;'><span style='color:var(--blue-main); font-size:16px;'>+</span><span>{forn}</span></div>"
+                f"<span>{formatar_moeda(tot_pago)}</span></summary>"
+                "<table class='transacao-table'><thead><tr><th style='width: 20%;'>Data Pagamento</th><th style='width: 30%;'>Nota Fiscal / Doc.</th><th style='width: 20%;'>Mês Ref.</th><th style='width: 30%; text-align:right;'>Valor (R$)</th></tr></thead><tbody>"
+            )
             for _, tr in df_forn_transacoes.iterrows():
-                html_forn += f"""
-                    <tr>
-                        <td>{tr['Data_Pgto']}</td>
-                        <td>{tr['NF']}</td>
-                        <td>Mês {tr['Mes']:02d}</td>
-                        <td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>
-                    </tr>
-                """
+                html_forn += f"<tr><td>{tr['Data_Pgto']}</td><td>{tr['NF']}</td><td>Mês {tr['Mes']:02d}</td><td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td></tr>"
             html_forn += "</tbody></table></details>"
             
         html_forn += "</div>"
