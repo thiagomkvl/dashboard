@@ -169,8 +169,10 @@ def injetar_html(codigo_html):
 # ==============================================================================
 @st.cache_data(ttl=60)
 def limpar_valor_serie(serie):
+    """Processa a coluna inteira de valores de forma vetorizada (muito mais rápida)."""
     s = serie.astype(str).str.strip().str.replace('R$', '', regex=False)
     s = s.str.replace(r'^\s*\((.*?)\)\s*$', r'-\1', regex=True)
+    # Se tiver ponto e vírgula (ex: 1.000,50)
     has_both = s.str.contains(r'\.', na=False) & s.str.contains(',', na=False)
     s_clean = s.where(~has_both, s.str.replace('.', '', regex=False).str.replace(',', '.', regex=False))
     s_clean = s_clean.where(has_both, s_clean.str.replace(',', '.', regex=False))
@@ -210,10 +212,10 @@ with st.sidebar:
     """, height=55)
 
 # ==============================================================================
-# 4. CARGA DE DADOS OTIMIZADA (V17)
+# 4. CARGA DE DADOS OTIMIZADA (V16)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_matriz_fluxo_v17(ano):
+def carregar_dados_matriz_fluxo_v16(ano):
     conn = conectar_sheets()
     if not conn: return pd.DataFrame(), pd.DataFrame(), 0.0, 0.0
     
@@ -255,7 +257,7 @@ def carregar_dados_matriz_fluxo_v17(ano):
         df_ext['Vl_Cred'] = limpar_valor_serie(df_ext[col_cred])
         df_ext['Tipo_Conta'] = df_ext[col_banco].astype(str).apply(definir_tipo)
         
-        # Filtra Transferências
+        # Filtra Transferências de forma vetorizada
         serie_tipo = df_ext[col_tipo].fillna('').astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ASCII', 'ignore').decode('utf-8'))
         is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
         
@@ -267,7 +269,7 @@ def carregar_dados_matriz_fluxo_v17(ano):
         df_up_to_now = df_valid_balance[df_valid_balance['Data'] <= pd.to_datetime(datetime.now().date())]
         saldo_atual_caixa = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
 
-        # Filtrar dados Matriz Operacional (Garante que QUALQUER dado OPERACIONAL entre, seja entrada ou saída)
+        # Filtrar dados Matriz Operacional do Ano
         df_op = df_ext[(~is_transf) & (df_ext['Ano'] == ano)].copy()
         df_op['Operacional'] = df_op[col_operac].fillna('').astype(str).str.strip().str.upper()
         df_op = df_op[df_op['Operacional'] == 'OPERACIONAL'].copy()
@@ -278,7 +280,7 @@ def carregar_dados_matriz_fluxo_v17(ano):
         df_op['Descricao_Trans'] = df_op[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip().str.upper()
         df_op.loc[df_op['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
         
-        # Separar Entradas e Saídas estritamente pelo crédito/débito
+        # Separar Entradas e Saídas otimizadas
         df_ent = df_op[df_op['Vl_Cred'] > 0].copy()
         df_ent['Valor_Op'] = df_ent['Vl_Cred']
         
@@ -294,7 +296,7 @@ def carregar_dados_matriz_fluxo_v17(ano):
 df_entradas, df_saidas, saldo_inicio_ano, saldo_atual = pd.DataFrame(), pd.DataFrame(), 0.0, 0.0
 
 try:
-    res = carregar_dados_matriz_fluxo_v17(ano_selecionado)
+    res = carregar_dados_matriz_fluxo_v16(ano_selecionado)
     if len(res) == 4:
         df_entradas, df_saidas, saldo_inicio_ano, saldo_atual = res
 except Exception as e:
@@ -309,12 +311,14 @@ if df_entradas.empty and df_saidas.empty:
 # ==============================================================================
 dummy_prev = [0]*12
 
+# Agrupamento vetorizado de Entradas por Mês (1 a 12)
 tot_ent = [0]*12
 if not df_entradas.empty:
     ent_mes = df_entradas.groupby('Mes')['Valor_Op'].sum().to_dict()
     for m in range(1, 13):
         tot_ent[m-1] = ent_mes.get(m, 0.0)
 
+# Agrupamento vetorizado de Saídas por Mês (1 a 12)
 tot_sai = [0]*12
 if not df_saidas.empty:
     sai_mes = df_saidas.groupby('Mes')['Valor_Op'].sum().to_dict()
@@ -403,9 +407,11 @@ def render_linha(nome, nivel, arr_prev, arr_real, override_tot_p=None, override_
     return html
 
 def build_drilldown_fast(df_dados):
+    """Gera o HTML de drilldown de forma vetorizada ultra-rápida."""
     if df_dados.empty: return ""
     
     html = ""
+    # Cria uma tabela pivot para somar valores por Classificação, Transação e Mês de uma só vez
     pivot = pd.pivot_table(
         df_dados, 
         values='Valor_Op', 
@@ -420,6 +426,7 @@ def build_drilldown_fast(df_dados):
         if classif not in pivot.index.get_level_values(0): continue
         
         df_classif_rows = pivot.loc[classif]
+        # Se for apenas uma linha, o DataFrame precisa ser tratado
         if isinstance(df_classif_rows, pd.Series):
             df_classif_rows = pd.DataFrame([df_classif_rows], index=[df_classif_rows.name])
             
@@ -433,6 +440,536 @@ def build_drilldown_fast(df_dados):
             html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real_classif)
             html += "</summary>"
             
+            # Ordena transações pelo total anual
+            totais_trans = df_classif_rows.sum(axis=1).sort_values(ascending=False)
+            for trans_name in totais_trans.index:
+                row_vals = df_classif_rows.loc[trans_name]
+                arr_trans_real = [0]*12
+                for m in range(1, 13):
+                    if m in row_vals.index:
+                        arr_trans_real[m-1] = row_vals[m]
+                
+                desc = str(trans_name)[:65] + ("..." if len(str(trans_name)) > 65 else "")
+                html += render_linha(f"↳ {desc}", "lvl-item", dummy_prev, arr_trans_real)
+                
+            html += "</details>"
+            
+    return html
+
+# Inicia montagem da estrutura HTML
+html_matriz = "<div class='matrix-wrapper'><div class='matrix-grid'>"
+
+# Header Dinâmico
+html_matriz += "<div class='grid-row grid-header'>"
+html_matriz += "<div class='col-name' style='padding-left: 15px; font-weight: 800; color: #000000;'>Fluxo de Caixa Operacional</div>"
+
+for idx, m in enumerate(meses_labels): 
+    html_matriz += f'''
+    <div class='col-val' id='mes-{idx + 1}' style='padding:0;'>
+        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>{m.upper()}/{str(ano_selecionado)[-2:]}</div>
+        <div class='dual-col'>
+            <div class='dual-cell prev header'>PROJEÇÃO</div>
+            <div class='dual-cell real header'>REALIZADO</div>
+        </div>
+    </div>
+    '''
+html_matriz += f'''
+    <div class='col-val total-col' style='padding:0;'>
+        <div style='text-align:center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; color: #000000; font-weight: 800;'>TOTAL ANUAL</div>
+        <div class='dual-col'>
+            <div class='dual-cell prev header'>PROJEÇÃO</div>
+            <div class='dual-cell real header'>REALIZADO</div>
+        </div>
+    </div>
+</div>
+'''
+
+# BLOCO ENTRADAS
+html_matriz += render_linha("ENTRADAS OPERACIONAIS", "lvl-macro", dummy_prev, tot_ent)
+html_matriz += build_drilldown_fast(df_entradas)
+
+html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
+
+# BLOCO SAÍDAS
+html_matriz += render_linha("SAÍDAS OPERACIONAIS", "lvl-macro", dummy_prev, tot_sai)
+html_matriz += build_drilldown_fast(df_saidas)
+
+html_matriz += "<div style='height: 15px; background: #f5f7fb;'></div>"
+
+# BLOCO DE RESULTADOS
+val_saldo_ant_total = saldo_inicio_ano if saldo_inicio_ano != 0 else ""
+val_saldo_fim_total = l3_acumulado[-1]
+
+html_matriz += render_linha("RESULTADO CAIXA", "res-r1", dummy_prev, l1_resultado)
+html_matriz += render_linha("SALDO ANTERIOR", "res-r2", dummy_prev, l2_saldo_ant, override_tot_p="", override_tot_r=val_saldo_ant_total)
+html_matriz += render_linha("SALDO FINAL", "res-r6", dummy_prev, l3_acumulado, override_tot_p="", override_tot_r=val_saldo_fim_total)
+
+html_matriz += "</div></div>"
+
+injetar_html(html_matriz)
+st.markdown(f"<div style='font-size:9px; color:gray; text-align:right; margin-top:5px;'>Valores em Reais (R$) | Estrutura otimizada | Referência: {ano_selecionado}</div>", unsafe_allow_html=True)
+
+# ==============================================================================
+# 8. SCRIPT DE AUTOSCROLL (ROLA PARA O MÊS ATUAL AUTOMATICAMENTE)
+# ==============================================================================
+if ano_selecionado == ano_atual:
+    js_scroll = f"""
+    <script>
+        setTimeout(function() {{
+            var docs = window.parent.document;
+            var wrapper = docs.querySelector('.matrix-wrapper');
+            var targetCol = docs.getElementById('mes-{mes_atual}');
+            
+            if (wrapper && targetCol) {{
+                var offset = targetCol.offsetLeft - 300; 
+                wrapper.scrollTo({{left: offset, behavior: 'smooth'}});
+            }}
+        }}, 400);
+    </script>
+    """
+    components.html(js_scroll, height=0, width=0)import streamlit as st
+
+# O set_page_config OBRIGATORIAMENTE tem que ser a primeira coisa do arquivo
+st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", page_icon="💰", initial_sidebar_state="expanded")
+
+import streamlit.components.v1 as components
+import pandas as pd
+from datetime import datetime, timedelta
+import textwrap
+import unicodedata
+import re
+
+# BLINDAGEM MÁXIMA DE CONEXÃO
+try:
+    from database import conectar_sheets
+except Exception as e:
+    def conectar_sheets():
+        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
+        return None
+
+# ==============================================================================
+# 1. CUSTOM CSS — IDENTIDADE VISUAL E COLUNA CONGELADA (STICKY)
+# ==============================================================================
+css = """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --border: #d0e3e4;
+        --text: #172033;
+        --muted: #6b7280;
+        --primary: #008A8C;
+        --success: #1cc88a;
+        --danger: #e74a3b;
+        --warning: #c58a16;
+        --shadow: 0 4px 15px rgba(0, 138, 140, 0.15);
+    }
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    .main { background: var(--bg); }
+    .main .block-container { padding-top: 0.8rem; padding-bottom: 2rem; max-width: 98%; }
+    
+    /* Cabeçalho */
+    .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .header-period { min-width: 200px; }
+    .header-period .date { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.25px; }
+    .header-period .label { margin-top: 2px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+    .header-center { text-align: center; }
+    .header-center h1 { margin: 0; color: var(--text); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.35px; text-transform: uppercase; }
+    .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: 0.3px; }
+    
+    /* KPIs (5 COLUNAS COM PALETA TEAL UNIFICADA) */
+    .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
+    .kpi-card { position: relative; overflow: hidden; min-height: 80px; padding: 18px 20px; border-radius: 10px; box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
+    .kpi-card.inicial { background: linear-gradient(135deg, #1CB0B2, #148b8d); }
+    .kpi-card.total { background: linear-gradient(135deg, #008A8C, #006869); }
+    .kpi-card.corrente { background: linear-gradient(135deg, #006E6F, #004b4c); }
+    .kpi-card.resultado { background: linear-gradient(135deg, #006E6F, #004b4c); }
+    .kpi-card.aplicado { background: linear-gradient(135deg, #004D4E, #003334); }
+    .kpi-title { font-size: 11px; line-height: 1.2; font-weight: 750; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); }
+    .kpi-value { font-size: 26px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; text-shadow: 0px 1px 2px rgba(0,0,0,0.1); margin-top: 6px; }
+
+    /* MATRIZ CSS GRID EXPANSÍVEL */
+    .matrix-wrapper { overflow-x: auto; width: 100%; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); background: var(--surface); margin-bottom: 30px; position: relative;}
+    .matrix-grid { min-width: 2200px; display: flex; flex-direction: column; }
+    
+    .grid-row { display: grid; grid-template-columns: minmax(300px, 2fr) repeat(13, minmax(160px, 1fr)); border-bottom: 1px solid #ebf2f2; transition: background 0.1s; align-items: stretch;}
+    
+    .grid-row:not(.lvl-macro):not(.res-r6):hover { background-color: #f0f7f7; }
+    .grid-row:not(.lvl-macro):not(.res-r6):hover .col-name { background-color: #f0f7f7; }
+    .grid-row:not(.lvl-macro):not(.res-r6):hover .total-col { background-color: #f0f7f7; }
+    
+    .col-val { padding: 0; display: flex; flex-direction: column; justify-content: center; border-right: 2px solid #cbd5e1; }
+    .dual-col { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    
+    .dual-cell { flex: 1; text-align: left; padding: 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: flex-start; }
+    
+    .dual-cell.prev { color: #94a3b8; border-right: 1px dashed #e2e8f0; background: rgba(248, 250, 252, 0.4); }
+    .dual-cell.real { color: #000000; font-weight: 600; }
+    
+    .grid-header { background-color: #eaf4f4; border-bottom: 2px solid var(--primary); }
+    .grid-header .col-name { font-weight: 800; font-size: 11px; color: #172033; display: flex; align-items: center; background-color: #eaf4f4; z-index: 3;}
+    .dual-cell.prev.header { font-size: 10px; font-weight: 800; color: #b91c1c; background: #fef2f2; border-bottom: 2px solid #ef4444; justify-content: flex-start; }
+    .dual-cell.real.header { font-size: 10px; font-weight: 800; color: #15803d; background: #f0fdf4; border-bottom: 2px solid #22c55e; justify-content: flex-start; }
+    
+    .col-name { 
+        position: sticky; 
+        left: 0; 
+        z-index: 2; 
+        padding: 10px 15px; 
+        font-size: 11px; 
+        font-weight: 600; 
+        color: var(--text); 
+        border-right: 2px solid #cbd5e1; 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        box-shadow: 3px 0 5px -2px rgba(0,0,0,0.1); 
+    }
+
+    .total-col { 
+        position: sticky; 
+        right: 0; 
+        z-index: 2; 
+        background-color: #f8fafc; 
+        border-left: 2px solid #cbd5e1; 
+        border-right: none;
+        box-shadow: -3px 0 5px -2px rgba(0,0,0,0.1); 
+    }
+    .total-col .dual-cell.real { color: #000000; font-weight: 800; }
+
+    .grid-header .total-col { background-color: #eaf4f4; z-index: 3; }
+
+    .lvl-macro { background-color: #e0efef; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
+    .lvl-macro .col-name { background-color: #e0efef; color: #000000 !important; font-weight: 800 !important; font-size: 12px; border-right: 2px solid #cbd5e1; }
+    .lvl-macro .total-col { background-color: #e0efef; border-left: 2px solid #cbd5e1; }
+    .lvl-macro .dual-cell.prev { color: #4b5563 !important; font-weight: 800; background: transparent; border-right: 1px dashed #cbd5e1;}
+    .lvl-macro .dual-cell.real { color: #000000 !important; font-weight: 900; background: transparent;}
+    
+    .lvl-subgrupo { background-color: #ffffff; }
+    .lvl-subgrupo .col-name { background-color: #ffffff; font-weight: 700; color: #000000; } 
+    .lvl-subgrupo .total-col { background-color: #ffffff; } 
+    
+    .lvl-item { background-color: #fbfcfd; }
+    .lvl-item .col-name { background-color: #fbfcfd; padding-left: 35px; font-size: 10px; color: #000000; font-weight: 500; } 
+    .lvl-item .total-col { background-color: #fbfcfd; } 
+    .lvl-item .dual-cell.real { font-size: 11px; font-weight: 500; color: #000000; } 
+
+    .res-r1 { background-color: #f8fafc; }
+    .res-r1 .col-name { background-color: #f8fafc; font-weight: 800; color: #172033; }
+    .res-r1 .total-col { background-color: #f8fafc; }
+    .res-r1 .dual-cell.real { font-weight: 800; color: #000000; }
+    
+    .res-r2 { background-color: #ffffff; }
+    .res-r2 .col-name { background-color: #ffffff; font-weight: 800; color: var(--primary); }
+    .res-r2 .total-col { background-color: #ffffff; }
+    .res-r2 .dual-cell.real { font-weight: 800; color: var(--primary); }
+    
+    .res-r6 { background-color: #ccebdc; border-top: 2px solid #1cc88a; border-bottom: 2px solid #1cc88a;}
+    .res-r6 .col-name { background-color: #ccebdc; font-weight: 900; color: #000000 !important; border-right: 2px solid #cbd5e1;}
+    .res-r6 .total-col { background-color: #ccebdc; }
+    .res-r6 .dual-cell.prev { font-weight: 800; color: #4b5563 !important; background: transparent; border-right: 1px dashed #cbd5e1;}
+    .res-r6 .dual-cell.real { font-weight: 900; color: #000000 !important; background: transparent;}
+
+    details { width: 100%; display: block; margin: 0; padding: 0; }
+    details > summary { list-style: none; cursor: pointer; outline: none; margin: 0; padding: 0; }
+    details > summary::-webkit-details-marker { display: none; }
+    .icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 8px; font-size: 14px; display: inline-block; width: 12px; text-align: center;}
+    details:not([open]) > summary .icon-expand::before { content: "+"; }
+    details[open] > summary .icon-expand::before { content: "-"; }
+    
+    @media print {
+        [data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        .main .block-container { max-width: 100% !important; padding: 10px !important; }
+        details[open] summary ~ * { display: block; }
+    }
+</style>
+"""
+st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+
+def injetar_html(codigo_html):
+    st.markdown(codigo_html.replace('\n', ''), unsafe_allow_html=True)
+
+# ==============================================================================
+# 2. FUNÇÕES DE LIMPEZA E CÁLCULO VETORIZADAS
+# ==============================================================================
+@st.cache_data(ttl=60)
+def limpar_valor_serie(serie):
+    """Processa a coluna inteira de valores de forma vetorizada (muito mais rápida)."""
+    s = serie.astype(str).str.strip().str.replace('R$', '', regex=False)
+    s = s.str.replace(r'^\s*\((.*?)\)\s*$', r'-\1', regex=True)
+    # Se tiver ponto e vírgula (ex: 1.000,50)
+    has_both = s.str.contains(r'\.', na=False) & s.str.contains(',', na=False)
+    s_clean = s.where(~has_both, s.str.replace('.', '', regex=False).str.replace(',', '.', regex=False))
+    s_clean = s_clean.where(has_both, s_clean.str.replace(',', '.', regex=False))
+    return pd.to_numeric(s_clean, errors='coerce').fillna(0.0)
+
+def formatar_moeda(valor):
+    try:
+        val = float(valor)
+        if val == 0: return "-"
+        return f"{val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception: return "-"
+
+def definir_tipo(nome): 
+    n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+    if 'getnet' in n_norm: return 'Limite'
+    return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
+
+# ==============================================================================
+# 3. FILTRO LATERAL
+# ==============================================================================
+ano_atual = datetime.now().year
+mes_atual = datetime.now().month
+anos_disponiveis = [ano_atual - 2, ano_atual - 1, ano_atual, ano_atual + 1]
+
+with st.sidebar:
+    st.markdown("### Filtros de Análise")
+    ano_selecionado = st.selectbox("Ano de Referência:", anos_disponiveis, index=2)
+    
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### Relatório")
+    st.info("💡 Role para os lados para ver os meses. A primeira coluna e a coluna TOTAL estão congeladas.", icon="ℹ️")
+    components.html("""
+        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
+        style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(0, 138, 140, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Matriz (PDF)
+        </button>
+    """, height=55)
+
+# ==============================================================================
+# 4. CARGA DE DADOS OTIMIZADA (V16)
+# ==============================================================================
+@st.cache_data(ttl=60)
+def carregar_dados_matriz_fluxo_v16(ano):
+    conn = conectar_sheets()
+    if not conn: return pd.DataFrame(), pd.DataFrame(), 0.0, 0.0
+    
+    saldo_base = 0.0
+    try:
+        df_si = conn.read(worksheet="Saldo_Inicial", ttl=0)
+        if not df_si.empty:
+            df_si.columns = [str(c).strip() for c in df_si.columns]
+            df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
+            col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), df_si.columns[0])
+            col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0])
+            
+            df_si['Vl'] = limpar_valor_serie(df_si[col_si_valor])
+            df_si['Tipo'] = df_si[col_si_conta].astype(str).apply(definir_tipo)
+            saldo_base = df_si[df_si['Tipo'].isin(['Disponível', 'Aplicação'])]['Vl'].sum()
+    except Exception as e: print("Aviso Saldo Inicial:", e)
+
+    try:
+        df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
+        if df_ext.empty: return pd.DataFrame(), pd.DataFrame(), saldo_base, 0.0
+        
+        while len(df_ext.columns) < 13: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
+        
+        col_banco = df_ext.columns[0]
+        col_data = df_ext.columns[1]      
+        col_deb = df_ext.columns[4]       
+        col_cred = df_ext.columns[5]      
+        col_tipo = df_ext.columns[7]      
+        col_classif = df_ext.columns[9]   
+        col_operac = df_ext.columns[10]   
+        col_fornecedor = df_ext.columns[12] 
+
+        df_ext['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce')
+        df_ext = df_ext.dropna(subset=['Data']).copy()
+        df_ext['Ano'] = df_ext['Data'].dt.year
+        df_ext['Mes'] = df_ext['Data'].dt.month
+        
+        df_ext['Vl_Deb'] = limpar_valor_serie(df_ext[col_deb])
+        df_ext['Vl_Cred'] = limpar_valor_serie(df_ext[col_cred])
+        df_ext['Tipo_Conta'] = df_ext[col_banco].astype(str).apply(definir_tipo)
+        
+        # Filtra Transferências de forma vetorizada
+        serie_tipo = df_ext[col_tipo].fillna('').astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ASCII', 'ignore').decode('utf-8'))
+        is_transf = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
+        
+        # Saldos Globais
+        df_valid_balance = df_ext[(~is_transf) & (df_ext['Tipo_Conta'].isin(['Disponível', 'Aplicação']))].copy()
+        df_before = df_valid_balance[df_valid_balance['Data'] < f"{ano}-01-01"]
+        saldo_inicio_ano = saldo_base + df_before['Vl_Cred'].sum() - df_before['Vl_Deb'].sum()
+
+        df_up_to_now = df_valid_balance[df_valid_balance['Data'] <= pd.to_datetime(datetime.now().date())]
+        saldo_atual_caixa = saldo_base + df_up_to_now['Vl_Cred'].sum() - df_up_to_now['Vl_Deb'].sum()
+
+        # Filtrar dados Matriz Operacional do Ano
+        df_op = df_ext[(~is_transf) & (df_ext['Ano'] == ano)].copy()
+        df_op['Operacional'] = df_op[col_operac].fillna('').astype(str).str.strip().str.upper()
+        df_op = df_op[df_op['Operacional'] == 'OPERACIONAL'].copy()
+        
+        df_op['Classificacao'] = df_op[col_classif].fillna('NÃO CLASSIFICADO').astype(str).str.strip().str.upper()
+        df_op.loc[df_op['Classificacao'] == '', 'Classificacao'] = 'NÃO CLASSIFICADO'
+        
+        df_op['Descricao_Trans'] = df_op[col_fornecedor].fillna('SEM DESCRIÇÃO').astype(str).str.strip().str.upper()
+        df_op.loc[df_op['Descricao_Trans'] == '', 'Descricao_Trans'] = 'SEM DESCRIÇÃO'
+        
+        # Separar Entradas e Saídas otimizadas
+        df_ent = df_op[df_op['Vl_Cred'] > 0].copy()
+        df_ent['Valor_Op'] = df_ent['Vl_Cred']
+        
+        df_sai = df_op[df_op['Vl_Deb'] > 0].copy()
+        df_sai['Valor_Op'] = df_sai['Vl_Deb']
+            
+        return df_ent, df_sai, saldo_inicio_ano, saldo_atual_caixa
+    
+    except Exception as e:
+        st.error(f"Erro interno no processamento: {e}")
+        return pd.DataFrame(), pd.DataFrame(), 0.0, 0.0
+
+df_entradas, df_saidas, saldo_inicio_ano, saldo_atual = pd.DataFrame(), pd.DataFrame(), 0.0, 0.0
+
+try:
+    res = carregar_dados_matriz_fluxo_v16(ano_selecionado)
+    if len(res) == 4:
+        df_entradas, df_saidas, saldo_inicio_ano, saldo_atual = res
+except Exception as e:
+    st.error(f"Erro ao extrair pacote de dados: {e}")
+
+if df_entradas.empty and df_saidas.empty:
+    st.warning(f"⚠️ Nenhuma movimentação operacional encontrada para o ano de {ano_selecionado}.")
+    st.stop()
+
+# ==============================================================================
+# 5. CONSTRUÇÃO MATRICIAL OTIMIZADA VIA PIVOT TABLE
+# ==============================================================================
+dummy_prev = [0]*12
+
+# Agrupamento vetorizado de Entradas por Mês (1 a 12)
+tot_ent = [0]*12
+if not df_entradas.empty:
+    ent_mes = df_entradas.groupby('Mes')['Valor_Op'].sum().to_dict()
+    for m in range(1, 13):
+        tot_ent[m-1] = ent_mes.get(m, 0.0)
+
+# Agrupamento vetorizado de Saídas por Mês (1 a 12)
+tot_sai = [0]*12
+if not df_saidas.empty:
+    sai_mes = df_saidas.groupby('Mes')['Valor_Op'].sum().to_dict()
+    for m in range(1, 13):
+        tot_sai[m-1] = sai_mes.get(m, 0.0)
+
+l1_resultado = [tot_ent[i] - tot_sai[i] for i in range(12)]
+l2_saldo_ant = [0]*12
+l3_acumulado = [0]*12
+
+l2_saldo_ant[0] = saldo_inicio_ano
+for i in range(12):
+    if i > 0: l2_saldo_ant[i] = l3_acumulado[i-1]
+    l3_acumulado[i] = l1_resultado[i] + l2_saldo_ant[i]
+
+# ==============================================================================
+# 6. HEADER E KPIS
+# ==============================================================================
+injetar_html(f"""
+<div class="dashboard-header">
+    <div class="header-period">
+        <div class="date">Ano: {ano_selecionado}</div>
+        <div class="label">Período de Referência</div>
+    </div>
+    <div class="header-center">
+        <h1>MATRIZ DE FLUXO DE CAIXA</h1>
+        <p>Visão Consolidada de Operações</p>
+    </div>
+    <div style="min-width: 200px;"></div>
+</div>
+""")
+
+total_ano_ent = sum(tot_ent)
+total_ano_sai = sum(tot_sai)
+resultado_ano = total_ano_ent - total_ano_sai
+
+injetar_html(f"""
+<div class='kpi-row'>
+    <div class='kpi-card inicial'>
+        <div class='kpi-title'>SALDO INICIAL ({ano_selecionado})</div>
+        <div class='kpi-value'>R$ {formatar_moeda(saldo_inicio_ano)}</div>
+    </div>
+    <div class='kpi-card total'>
+        <div class='kpi-title'>TOTAL ENTRADAS (ANO)</div>
+        <div class='kpi-value'>R$ {formatar_moeda(total_ano_ent)}</div>
+    </div>
+    <div class='kpi-card corrente'>
+        <div class='kpi-title'>TOTAL SAÍDAS (ANO)</div>
+        <div class='kpi-value'>R$ {formatar_moeda(total_ano_sai)}</div>
+    </div>
+    <div class='kpi-card resultado'>
+        <div class='kpi-title'>RESULTADO CAIXA (ANO)</div>
+        <div class='kpi-value'>R$ {formatar_moeda(resultado_ano)}</div>
+    </div>
+    <div class='kpi-card aplicado'>
+        <div class='kpi-title'>SALDO ATUAL DO CAIXA</div>
+        <div class='kpi-value'>R$ {formatar_moeda(saldo_atual)}</div>
+    </div>
+</div>
+""")
+
+# ==============================================================================
+# 7. RENDERIZAÇÃO OTIMIZADA DA MATRIZ
+# ==============================================================================
+meses_labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+def render_linha(nome, nivel, arr_prev, arr_real, override_tot_p=None, override_tot_r=None):
+    str_tot_p = override_tot_p if override_tot_p is not None else formatar_moeda(sum(arr_prev))
+    str_tot_r = override_tot_r if override_tot_r is not None else formatar_moeda(sum(arr_real))
+        
+    html = f"<div class='grid-row {nivel}'>"
+    html += f"<div class='col-name'>{nome}</div>"
+    
+    for p, r in zip(arr_prev, arr_real):
+        html += "<div class='col-val'>"
+        html += "<div class='dual-col'>"
+        html += f"<div class='dual-cell prev'>{formatar_moeda(p)}</div>"
+        html += f"<div class='dual-cell real'>{formatar_moeda(r)}</div>"
+        html += "</div></div>"
+        
+    html += "<div class='col-val total-col'>"
+    html += "<div class='dual-col'>"
+    html += f"<div class='dual-cell prev'>{str_tot_p}</div>"
+    html += f"<div class='dual-cell real'>{str_tot_r}</div>"
+    html += "</div></div></div>"
+    return html
+
+def build_drilldown_fast(df_dados):
+    """Gera o HTML de drilldown de forma vetorizada ultra-rápida."""
+    if df_dados.empty: return ""
+    
+    html = ""
+    # Cria uma tabela pivot para somar valores por Classificação, Transação e Mês de uma só vez
+    pivot = pd.pivot_table(
+        df_dados, 
+        values='Valor_Op', 
+        index=['Classificacao', 'Descricao_Trans'], 
+        columns='Mes', 
+        aggfunc='sum', 
+        fill_value=0
+    )
+    
+    classificacoes = df_dados['Classificacao'].unique()
+    for classif in sorted(classificacoes):
+        if classif not in pivot.index.get_level_values(0): continue
+        
+        df_classif_rows = pivot.loc[classif]
+        # Se for apenas uma linha, o DataFrame precisa ser tratado
+        if isinstance(df_classif_rows, pd.Series):
+            df_classif_rows = pd.DataFrame([df_classif_rows], index=[df_classif_rows.name])
+            
+        arr_real_classif = [0]*12
+        for m in range(1, 13):
+            if m in df_classif_rows.columns:
+                arr_real_classif[m-1] = df_classif_rows[m].sum()
+                
+        if sum(arr_real_classif) > 0:
+            html += "<details><summary>"
+            html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-subgrupo", dummy_prev, arr_real_classif)
+            html += "</summary>"
+            
+            # Ordena transações pelo total anual
             totais_trans = df_classif_rows.sum(axis=1).sort_values(ascending=False)
             for trans_name in totais_trans.index:
                 row_vals = df_classif_rows.loc[trans_name]
