@@ -306,6 +306,7 @@ with c1:
             chip_class = "chip-estourado"
             bar_color = "var(--red-main)"
             
+        # Adicionado o limitador de casas decimais na largura da barra de progresso (.1f)
         html_status += f"""
             <tr>
                 <td>
@@ -315,7 +316,7 @@ with c1:
                     <div class='prog-container'>
                         <div class='prog-text'>{cons:.0f}%</div>
                         <div class='prog-bar-bg'>
-                            <div class='prog-bar-fill' style='width: {min(cons, 100)}%; background-color: {bar_color};'></div>
+                            <div class='prog-bar-fill' style='width: {min(cons, 100):.1f}%; background-color: {bar_color};'></div>
                         </div>
                     </div>
                 </td>
