@@ -61,14 +61,6 @@ css = """
         justify-content: space-between;
     }
     
-    .chart-header-integrated {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-bottom: 10px;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
     .chart-totals-badge {
         font-size: 11px;
         font-weight: 600;
@@ -91,7 +83,7 @@ css = """
     .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
     .kpi-subtitle.green { color: var(--green-main); font-weight: 600; }
     
-    /* TABELA DE FASES COM STICKY CORRIGIDO (SEM SOBREPOSIÇÃO) */
+    /* TABELA DE FASES COM STICKY CORRIGIDO */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -103,11 +95,9 @@ css = """
     }
     .fases-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
     
-    /* Cabeçalho fixo topo e colunas esquerda */
     .fases-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px 10px; border-bottom: 2px solid var(--border-color); position: sticky; top: 0; z-index: 10; text-align: left; }
     .fases-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); background: #ffffff; }
     
-    /* Congelando as colunas 1, 2, 3 e 4 com z-index adequado para não vazar texto */
     .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 5; background: #f8fafc; border-right: 1px solid var(--border-color); }
     .fases-table td:nth-child(1) { background: #ffffff; }
     .fases-table th:nth-child(1) { z-index: 20; }
@@ -126,11 +116,6 @@ css = """
 
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { font-weight: 900; background: #e2e8f0 !important; border-top: 2px solid var(--border-color); color: var(--text-dark); }
-
-    /* TABELA DE PAGAMENTOS REALIZADOS */
-    .realizado-table { width: 100%; border-collapse: collapse; font-size: 11px; background: #ffffff; }
-    .realizado-table th { background: #f8fafc; color: var(--text-muted); font-weight: 800; text-transform: uppercase; padding: 10px; border-bottom: 2px solid var(--border-color); text-align: left; }
-    .realizado-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; color: var(--text-dark); }
 </style>
 """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
@@ -398,45 +383,21 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (VIA DATAFRAME NATIVO)
 # ==============================================================================
 st.markdown("<div class='section-title'>DETALHAMENTO DE PAGAMENTOS REALIZADOS</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
-    tot_real_detalhe = df_real_detalhe['Valor_Realizado'].sum()
+    df_display = df_real_detalhe[['Data_Pgto', 'Obra', 'Fornecedor', 'NF', 'Valor_Realizado']].sort_values(['Mes', 'Obra'], ascending=[False, True]).copy()
+    df_display.columns = ['Data Pagamento', 'Obra / Categoria', 'Fornecedor', 'Nota Fiscal / Doc', 'Valor Realizado (R$)']
     
-    html_real = """
-    <div style='max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: #ffffff;'>
-    <table class='realizado-table'>
-        <thead>
-            <tr>
-                <th>Data Pgto</th>
-                <th>Obra / Categoria</th>
-                <th>Fornecedor</th>
-                <th>NF / Doc</th>
-                <th style='text-align:right;'>Valor Realizado</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
-    for _, tr in df_real_detalhe.sort_values(['Mes', 'Obra'], ascending=[False, True]).iterrows():
-        html_real += f"""
-        <tr>
-            <td>{tr['Data_Pgto']}</td>
-            <td><b>{tr['Obra']}</b></td>
-            <td>{tr['Fornecedor']}</td>
-            <td>{tr['NF']}</td>
-            <td style='text-align:right; font-weight:600;'>{formatar_moeda(tr['Valor_Realizado'])}</td>
-        </tr>
-        """
-    html_real += f"""
-        <tr style='background:#f8fafc; font-weight:800; border-top:2px solid var(--border-color);'>
-            <td colspan='4'>TOTAL DOS PAGAMENTOS LISTADOS</td>
-            <td style='text-align:right;'>{formatar_moeda(tot_real_detalhe)}</td>
-        </tr>
-    </tbody></table></div>
-    """
-    st.markdown(html_real, unsafe_allow_html=True)
+    # Formata os valores monetários para exibição limpa no dataframe nativo
+    df_display['Valor Realizado (R$)'] = df_display['Valor Realizado (R$)'].apply(formatar_moeda)
+    
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    
+    tot_real_detalhe = df_real_filtrado['Valor_Realizado'].sum()
+    st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 13px; margin-top: 5px; color: var(--text-dark);'>Total Geral Listado: {formatar_moeda(tot_real_detalhe)}</div>", unsafe_allow_html=True)
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
