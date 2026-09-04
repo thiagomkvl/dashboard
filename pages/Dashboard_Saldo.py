@@ -258,7 +258,7 @@ def carregar_dados(data_inicio, data_fim):
                     df_period_grouped = df_period.groupby('Conta Bancária').agg({'Cred_Op': 'sum', 'Deb_Op': 'sum', 'Cred_Tr': 'sum', 'Deb_Tr': 'sum'}).reset_index()
                     df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
                     
-                    # Totais gerais de caixa considerando Contas Disponíveis e Aplicações (Sem restrição estrita de "Operacional" para bater com o saldo diário)
+                    # Totais acumulados de todo o período selecionado nas contas de Disponível e Aplicação
                     df_period_caixa = df_period[df_period['Conta Bancária'].apply(definir_tipo_aux).isin(['Disponível', 'Aplicação']) & (~df_period['É Transf'])]
                     entradas_periodo = df_period_caixa['Vl Crédito'].sum()
                     saidas_periodo = df_period_caixa['Vl Débito'].sum()
