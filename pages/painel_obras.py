@@ -496,7 +496,7 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS (ESTRUTURA 100% COESA ÀS FASES)
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
@@ -516,28 +516,32 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
     
-    # Renderizamos a tabela e para cada obra criamos a linha principal e logo abaixo as sub-transações de forma integrada
-    html_matrix = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    html_matrix += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
+    html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
+    html_real += "<th>Obra / Categoria</th><th>TOTAL</th>"
     for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-        html_matrix += f"<th style='text-align:right;'>{col_m}</th>"
-    html_matrix += "</tr></thead><tbody>"
-    
-    st.markdown(html_matrix, unsafe_allow_html=True)
+        html_real += f"<th>{col_m}</th>"
+    html_real += "</tr></thead><tbody>"
     
     for _, row in df_matrix.iterrows():
         obra_r = row['Obra']
         tot_r = row['TOTAL']
-        
-        # Linha principal da Obra
-        row_html = f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
+        html_real += f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
         for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
             val_m = row[col_m]
-            row_html += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
-        row_html += "</tr>"
-        st.markdown(row_html, unsafe_allow_html=True)
-        
-        # Sub-tabela expansível nativa e limpa para os pagamentos/fornecedores desta obra
+            html_real += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
+        html_real += "</tr>"
+    
+    tot_geral = df_matrix['TOTAL'].sum()
+    html_real += f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral)}</td>"
+    for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
+        tot_col_m = df_matrix[col_m].sum()
+        html_real += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
+    html_real += "</tr></tbody></table></div>"
+    
+    st.markdown(html_real, unsafe_allow_html=True)
+    
+    for _, row in df_matrix.iterrows():
+        obra_r = row['Obra']
         with st.expander(f"🔍 Ver pagamentos e fornecedores de {obra_r}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor'])
             sub_table_html = """
@@ -565,14 +569,5 @@ if not df_real_detalhe.empty:
                 """
             sub_table_html += "</tbody></table>"
             st.markdown(sub_table_html, unsafe_allow_html=True)
-        
-    # Linha de Total Geral idêntica à de fases
-    tot_geral_real = df_matrix['TOTAL'].sum()
-    total_row_html = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral_real)}</td>"
-    for col_m in ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']:
-        tot_col_m = df_matrix[col_m].sum()
-        total_row_html += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
-    total_row_html += "</tr></tbody></table></div>"
-    st.markdown(total_row_html, unsafe_allow_html=True)
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
