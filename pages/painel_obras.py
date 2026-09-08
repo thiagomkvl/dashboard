@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import re
 import textwrap
+import io
 
 # ==============================================================================
 # 0. CONFIGURAÇÃO DA PÁGINA
@@ -240,6 +241,10 @@ lista_obras = sorted([o for o in todas_obras if o.strip() not in ['NAN', '0', ''
 # ==============================================================================
 # 4. BARRA LATERAL E FILTROS
 # ==============================================================================
+df_orc_filtrado = df_orcado.copy()
+df_real_filtrado = df_realizado.copy()
+df_fases_filtrado = df_fases.copy()
+
 with st.sidebar:
     st.markdown("### Filtros do Painel")
     mes_selecionado = st.selectbox("Mês de Análise (Acumulado)", options=["Todos"] + list(range(2, 13)), format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x)
@@ -248,19 +253,42 @@ with st.sidebar:
     if st.button("Limpar Filtros Aplicados", use_container_width=True):
         st.rerun()
 
-df_orc_filtrado = df_orcado.copy()
-df_real_filtrado = df_realizado.copy()
-df_fases_filtrado = df_fases.copy()
+    # Aplicação dos filtros para as views e relatórios
+    if mes_selecionado != "Todos":
+        df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
+        df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
+    if obra_selecionada != "Todas":
+        df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
+        df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
+        if not df_fases_filtrado.empty:
+            col_o_f = df_fases_filtrado.columns[0]
+            df_fases_filtrado = df_fases_filtrado[df_fases_filtrado[col_o_f].astype(str).str.upper().str.strip() == obra_selecionada]
 
-if mes_selecionado != "Todos":
-    df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
-    df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
-if obra_selecionada != "Todas":
-    df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
-    df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
-    if not df_fases_filtrado.empty:
-        col_o_f = df_fases_filtrado.columns[0]
-        df_fases_filtrado = df_fases_filtrado[df_fases_filtrado[col_o_f].astype(str).str.upper().str.strip() == obra_selecionada]
+    st.markdown("### Relatórios")
+    df_real_detalhe_exp = df_real_filtrado.copy()
+    if not df_real_detalhe_exp.empty:
+        df_real_detalhe_exp['Valor_Realizado'] = df_real_detalhe_exp['Valor_Realizado'].apply(limpa_valor)
+        df_real_detalhe_exp['Fornecedor'] = df_real_detalhe_exp['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
+        df_real_detalhe_exp['NF'] = df_real_detalhe_exp['NF'].fillna('-').astype(str).str.strip()
+        df_real_detalhe_exp['Data_Pgto'] = df_real_detalhe_exp['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip()
+
+    output_excel = io.BytesIO()
+    with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
+        if not df_fases_filtrado.empty:
+            df_fases_filtrado.to_excel(writer, sheet_name='Fases_Obra', index=False)
+        if not df_real_detalhe_exp.empty:
+            df_real_detalhe_exp.to_excel(writer, sheet_name='Transacoes_Realizadas', index=False)
+        if not df_orc_filtrado.empty:
+            df_orc_filtrado.to_excel(writer, sheet_name='Orcado_Mensal', index=False)
+    relatorio_bytes = output_excel.getvalue()
+
+    st.download_button(
+        label="📥 Baixar Relatório Completo",
+        data=relatorio_bytes,
+        file_name="relatorio_detalhado_obras.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
 
 # ==============================================================================
 # 5. CÁLCULOS E ANÁLISE (MoM) E BARRA DE PROGRESSO
@@ -400,9 +428,7 @@ st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color)
 # ==============================================================================
 # 7. TABELA DETALHADA DE FASES DA OBRA
 # ==============================================================================
-col_tit1, col_btn1 = st.columns([8, 2])
-with col_tit1:
-    st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
 
 if not df_fases.empty:
     df_fases_view = df_fases.copy()
@@ -443,10 +469,6 @@ if not df_fases.empty:
 
     obra_totals_calc.sort(key=lambda x: x[1], reverse=True)
     obras_unicas_sorted = [x[0] for x in obra_totals_calc]
-
-    with col_btn1:
-        csv_fases = df_fases_view.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-        st.download_button(label="📥 Exportar Fases (Excel)", data=csv_fases, file_name='fases_obra.csv', mime='text/csv', use_container_width=True)
 
     html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
     for col in cols_to_show:
@@ -494,12 +516,10 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA PAGAMENTOS (HEATMAP + EXPORT + ORDENAÇÃO DE PESO)
+# 8. TABELA PAGAMENTOS (HEATMAP + ORDENAÇÃO DE PESO)
 # ==============================================================================
 st.write("") 
-col_tit2, col_btn2 = st.columns([8, 2])
-with col_tit2:
-    st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
 if not df_real_detalhe.empty:
@@ -530,10 +550,6 @@ if not df_real_detalhe.empty:
             df_orc_pivot[m] = 0.0
     df_orc_pivot = df_orc_pivot[list(range(2, 13))]
     df_orc_pivot['TOTAL'] = df_orc_pivot.sum(axis=1)
-
-    with col_btn2:
-        csv_pagamentos = df_matrix.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-        st.download_button(label="📥 Exportar Pagamentos (Excel)", data=csv_pagamentos, file_name='pagamentos.csv', mime='text/csv', use_container_width=True)
 
     html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in meses_tabela:
