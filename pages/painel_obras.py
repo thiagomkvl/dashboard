@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO LIMPO)
+# 1. CUSTOM CSS (ESTILO EXECUTIVO LIMPO COM DRILL-DOWN NATIVO)
 # ==============================================================================
 css = """
 <style>
@@ -171,7 +171,16 @@ css = """
         color: var(--text-dark); 
     }
 
-    /* SUB-TABELA DE TRANSAÇÕES */
+    /* COMPORTAMENTO INTERATIVO DO DRILL-DOWN (FASES DA OBRA) */
+    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; }
+    .toggle-checkbox { display: none; }
+    .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: var(--blue-main); }
+    
+    .obra-group .sub-row { display: none; }
+    .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+
+    /* SUB-TABELA DE TRANSAÇÕES (PAGAMENTOS REALIZADOS) */
     .transacao-subtable {
         width: 100%;
         border-collapse: collapse;
@@ -469,77 +478,103 @@ html_unified += "</tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - COM EXPANDER POR OBRA
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - DRILL-DOWN ÚNICO
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
 
 if not df_fases.empty:
     df_fases_view = df_fases.copy()
+
     if obra_selecionada != "Todas":
         col_o = df_fases_view.columns[0]
         df_fases_view = df_fases_view[df_fases_view[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
-        
+
     col_obra = df_fases_view.columns[0]
     col_fase = df_fases_view.columns[1]
     obras_unicas = df_fases_view[col_obra].dropna().unique()
-    
+
+    # Cria apenas UMA tabela mestre
+    html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
+    for col in df_fases_view.columns:
+        html_fases += f"<th>{col}</th>"
+    html_fases += "</tr></thead>"
+
     for obra_name in obras_unicas:
         group = df_fases_view[df_fases_view[col_obra] == obra_name]
         total_row = group[group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
         detail_rows = group[~group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
-        
-        # Exibe a linha de Total de cada Obra na tabela principal
+
+        # Agrupa as linhas da obra (para o toggle CSS funcionar)
+        html_fases += "<tbody class='obra-group'>"
+
+        # 1. Imprime a Linha Master (TOTAL) da Obra
         if not total_row.empty:
-            tot_r = total_row.iloc[0]
-            html_fases = "<div class='fases-table-container' style='margin-bottom: 10px;'><table class='fases-table'><thead><tr>"
-            for col in df_fases_view.columns:
-                html_fases += f"<th>{col}</th>"
-            html_fases += "</tr></thead><tbody>"
+            tr = total_row.iloc[0]
+            html_fases += "<tr class='total-geral-row'>"
             
-            row_html = f"<tr class='total-geral-row'>"
-            for i, val in enumerate(tot_r.values):
+            # Primeira coluna tem o nome da Obra e o botão de expandir (toggle)
+            html_fases += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
+
+            # Preenche as colunas seguintes
+            for i, col_name in enumerate(df_fases_view.columns[1:], start=1):
+                val = tr[col_name]
                 val_str = str(val).strip() if pd.notna(val) else "-"
+                
                 try:
-                    num_v = limpa_valor(val)
-                    if i == 3:
-                        if abs(num_v) <= 1:
-                            val_str = f"{num_v * 100:.2f}%"
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        num_v = float(val)
+                    else:
+                        texto_num = str(val).strip().replace("R$", "").replace(" ", "")
+                        if "," in texto_num:
+                            texto_num = texto_num.replace(".", "").replace(",", ".")
                         else:
-                            val_str = f"{num_v:.2f}%"
+                            texto_num = texto_num.replace(",", "")
+                        num_v = float(texto_num)
+
+                    if i == 3: # Coluna % (baseado no índice)
+                        val_str = f"{num_v * 100:.2f}%" if abs(num_v) <= 1 else f"{num_v:.2f}%"
+                    elif num_v != 0 and i != 1: # i=1 é a Fase (texto)
+                        val_str = formatar_moeda(num_v)
+                except:
+                    pass
+                html_fases += f"<td>{val_str}</td>"
+                
+            html_fases += "</tr>"
+
+        # 2. Imprime as linhas detalhadas de Serviços (Ocultas até o clique)
+        for _, d_row in detail_rows.iterrows():
+            html_fases += "<tr class='sub-row'>"
+            html_fases += f"<td>{obra_name}</td>" # Repete o nome da obra para alinhamento da matriz
+            
+            for i, col_name in enumerate(df_fases_view.columns[1:], start=1):
+                val = d_row[col_name]
+                val_str = str(val).strip() if pd.notna(val) else "-"
+                
+                try:
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        num_v = float(val)
+                    else:
+                        texto_num = str(val).strip().replace("R$", "").replace(" ", "")
+                        if "," in texto_num:
+                            texto_num = texto_num.replace(".", "").replace(",", ".")
+                        else:
+                            texto_num = texto_num.replace(",", "")
+                        num_v = float(texto_num)
+
+                    if i == 3: 
+                        val_str = f"{num_v * 100:.2f}%" if abs(num_v) <= 1 else f"{num_v:.2f}%"
                     elif num_v != 0 and i != 1:
                         val_str = formatar_moeda(num_v)
                 except:
                     pass
-                row_html += f"<td>{val_str}</td>"
-            row_html += "</tr></tbody></table></div>"
-            st.markdown(html_fases + row_html, unsafe_allow_html=True)
-            
-            # Expander limpo abaixo da linha de total para ver o detalhamento completo
-            with st.expander(f"Ver fases, tarefas e atividades detalhadas de {obra_name}"):
-                sub_table_html = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-                for col in df_fases_view.columns:
-                    sub_table_html += f"<th>{col}</th>"
-                sub_table_html += "</tr></thead><tbody>"
+                html_fases += f"<td>{val_str}</td>"
                 
-                for _, d_row in detail_rows.iterrows():
-                    sub_table_html += "<tr>"
-                    for i, val in enumerate(d_row.values):
-                        val_str = str(val).strip() if pd.notna(val) else "-"
-                        try:
-                            num_v = limpa_valor(val)
-                            if i == 3:
-                                if abs(num_v) <= 1:
-                                    val_str = f"{num_v * 100:.2f}%"
-                                else:
-                                    val_str = f"{num_v:.2f}%"
-                            elif num_v != 0 and i != 1:
-                                val_str = formatar_moeda(num_v)
-                        except:
-                            pass
-                        sub_table_html += f"<td>{val_str}</td>"
-                    sub_table_html += "</tr>"
-                sub_table_html += "</tbody></table></div>"
-                st.markdown(sub_table_html, unsafe_allow_html=True)
+            html_fases += "</tr>"
+
+        html_fases += "</tbody>"
+
+    html_fases += "</table></div>"
+    st.markdown(html_fases, unsafe_allow_html=True)
 else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
@@ -549,11 +584,13 @@ else:
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
+
 if not df_real_detalhe.empty:
+
     df_real_detalhe['Valor_Realizado'] = df_real_detalhe['Valor_Realizado'].apply(limpa_valor)
-    df_real_detalhe['Fornecedor'] = df_real_detalhe['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
-    df_real_detalhe['NF'] = df_real_detalhe['NF'].fillna('-').astype(str).str.strip()
-    df_real_detalhe['Data_Pgto'] = df_real_detalhe['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip()
+    df_real_detalhe['Fornecedor'] = df_real_detalhe['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().replace(['', 'nan', 'None'], 'NÃO INFORMADO').str.upper()
+    df_real_detalhe['NF'] = df_real_detalhe['NF'].fillna('-').astype(str).str.strip().replace(['', 'nan', 'None'], '-')
+    df_real_detalhe['Data_Pgto'] = df_real_detalhe['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip().replace(['', 'nan', 'None'], '-')
 
     map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
     meses_tabela = list(map_m_inv.values())
@@ -570,26 +607,48 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
 
-    html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    html_real += "<th>Obra / Categoria</th><th>TOTAL</th>"
+    html_real = """
+    <div class='fases-table-container'>
+        <table class='fases-table'>
+            <thead>
+                <tr>
+                    <th>Obra / Categoria</th>
+                    <th>TOTAL</th>
+    """
     for col_m in meses_tabela:
         html_real += f"<th>{col_m}</th>"
-    html_real += "</tr></thead><tbody>"
-    st.markdown(html_real, unsafe_allow_html=True)
+    html_real += """
+                </tr>
+            </thead>
+            <tbody>
+    """
 
     for _, row in df_matrix.iterrows():
         obra_r = row['Obra']
         tot_r = limpa_valor(row['TOTAL'])
-
-        row_html = f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
+        html_real += f"<tr><td><b>{obra_r}</b></td><td style='text-align:right; font-weight:800;'>{formatar_moeda(tot_r)}</td>"
+        
         for col_m in meses_tabela:
             val_m = limpa_valor(row[col_m])
-            row_html += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
-        row_html += "</tr>"
-        st.markdown(row_html, unsafe_allow_html=True)
+            html_real += f"<td style='text-align:right;'>{formatar_moeda(val_m)}</td>"
+        html_real += "</tr>"
 
+    tot_geral = limpa_valor(df_matrix['TOTAL'].sum())
+    html_real += f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral)}</td>"
+    
+    for col_m in meses_tabela:
+        tot_col_m = limpa_valor(df_matrix[col_m].sum())
+        html_real += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
+    html_real += "</tr></tbody></table></div>"
+    
+    st.markdown(html_real, unsafe_allow_html=True)
+
+    # Expander mantido intacto conforme aprovação anterior (funcionalidade extra para fornecedores)
+    for _, row in df_matrix.iterrows():
+        obra_r = row['Obra']
         with st.expander(f"Ver pagamentos e fornecedores de {obra_r}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor', 'Data_Pgto'])
+
             if df_trans_esp.empty:
                 st.info("Nenhum pagamento encontrado para esta obra.")
                 continue
@@ -616,19 +675,12 @@ if not df_real_detalhe.empty:
                         <td><b>{tr['Fornecedor']}</b></td>
                         <td>{tr['NF']}</td>
                         <td>Mês {mes_ref:02d}</td>
-                        <td style='text-align:right; font-weight:600;'>{formatar_moeda(valor_pagamento)}</td>
+                        <td style='text-align:right; font-weight:600;'>
+                            {formatar_moeda(valor_pagamento)}
+                        </td>
                     </tr>
                 """
             sub_table_html += "</tbody></table>"
             st.markdown(sub_table_html, unsafe_allow_html=True)
-
-    tot_geral = limpa_valor(df_matrix['TOTAL'].sum())
-    final_row = f"<tr class='total-geral-row'><td>TOTAL GERAL</td><td style='text-align:right;'>{formatar_moeda(tot_geral)}</td>"
-    for col_m in meses_tabela:
-        tot_col_m = limpa_valor(df_matrix[col_m].sum())
-        final_row += f"<td style='text-align:right;'>{formatar_moeda(tot_col_m)}</td>"
-    final_row += "</tr></tbody></table></div>"
-    
-    st.markdown(final_row, unsafe_allow_html=True)
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
