@@ -263,7 +263,6 @@ with st.sidebar:
     if st.button("Limpar Filtros Aplicados", use_container_width=True):
         st.rerun()
 
-    # Aplicação dos filtros para as views e relatórios
     if mes_selecionado != "Todos":
         df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
         df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
@@ -409,7 +408,6 @@ df_linha.loc[df_linha['Mes'] > (df_real_m_base['Mes'].max() if not df_real_m_bas
 meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
 
-# Gráfico de Linha Principal
 st.markdown("<div class='section-title'>Evolução Mensal: Orçado vs Realizado</div>", unsafe_allow_html=True)
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(x=df_linha['Mes_Nome'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado Mensal', line=dict(color='#0284c7', width=3), marker=dict(size=6)))
@@ -417,7 +415,6 @@ fig_linha.add_trace(go.Scatter(x=df_linha['Mes_Nome'], y=df_linha['Valor_Realiza
 fig_linha.update_layout(height=250, margin=dict(l=20, r=20, t=10, b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False), xaxis=dict(showgrid=False, showline=False, showticklabels=False, range=[-0.2, 10.2]))
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
-# Tabela Unificada 3 Linhas
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label' style='background:#ffffff;'>Mês</th>"
 for _, r in df_linha.iterrows():
     html_unified += f"<th>{r['Mes_Nome']}</th>"
@@ -431,7 +428,6 @@ for _, r in df_linha.iterrows():
 html_unified += "</tr></tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
-# NOVOS GRÁFICOS ANALÍTICOS LADO A LADO
 col_g1, col_g2 = st.columns(2)
 with col_g1:
     st.markdown("<div style='font-size:12px; font-weight:700; color:var(--text-dark); margin-bottom:10px;'>DISTRIBUIÇÃO DE CUSTO POR OBRA (TOTAL REALIZADO)</div>", unsafe_allow_html=True)
@@ -477,8 +473,7 @@ obras_fluxo = sorted(df_real_m_base['Obra'].unique().tolist() if not df_real_m_b
 if obra_selecionada != "Todas":
     obras_fluxo = [obra_selecionada]
 
-# Dicionários de saída por obra e mês (Realizado e Orçado)
-real_ por_obra_mes = df_real_m_base.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().to_dict()
+real_por_obra_mes = df_real_m_base.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().to_dict()
 orc_por_obra_mes = df_orc_m_base.groupby(['Mes', 'Obra'])['Valor_Orcado'].sum().to_dict()
 
 s_ini_list = []
@@ -501,34 +496,30 @@ for m_num in range(2, 13):
     html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
 html_fluxo += "</tr></thead><tbody>"
 
-# Saldo Inicial
 html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
 for val in s_ini_list:
     html_fluxo += f"<td>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-# (-) Saídas Totais (Com Dropdown / Drilldown)
 html_fluxo += "<tbody class='obra-group'><tr>"
 html_fluxo += f"<td class='row-label'><label class='drilldown-label' style='padding-left:0;'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>(-) Saídas Totais</b></label></td>"
 for val in saidas_tot_list:
     html_fluxo += f"<td style='color: var(--red-main); font-weight:800;'>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-# Sub-linhas de Saídas por Obra
 for obra_name in obras_fluxo:
     html_fluxo += f"<tr class='sub-row'><td class='row-label' style='padding-left: 28px; font-size: 10px; font-weight: normal; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {obra_name}</td>"
     for m_num in range(2, 13):
         if m_num <= max_mes_realizado:
-            v_obra = real_ por_obra_mes.get((m_num, obra_name), 0.0) if 'real_ por_obra_mes' in locals() else df_real_m_base[(df_real_m_base['Mes'] == m_num) & (df_real_m_base['Obra'] == obra_name)]['Valor_Realizado'].sum()
+            v_obra = real_por_obra_mes.get((m_num, obra_name), 0.0)
         else:
-            v_obra = orc_por_obra_mes.get((m_num, obra_name), 0.0) if 'orc_por_obra_mes' in locals() else df_orc_m_base[(df_orc_m_base['Mes'] == m_num) & (df_orc_m_base['Obra'] == obra_name)]['Valor_Orcado'].sum()
+            v_obra = orc_por_obra_mes.get((m_num, obra_name), 0.0)
         
         v_str = formatar_moeda_curta(v_obra) if v_obra > 0 else "-"
         html_fluxo += f"<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>{v_str}</td>"
     html_fluxo += "</tr>"
 html_fluxo += "</tbody>"
 
-# Saldo Final
 html_fluxo += "<tr><td class='row-label' style='font-weight: 800;'>(=) Saldo Final</td>"
 for m_num, val in enumerate(s_fim_list, start=2):
     css_class = "val-real" if m_num <= max_mes_realizado else "val-orc"
