@@ -382,7 +382,7 @@ kpi_html = f"""
     <div class='kpi-item bg-yellow'>
         <div class='kpi-title'>Orçamento Restante</div>
         <div class='kpi-value' style='color: {saldo_color};'>{formatar_moeda(saldo_orcamento)}</div>
-        <div class='kpi-subtitle'>Saldo para queima</div>
+        <div class='kpi-subtitle'>Para finalização da obra</div>
     </div>
     <div class='kpi-item bg-blue'>
         <div class='kpi-title'>Caixa Disponível</div>
