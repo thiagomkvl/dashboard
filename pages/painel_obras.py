@@ -61,16 +61,17 @@ css = """
         justify-content: space-between;
     }
     
-    /* KPIS COM CORES PASTEL */
-    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-    .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px 18px; box-shadow: var(--shadow-sm); background: #ffffff; }
+    /* KPIS COM 5 COLUNAS */
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow-sm); background: #ffffff; }
     .kpi-item.bg-blue { background: #f0f9ff; border-color: #bae6fd; }
     .kpi-item.bg-green { background: #f0fdf4; border-color: #bbf7d0; }
     .kpi-item.bg-yellow { background: #fefce8; border-color: #fef08a; }
+    .kpi-item.bg-purple { background: #faf5ff; border-color: #e9d5ff; }
     
-    .kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .kpi-value { font-size: 22px; font-weight: 800; color: var(--text-dark); margin: 6px 0 2px 0; }
-    .kpi-subtitle { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+    .kpi-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-value { font-size: 19px; font-weight: 800; color: var(--text-dark); margin: 5px 0 2px 0; }
+    .kpi-subtitle { font-size: 10px; font-weight: 500; color: var(--text-muted); }
     
     /* TABELA UNIFICADA DE TOTALIZADORES MÊS A MÊS */
     .unified-summary-box {
@@ -87,7 +88,7 @@ css = """
     .unified-table th:last-child { border-right: none; }
     .unified-table td { padding: 10px 4px; border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color); background: #ffffff; }
     .unified-table td:last-child { border-right: none; }
-    .row-label { text-align: left; padding-left: 15px !important; font-weight: 700; color: var(--text-muted); background: #ffffff; width: 160px; border-right: 2px solid var(--border-color) !important; }
+    .row-label { text-align: left; padding-left: 15px !important; font-weight: 700; color: var(--text-muted); background: #ffffff; width: 170px; border-right: 2px solid var(--border-color) !important; }
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
@@ -309,6 +310,16 @@ total_realizado = df_real_filtrado['Valor_Realizado'].sum()
 saldo_orcamento = total_orcado - total_realizado
 consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
 
+caixa_inicial_base = 10_000_000.0
+if not df_recursos.empty:
+    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
+    if col_rec:
+        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
+        if val_rec > 0:
+            caixa_inicial_base = val_rec
+
+caixa_disponivel = caixa_inicial_base - total_realizado
+
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (df_realizado['Mes'].max() if not df_realizado.empty else 0)
 mes_anterior = mes_atual - 1
 
@@ -339,7 +350,7 @@ pb_color = "var(--red-main)" if consumo_geral_perc > 100 else "var(--green-main)
 html_pb = f"<div style='width: 100%; background: #e2e8f0; height: 6px; border-radius: 3px; margin-top: 6px; overflow: hidden;'><div style='width: {pb_width}%; background: {pb_color}; height: 100%; border-radius: 3px;'></div></div>"
 
 saldo_color = "var(--red-main)" if saldo_orcamento < 0 else "var(--text-dark)"
-mes_str = f"{mes_atual:02d}"
+caixa_disp_color = "var(--red-main)" if caixa_disponivel < 0 else "var(--green-main)"
 
 # ==============================================================================
 # 6. MONTAGEM DO LAYOUT (KPIs E GRÁFICOS ANALÍTICOS)
@@ -354,25 +365,30 @@ st.markdown("""
 kpi_html = f"""
 <div class='kpi-grid'>
     <div class='kpi-item bg-blue'>
-        <div class='kpi-title'>Orçamento Total</div>
+        <div class='kpi-title'>Orçamento Total Obra</div>
         <div class='kpi-value'>{formatar_moeda(total_orcado)}</div>
         <div class='kpi-subtitle'>Valor planejado atualizado</div>
     </div>
+    <div class='kpi-item bg-purple'>
+        <div class='kpi-title'>Recursos Alocados</div>
+        <div class='kpi-value'>{formatar_moeda(caixa_inicial_base)}</div>
+        <div class='kpi-subtitle'>Capital alocado inicial</div>
+    </div>
     <div class='kpi-item bg-green'>
-        <div class='kpi-title'>Investimento Realizado</div>
+        <div class='kpi-title'>Orçamento Utilizado</div>
         <div class='kpi-value'>{formatar_moeda(total_realizado)}</div>
         <div class='kpi-subtitle' style='color:{pb_color}; font-weight:600;'>{consumo_geral_perc:.1f}% do orçado</div>
         {html_pb}
     </div>
     <div class='kpi-item bg-yellow'>
-        <div class='kpi-title'>Orçamento Disponível</div>
+        <div class='kpi-title'>Orçamento Restante</div>
         <div class='kpi-value' style='color: {saldo_color};'>{formatar_moeda(saldo_orcamento)}</div>
         <div class='kpi-subtitle'>Saldo para queima</div>
     </div>
     <div class='kpi-item bg-blue'>
-        <div class='kpi-title'>Pagamento Mês ({mes_str})</div>
-        <div class='kpi-value'>{formatar_moeda(realizado_atual)}</div>
-        <div class='kpi-subtitle' style='color: {mom_color}; font-weight: 600;'>{mom_str}</div>
+        <div class='kpi-title'>Caixa Disponível</div>
+        <div class='kpi-value' style='color: {caixa_disp_color};'>{formatar_moeda(caixa_disponivel)}</div>
+        <div class='kpi-subtitle'>Saldo atual em caixa</div>
     </div>
 </div>
 """
@@ -449,98 +465,74 @@ with col_g2:
         st.plotly_chart(fig_stack, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# 6.1 FLUXO DE CAIXA DA OBRA
+# 6.1 FLUXO DE CAIXA DA OBRA (COM DRILLDOWN NAS SAÍDAS E PROJEÇÃO INTELIGENTE)
 # ==============================================================================
 st.markdown("<div class='section-title'>Fluxo de Caixa da Obra (Realizado vs Projetado)</div>", unsafe_allow_html=True)
-
-caixa_inicial_base = 10_000_000.0
-if not df_recursos.empty:
-    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
-    if col_rec:
-        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
-        if val_rec > 0:
-            caixa_inicial_base = val_rec
 
 saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dict()
 saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
 max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
 
-s_ini_real_list = []
-saida_real_list = []
-s_fim_real_list = []
+obras_fluxo = sorted(df_real_m_base['Obra'].unique().tolist() if not df_real_m_base.empty else list(todas_obras))
+if obra_selecionada != "Todas":
+    obras_fluxo = [obra_selecionada]
 
-s_ini_proj_list = []
-saida_proj_list = []
-s_fim_proj_list = []
+# Dicionários de saída por obra e mês (Realizado e Orçado)
+real_ por_obra_mes = df_real_m_base.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().to_dict()
+orc_por_obra_mes = df_orc_m_base.groupby(['Mes', 'Obra'])['Valor_Orcado'].sum().to_dict()
 
-curr_real = caixa_inicial_base
-curr_proj = caixa_inicial_base
+s_ini_list = []
+saidas_tot_list = []
+s_fim_list = []
 
+curr_saldo = caixa_inicial_base
 for m in range(2, 13):
-    # Realizado
-    s_ini_r = curr_real
-    s_ini_real_list.append(s_ini_r)
-    
-    has_real_data = m in saidas_real_dict and m <= max_mes_realizado
-    if has_real_data:
-        saida_r = saidas_real_dict.get(m, 0.0)
-        saida_real_list.append(saida_r)
-        curr_real = s_ini_r - saida_r
-        s_fim_real_list.append(curr_real)
+    s_ini_list.append(curr_saldo)
+    if m <= max_mes_realizado:
+        saida_m = saidas_real_dict.get(m, 0.0)
     else:
-        saida_real_list.append(None)
-        s_fim_real_list.append(None)
-
-    # Projetado (Orçado)
-    s_ini_p = curr_proj
-    s_ini_proj_list.append(s_ini_p)
-    
-    saida_p = saidas_orc_dict.get(m, 0.0)
-    saida_proj_list.append(saida_p)
-    curr_proj = s_ini_p - saida_p
-    s_fim_proj_list.append(curr_proj)
+        saida_m = saidas_orc_dict.get(m, 0.0)
+    saidas_tot_list.append(saida_m)
+    curr_saldo = curr_saldo - saida_m
+    s_fim_list.append(curr_saldo)
 
 html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label' style='background:#ffffff;'>Fluxo de Caixa</th>"
 for m_num in range(2, 13):
     html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
 html_fluxo += "</tr></thead><tbody>"
 
-# Saldo Inicial Real
-html_fluxo += "<tr><td class='row-label'>Saldo Inicial (Real)</td>"
-for val in s_ini_real_list:
+# Saldo Inicial
+html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
+for val in s_ini_list:
     html_fluxo += f"<td>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-# Saídas Realizadas
-html_fluxo += "<tr><td class='row-label'>(-) Saídas (Real)</td>"
-for val in saida_real_list:
-    v_str = formatar_moeda_curta(val) if val is not None else "-"
-    html_fluxo += f"<td style='color: var(--red-main);'>{v_str}</td>"
+# (-) Saídas Totais (Com Dropdown / Drilldown)
+html_fluxo += "<tbody class='obra-group'><tr>"
+html_fluxo += f"<td class='row-label'><label class='drilldown-label' style='padding-left:0;'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>(-) Saídas Totais</b></label></td>"
+for val in saidas_tot_list:
+    html_fluxo += f"<td style='color: var(--red-main); font-weight:800;'>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-# Saldo Final Real
-html_fluxo += "<tr><td class='row-label'>(=) Saldo Final (Real)</td>"
-for val in s_fim_real_list:
-    v_str = formatar_moeda_curta(val) if val is not None else "-"
-    html_fluxo += f"<td class='val-real'>{v_str}</td>"
-html_fluxo += "</tr>"
+# Sub-linhas de Saídas por Obra
+for obra_name in obras_fluxo:
+    html_fluxo += f"<tr class='sub-row'><td class='row-label' style='padding-left: 28px; font-size: 10px; font-weight: normal; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {obra_name}</td>"
+    for m_num in range(2, 13):
+        if m_num <= max_mes_realizado:
+            v_obra = real_ por_obra_mes.get((m_num, obra_name), 0.0) if 'real_ por_obra_mes' in locals() else df_real_m_base[(df_real_m_base['Mes'] == m_num) & (df_real_m_base['Obra'] == obra_name)]['Valor_Realizado'].sum()
+        else:
+            v_obra = orc_por_obra_mes.get((m_num, obra_name), 0.0) if 'orc_por_obra_mes' in locals() else df_orc_m_base[(df_orc_m_base['Mes'] == m_num) & (df_orc_m_base['Obra'] == obra_name)]['Valor_Orcado'].sum()
+        
+        v_str = formatar_moeda_curta(v_obra) if v_obra > 0 else "-"
+        html_fluxo += f"<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>{v_str}</td>"
+    html_fluxo += "</tr>"
+html_fluxo += "</tbody>"
 
-# Saldo Inicial Projetado
-html_fluxo += "<tr><td class='row-label' style='background:#f8fafc; border-top:2px solid var(--border-color);'><b>Saldo Inicial (Proj)</b></td>"
-for val in s_ini_proj_list:
-    html_fluxo += f"<td style='background:#f8fafc; border-top:2px solid var(--border-color);'>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-# Saídas Projetadas
-html_fluxo += "<tr><td class='row-label' style='background:#f8fafc;'>(-) Saídas (Proj/Orç)</td>"
-for val in saida_proj_list:
-    html_fluxo += f"<td style='background:#f8fafc; color: var(--red-main);'>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-# Saldo Final Projetado
-html_fluxo += "<tr><td class='row-label' style='background:#f8fafc;'><b>(=) Saldo Final (Proj)</b></td>"
-for val in s_fim_proj_list:
-    html_fluxo += f"<td style='background:#f8fafc;' class='val-orc'><b>{formatar_moeda_curta(val)}</b></td>"
+# Saldo Final
+html_fluxo += "<tr><td class='row-label' style='font-weight: 800;'>(=) Saldo Final</td>"
+for m_num, val in enumerate(s_fim_list, start=2):
+    css_class = "val-real" if m_num <= max_mes_realizado else "val-orc"
+    html_fluxo += f"<td class='{css_class}'><b>{formatar_moeda_curta(val)}</b></td>"
 html_fluxo += "</tr>"
 
 html_fluxo += "</tbody></table></div>"
