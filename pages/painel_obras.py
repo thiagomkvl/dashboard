@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO EXECUTIVO COM DRILL-DOWN NATIVO E CORREÇÃO DE COLUNAS)
+# 1. CUSTOM CSS (ESTILO CLEAN / BRANCO COM DRILL-DOWN NATIVO)
 # ==============================================================================
 css = """
 <style>
@@ -90,19 +90,20 @@ css = """
         text-align: center;
     }
     .unified-table th {
-        background: #f8fafc;
+        background: #ffffff;
         color: var(--text-dark);
         font-weight: 800;
         text-transform: uppercase;
         padding: 10px 4px;
         border-bottom: 2px solid var(--border-color);
-        border-right: 1px solid #f1f5f9;
+        border-right: 1px solid var(--border-color);
     }
     .unified-table th:last-child { border-right: none; }
     .unified-table td {
         padding: 10px 4px;
-        border-bottom: 1px solid #f1f5f9;
-        border-right: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--border-color);
+        border-right: 1px solid var(--border-color);
+        background: #ffffff;
     }
     .unified-table td:last-child { border-right: none; }
     .row-label {
@@ -110,7 +111,7 @@ css = """
         padding-left: 15px !important;
         font-weight: 700;
         color: var(--text-muted);
-        background: #fafaf9;
+        background: #ffffff;
         width: 130px;
         border-right: 2px solid var(--border-color) !important;
     }
@@ -137,7 +138,7 @@ css = """
     
     .fases-table thead { position: sticky; top: 0; z-index: 15; }
     .fases-table th { 
-        background: #f8fafc; 
+        background: #ffffff; 
         color: var(--text-muted); 
         font-weight: 800; 
         text-transform: uppercase; 
@@ -150,19 +151,22 @@ css = """
     }
     .fases-table td { 
         padding: 10px; 
-        border-bottom: 1px solid #f1f5f9; 
+        border-bottom: 1px solid var(--border-color); 
         color: var(--text-dark); 
         background: #ffffff;
     }
     
-    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { position: sticky; left: 0; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
-    .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
+    /* Apenas a primeira coluna congelada */
+    .fases-table th:nth-child(1), .fases-table td:nth-child(1) { 
+        position: sticky; left: 0; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); 
+    }
+    .fases-table th:nth-child(1) { z-index: 20; background: #ffffff; }
 
-    .fases-table tr:hover td { background: #f8fafc; }
+    .fases-table tr:hover td { background: #fafaf9; }
     .total-geral-row td { 
         font-weight: 900; 
-        background: #e2e8f0 !important; 
-        border-top: 2px solid var(--border-color); 
+        background: #ffffff !important; 
+        border-top: 2px solid var(--text-dark); 
         color: var(--text-dark); 
     }
 
@@ -174,7 +178,7 @@ css = """
     .obra-group .sub-row { display: none; }
     .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
-
+    
     /* INDICADOR DE ORÇAMENTO (PAGAMENTOS REALIZADOS) */
     .orcado-indicator {
         display: block;
@@ -276,7 +280,6 @@ def carregar_dados_obras_detalhado():
             df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
             valid_cols = [c for c in df_fases_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_fases = df_fases_raw[valid_cols].copy()
-            # Limpeza cirúrgica de colunas totalmente vazias criadas no Sheets
             df_fases = df_fases.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
         except Exception:
             df_fases = pd.DataFrame()
@@ -442,7 +445,7 @@ st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': F
 
 # TABELA UNIFICADA 3 LINHAS
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
-html_unified += "<th class='row-label' style='background:#f8fafc;'>Mês</th>"
+html_unified += "<th class='row-label' style='background:#ffffff;'>Mês</th>"
 for _, r in df_linha.iterrows():
     html_unified += f"<th>{r['Mes_Nome']}</th>"
 html_unified += "</tr></thead><tbody>"
@@ -479,12 +482,22 @@ if not df_fases.empty:
     col_fase = df_fases_view.columns[1]
     obras_unicas = df_fases_view[col_obra].dropna().unique()
 
+    # Filtra colunas para não mostrar '%' e renomeia 'Custo R$' para 'ORÇAMENTO R$'
+    cols_to_show = []
+    for col in df_fases_view.columns[2:]:
+        if '%' in str(col) or 'perc' in str(col).lower():
+            continue
+        cols_to_show.append(col)
+
+    # Inicia a Tabela Master 
     html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    for col in df_fases_view.columns:
-        html_fases += f"<th>{col}</th>"
+    html_fases += f"<th>OBRA / CATEGORIA</th>"
+    for col in cols_to_show:
+        nome_col = "ORÇAMENTO R$" if 'custo' in str(col).lower() else col
+        html_fases += f"<th style='text-align:right;'>{nome_col}</th>"
     html_fases += "</tr></thead>"
     
-    totais_mensais_fases = {c: 0.0 for c in df_fases_view.columns[2:]}
+    totais_mensais_fases = {c: 0.0 for c in cols_to_show}
 
     for obra_name in obras_unicas:
         group = df_fases_view[df_fases_view[col_obra] == obra_name]
@@ -496,59 +509,49 @@ if not df_fases.empty:
         else:
             tot_r = group.iloc[0].copy()
             tot_r[col_fase] = "Total"
-            for c in df_fases_view.columns[2:]:
+            for c in cols_to_show:
                 tot_r[c] = detail_rows[c].apply(limpa_valor).sum()
 
         html_fases += "<tbody class='obra-group'>"
 
         # 1. Imprime a Linha Master (TOTAL da Obra)
-        html_fases += "<tr class='total-geral-row'>"
+        html_fases += "<tr>"
         html_fases += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
 
-        for i, col_name in enumerate(df_fases_view.columns[1:], start=1):
+        for col_name in cols_to_show:
             val = tot_r[col_name]
-            val_str = str(val).strip() if pd.notna(val) else "-"
             try:
                 num_v = limpa_valor(val)
-                if '%' in str(col_name) or 'perc' in str(col_name).lower() or ('%' in str(val)):
-                    val_str = f"{num_v * 100:.2f}%" if abs(num_v) <= 1 else f"{num_v:.2f}%"
-                elif num_v != 0 and i != 1:
-                    val_str = formatar_moeda(num_v)
-                    totais_mensais_fases[col_name] += num_v
+                val_str = formatar_moeda(num_v) if num_v != 0 else "-"
+                totais_mensais_fases[col_name] += num_v
             except:
-                pass
-            html_fases += f"<td>{val_str}</td>"
+                val_str = "-"
+            html_fases += f"<td style='text-align:right; font-weight:800;'>{val_str}</td>"
         html_fases += "</tr>"
 
-        # 2. Imprime as linhas detalhadas de Fases (Ocultas até o clique)
+        # 2. Imprime as linhas detalhadas (Fases)
         for _, d_row in detail_rows.iterrows():
+            fase_nome = d_row[col_fase]
             html_fases += "<tr class='sub-row'>"
-            html_fases += f"<td style='color: transparent;'>{obra_name}</td>" 
+            html_fases += f"<td style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color);'>↳ {fase_nome}</td>" 
             
-            for i, col_name in enumerate(df_fases_view.columns[1:], start=1):
+            for col_name in cols_to_show:
                 val = d_row[col_name]
-                val_str = str(val).strip() if pd.notna(val) else "-"
                 try:
                     num_v = limpa_valor(val)
-                    if '%' in str(col_name) or 'perc' in str(col_name).lower() or ('%' in str(val)):
-                        val_str = f"{num_v * 100:.2f}%" if abs(num_v) <= 1 else f"{num_v:.2f}%"
-                    elif num_v != 0 and i != 1:
-                        val_str = formatar_moeda(num_v)
+                    val_str = formatar_moeda(num_v) if num_v != 0 else "-"
                 except:
-                    pass
-                html_fases += f"<td>{val_str}</td>"
+                    val_str = "-"
+                html_fases += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{val_str}</td>"
             html_fases += "</tr>"
 
         html_fases += "</tbody>"
         
-    # TOTAL GERAL DO ORÇADO
-    html_fases += "<tbody><tr class='total-geral-row' style='background:#e2e8f0;'>"
-    html_fases += "<td><b>TOTAL GERAL</b></td><td>-</td>"
-    for col_name in df_fases_view.columns[2:]:
-        if '%' in str(col_name) or 'perc' in str(col_name).lower():
-            html_fases += "<td>-</td>"
-        else:
-            html_fases += f"<td>{formatar_moeda(totais_mensais_fases[col_name])}</td>"
+    # TOTAL GERAL DO ORÇADO NO FINAL DA TABELA
+    html_fases += "<tbody><tr class='total-geral-row'>"
+    html_fases += "<td><b>TOTAL GERAL</b></td>"
+    for col_name in cols_to_show:
+        html_fases += f"<td style='text-align:right;'>{formatar_moeda(totais_mensais_fases[col_name])}</td>"
     html_fases += "</tr></tbody>"
 
     html_fases += "</table></div>"
@@ -594,7 +597,7 @@ if not df_real_detalhe.empty:
     df_orc_pivot['TOTAL'] = df_orc_pivot.sum(axis=1)
 
     html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-    html_real += "<th>Obra / Categoria</th><th style='text-align:right;'>TOTAL</th>"
+    html_real += "<th>OBRA / CATEGORIA</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in meses_tabela:
         html_real += f"<th style='text-align:right;'>{col_m}</th>"
     html_real += "</tr></thead>"
@@ -609,7 +612,7 @@ if not df_real_detalhe.empty:
         html_real += "<tbody class='obra-group'>"
         
         # 1. Linha Master (TOTAL da Obra)
-        html_real += "<tr class='total-geral-row'>"
+        html_real += "<tr>"
         html_real += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_r}</b></label></td>"
         html_real += f"<td style='text-align:right;'><span style='font-weight:800;'>{formatar_moeda(tot_r)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_orc)}</span></td>"
         
@@ -626,21 +629,21 @@ if not df_real_detalhe.empty:
                 valor_pagamento = limpa_valor(tr['Valor_Realizado'])
                 mes_ref = int(tr['Mes']) if pd.notna(tr['Mes']) else 0
                 
-                html_real += "<tr class='sub-row' style='background-color: #fafaf9;'>"
+                html_real += "<tr class='sub-row'>"
                 
                 # Detalhes da transação na primeira coluna
                 detalhe_str = f"↳ {tr['Data_Pgto']} | {tr['Fornecedor']} | NF: {tr['NF']}"
-                html_real += f"<td style='padding-left: 30px; font-size: 10px; color: var(--text-muted); border-right: 2px solid var(--border-color);'>{detalhe_str}</td>"
+                html_real += f"<td style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color);'>{detalhe_str}</td>"
                 
-                # Coluna do TOTAL da transação
-                html_real += f"<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>{formatar_moeda(valor_pagamento)}</td>"
+                # Coluna do TOTAL (em branco para a transação individual para não poluir)
+                html_real += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>-</td>"
                 
                 # Alocação exata na coluna do mês correto
                 for m_num in range(2, 13):
                     if m_num == mes_ref:
-                        html_real += f"<td style='text-align:right; font-size: 10px; font-weight:600; color: var(--text-dark); background-color: #f1f5f9;'>{formatar_moeda(valor_pagamento)}</td>"
+                        html_real += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-dark);'>{formatar_moeda(valor_pagamento)}</td>"
                     else:
-                        html_real += f"<td style='text-align:center; font-size: 10px; color: #cbd5e1;'>-</td>"
+                        html_real += f"<td style='text-align:right; font-size: 11px; color: #cbd5e1;'>-</td>"
                 html_real += "</tr>"
             
         html_real += "</tbody>"
@@ -649,7 +652,7 @@ if not df_real_detalhe.empty:
     tot_geral = limpa_valor(df_matrix['TOTAL'].sum())
     tot_geral_orc = df_orc_pivot['TOTAL'].sum() if not df_orc_pivot.empty else 0.0
     
-    html_real += "<tbody><tr class='total-geral-row' style='background:#e2e8f0;'>"
+    html_real += "<tbody><tr class='total-geral-row'>"
     html_real += f"<td><b>TOTAL GERAL</b></td><td style='text-align:right;'><span style='font-weight:900;'>{formatar_moeda(tot_geral)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_geral_orc)}</span></td>"
     
     for m_num, col_m in zip(range(2, 13), meses_tabela):
