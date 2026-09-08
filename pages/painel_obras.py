@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO CLEAN / BRANCO COM DRILL-DOWN NATIVO)
+# 1. CUSTOM CSS (ESTILO CLEAN COM LARGURAS FIXAS PARA ALINHAMENTO)
 # ==============================================================================
 css = """
 <style>
@@ -118,7 +118,7 @@ css = """
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
-    /* TABELA DE FASES / REALIZADO COM STICKY E DRILL-DOWN */
+    /* TABELAS COM ALINHAMENTO FIXO (PERFECT SYNC) */
     .fases-table-container {
         max-height: 500px;
         overflow-y: auto;
@@ -129,11 +129,12 @@ css = """
         box-shadow: var(--shadow-sm);
     }
     .fases-table { 
-        width: 100%; 
+        min-width: 100%; 
         border-collapse: collapse; 
         font-size: 11px; 
         white-space: nowrap;
         background: #ffffff;
+        table-layout: fixed; /* Força as larguras das colunas a serem exatas */
     }
     
     .fases-table thead { position: sticky; top: 0; z-index: 15; }
@@ -156,11 +157,21 @@ css = """
         background: #ffffff;
     }
     
-    /* Apenas a primeira coluna congelada */
+    /* Larguras cravadas para manter as duas tabelas 100% idênticas */
     .fases-table th:nth-child(1), .fases-table td:nth-child(1) { 
+        width: 290px; min-width: 290px; max-width: 290px;
         position: sticky; left: 0; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); 
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .fases-table th:nth-child(1) { z-index: 20; background: #ffffff; }
+
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { 
+        width: 120px; min-width: 120px; max-width: 120px;
+    }
+    
+    .fases-table th:nth-child(n+3), .fases-table td:nth-child(n+3) { 
+        width: 100px; min-width: 100px; max-width: 100px;
+    }
 
     .fases-table tr:hover td { background: #fafaf9; }
     .total-geral-row td { 
@@ -526,14 +537,14 @@ if not df_fases.empty:
                 totais_mensais_fases[col_name] += num_v
             except:
                 val_str = "-"
-            html_fases += f"<td style='text-align:right; font-weight:800;'>{val_str}</td>"
+            html_fases += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
         html_fases += "</tr>"
 
         # 2. Imprime as linhas detalhadas (Fases)
         for _, d_row in detail_rows.iterrows():
             fase_nome = d_row[col_fase]
             html_fases += "<tr class='sub-row'>"
-            html_fases += f"<td style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color);'>↳ {fase_nome}</td>" 
+            html_fases += f"<td title='↳ {fase_nome}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {fase_nome}</td>" 
             
             for col_name in cols_to_show:
                 val = d_row[col_name]
@@ -614,12 +625,12 @@ if not df_real_detalhe.empty:
         # 1. Linha Master (TOTAL da Obra)
         html_real += "<tr>"
         html_real += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_r}</b></label></td>"
-        html_real += f"<td style='text-align:right;'><span style='font-weight:800;'>{formatar_moeda(tot_r)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_orc)}</span></td>"
+        html_real += f"<td style='text-align:right;'><span style='font-weight:800; color: var(--text-dark);'>{formatar_moeda(tot_r)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_orc)}</span></td>"
         
         for m_num, col_m in zip(range(2, 13), meses_tabela):
             val_m = limpa_valor(row[col_m])
             val_orc_m = orc_row[m_num] if orc_row is not None else 0.0
-            html_real += f"<td style='text-align:right;'><span>{formatar_moeda(val_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(val_orc_m)}</span></td>"
+            html_real += f"<td style='text-align:right;'><span style='font-weight:800; color: var(--text-dark);'>{formatar_moeda(val_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(val_orc_m)}</span></td>"
         html_real += "</tr>"
 
         # 2. Transações (Ocultas até o clique - alinhadas pelo Mês correspondente)
@@ -633,17 +644,17 @@ if not df_real_detalhe.empty:
                 
                 # Detalhes da transação na primeira coluna
                 detalhe_str = f"↳ {tr['Data_Pgto']} | {tr['Fornecedor']} | NF: {tr['NF']}"
-                html_real += f"<td style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color);'>{detalhe_str}</td>"
+                html_real += f"<td title='{detalhe_str}' style='padding-left: 30px; font-size: 10px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>{detalhe_str}</td>"
                 
                 # Coluna do TOTAL (em branco para a transação individual para não poluir)
-                html_real += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>-</td>"
+                html_real += f"<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>-</td>"
                 
                 # Alocação exata na coluna do mês correto
                 for m_num in range(2, 13):
                     if m_num == mes_ref:
-                        html_real += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-dark);'>{formatar_moeda(valor_pagamento)}</td>"
+                        html_real += f"<td style='text-align:right; font-size: 10px; font-weight:600; color: var(--text-dark);'>{formatar_moeda(valor_pagamento)}</td>"
                     else:
-                        html_real += f"<td style='text-align:right; font-size: 11px; color: #cbd5e1;'>-</td>"
+                        html_real += f"<td style='text-align:right; font-size: 10px; color: #cbd5e1;'>-</td>"
                 html_real += "</tr>"
             
         html_real += "</tbody>"
