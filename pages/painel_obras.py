@@ -159,6 +159,10 @@ css = """
     .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
     .fases-table td:nth-child(1) { background: #ffffff; }
 
+    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { position: sticky; left: 180px; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); }
+    .fases-table th:nth-child(2) { z-index: 20; background: #f8fafc; }
+    .fases-table td:nth-child(2) { background: #ffffff; }
+
     .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td { 
         font-weight: 900; 
@@ -167,7 +171,7 @@ css = """
         color: var(--text-dark); 
     }
 
-    /* SUB-TABELA DE TRANSAÇÕES E FASES */
+    /* SUB-TABELA DE TRANSAÇÕES */
     .transacao-subtable {
         width: 100%;
         border-collapse: collapse;
@@ -465,149 +469,42 @@ html_unified += "</tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - AGRUPADA POR OBRA
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - DESIGN ORIGINAL
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
 
 if not df_fases.empty:
     df_fases_view = df_fases.copy()
-
     if obra_selecionada != "Todas":
         col_o = df_fases_view.columns[0]
         df_fases_view = df_fases_view[df_fases_view[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
+        
+    html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
+    for col in df_fases_view.columns:
+        html_fases += f"<th>{col}</th>"
+    html_fases += "</tr></thead><tbody>"
     
-    col_obra = df_fases_view.columns[0]
-    col_fase = df_fases_view.columns[1]
-    
-    # Vamos extrair os totais (linhas onde a fase contém "Total") e remover as linhas vazias do grupo
-    fases_group = {}
-    for obra_name, group in df_fases_view.groupby(col_obra, sort=False):
-        # Encontra a linha de total
-        total_row = group[group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
-        detail_rows = group[~group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
-        
-        if not total_row.empty:
-            fases_group[obra_name] = {
-                'total_row': total_row.iloc[0],
-                'detail_rows': detail_rows
-            }
-            
-    if fases_group:
-        # Tabela principal das obras
-        html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-        html_fases += f"<th>{col_obra}</th>"
-        for col in df_fases_view.columns[1:]:
-            if col != col_fase: # Oculta coluna "Fase" na visão agregada para limpar layout
-                html_fases += f"<th>{col}</th>"
-        html_fases += "</tr></thead><tbody>"
-        st.markdown(html_fases, unsafe_allow_html=True)
-        
-        for obra_name, data in fases_group.items():
-            tot_r = data['total_row']
-            
-            # Subtabela no expander (Detalhes das Fases)
-            with st.expander(f"Ver Fases e Serviços de {obra_name}"):
-                sub_html = "<table class='transacao-subtable'><thead><tr>"
-                for col in df_fases_view.columns[1:]:
-                    sub_html += f"<th>{col}</th>"
-                sub_html += "</tr></thead><tbody>"
-                
-                for _, row in data['detail_rows'].iterrows():
-                    sub_html += "<tr>"
-                    for i, val in enumerate(row.values[1:]): # Ignora col_obra
-                        val_str = str(val).strip() if pd.notna(val) else "-"
-                        try:
-                            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                                num_v = float(val)
-                            else:
-                                texto_num = str(val).strip().replace("R$", "").replace(" ", "")
-                                if "," in texto_num:
-                                    texto_num = texto_num.replace(".", "").replace(",", ".")
-                                else:
-                                    texto_num = texto_num.replace(",", "")
-                                num_v = float(texto_num)
-                            
-                            # Formatação
-                            if i == 2: # Coluna de '%' (deslocada por ignorar col_obra)
-                                if abs(num_v) <= 1:
-                                    val_str = f"{num_v * 100:.2f}%"
-                                else:
-                                    val_str = f"{num_v:.2f}%"
-                            elif num_v != 0 and i != 1: 
-                                val_str = formatar_moeda(num_v)
-                        except:
-                            pass
-                        sub_html += f"<td>{val_str}</td>"
-                    sub_html += "</tr>"
-                sub_html += "</tbody></table>"
-                st.markdown(sub_html, unsafe_allow_html=True)
-            
-            # Linha consolidada
-            row_html = f"<tr class='total-geral-row'><td><b>{obra_name}</b></td>"
-            for i, val in enumerate(tot_r.values[2:]): # Ignora col_obra e col_fase
-                val_str = str(val).strip() if pd.notna(val) else "-"
-                try:
-                    if isinstance(val, (int, float)) and not isinstance(val, bool):
-                        num_v = float(val)
+    for _, row in df_fases_view.iterrows():
+        is_total = any('total' in str(val).lower() for val in row.values)
+        tr_class = "total-geral-row" if is_total else ""
+        html_fases += f"<tr class='{tr_class}'>"
+        for i, val in enumerate(row.values):
+            val_str = str(val).strip() if pd.notna(val) else "-"
+            try:
+                num_v = limpa_valor(val)
+                if i == 3: # Coluna de percentual
+                    if abs(num_v) <= 1:
+                        val_str = f"{num_v * 100:.2f}%"
                     else:
-                        texto_num = str(val).strip().replace("R$", "").replace(" ", "")
-                        if "," in texto_num:
-                            texto_num = texto_num.replace(".", "").replace(",", ".")
-                        else:
-                            texto_num = texto_num.replace(",", "")
-                        num_v = float(texto_num)
-
-                    if i == 1: # Índice 1 do restante é a coluna de %
-                        if abs(num_v) <= 1:
-                            val_str = f"{num_v * 100:.2f}%"
-                        else:
-                            val_str = f"{num_v:.2f}%"
-                    elif num_v != 0:
-                        val_str = formatar_moeda(num_v)
-                except:
-                    pass
-                row_html += f"<td>{val_str}</td>"
-            row_html += "</tr>"
-            st.markdown(row_html, unsafe_allow_html=True)
-            
-        st.markdown("</tbody></table></div>", unsafe_allow_html=True)
-    else:
-        # Fallback se não conseguir agrupar (caso estrutura fuja do padrão esperado 'Total')
-        html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
-        for col in df_fases_view.columns:
-            html_fases += f"<th>{col}</th>"
-        html_fases += "</tr></thead><tbody>"
-        
-        for _, row in df_fases_view.iterrows():
-            is_total = any('total' in str(val).lower() for val in row.values)
-            tr_class = "total-geral-row" if is_total else ""
-            html_fases += f"<tr class='{tr_class}'>"
-            for i, val in enumerate(row.values):
-                val_str = str(val).strip() if pd.notna(val) else "-"
-                try:
-                    if isinstance(val, (int, float)) and not isinstance(val, bool):
-                        num_v = float(val)
-                    else:
-                        texto_num = str(val).strip().replace("R$", "").replace(" ", "")
-                        if "," in texto_num:
-                            texto_num = texto_num.replace(".", "").replace(",", ".")
-                        else:
-                            texto_num = texto_num.replace(",", "")
-                        num_v = float(texto_num)
-
-                    if i == 3:
-                        if abs(num_v) <= 1:
-                            val_str = f"{num_v * 100:.2f}%"
-                        else:
-                            val_str = f"{num_v:.2f}%"
-                    elif num_v != 0:
-                        val_str = formatar_moeda(num_v)
-                except:
-                    pass
-                html_fases += f"<td>{val_str}</td>"
-            html_fases += "</tr>"
-        html_fases += "</tbody></table></div>"
-        st.markdown(html_fases, unsafe_allow_html=True)
+                        val_str = f"{num_v:.2f}%"
+                elif num_v != 0:
+                    val_str = formatar_moeda(num_v)
+            except:
+                pass
+            html_fases += f"<td>{val_str}</td>"
+        html_fases += "</tr>"
+    html_fases += "</tbody></table></div>"
+    st.markdown(html_fases, unsafe_allow_html=True)
 else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
@@ -617,36 +514,11 @@ else:
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
 df_real_detalhe = df_real_filtrado.copy()
-
 if not df_real_detalhe.empty:
-
     df_real_detalhe['Valor_Realizado'] = df_real_detalhe['Valor_Realizado'].apply(limpa_valor)
-
-    df_real_detalhe['Fornecedor'] = (
-        df_real_detalhe['Fornecedor']
-        .fillna('NÃO INFORMADO')
-        .astype(str)
-        .str.strip()
-        .replace(['', 'nan', 'None'], 'NÃO INFORMADO')
-        .str.upper()
-    )
-
-    df_real_detalhe['NF'] = (
-        df_real_detalhe['NF']
-        .fillna('-')
-        .astype(str)
-        .str.strip()
-        .replace(['', 'nan', 'None'], '-')
-    )
-
-    df_real_detalhe['Data_Pgto'] = (
-        df_real_detalhe['Data_Pgto']
-        .fillna('-')
-        .astype(str)
-        .str.replace('00:00:00', '', regex=False)
-        .str.strip()
-        .replace(['', 'nan', 'None'], '-')
-    )
+    df_real_detalhe['Fornecedor'] = df_real_detalhe['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
+    df_real_detalhe['NF'] = df_real_detalhe['NF'].fillna('-').astype(str).str.strip()
+    df_real_detalhe['Data_Pgto'] = df_real_detalhe['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip()
 
     map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
     meses_tabela = list(map_m_inv.values())
@@ -663,21 +535,11 @@ if not df_real_detalhe.empty:
     df_matrix['TOTAL'] = df_matrix.sum(axis=1)
     df_matrix = df_matrix.reset_index()
 
-    html_real = """
-    <div class='fases-table-container'>
-        <table class='fases-table'>
-            <thead>
-                <tr>
-                    <th>Obra / Categoria</th>
-                    <th>TOTAL</th>
-    """
+    html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
+    html_real += "<th>Obra / Categoria</th><th>TOTAL</th>"
     for col_m in meses_tabela:
         html_real += f"<th>{col_m}</th>"
-    html_real += """
-                </tr>
-            </thead>
-            <tbody>
-    """
+    html_real += "</tr></thead><tbody>"
     st.markdown(html_real, unsafe_allow_html=True)
 
     for _, row in df_matrix.iterrows():
@@ -693,7 +555,6 @@ if not df_real_detalhe.empty:
 
         with st.expander(f"Ver pagamentos e fornecedores de {obra_r}"):
             df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor', 'Data_Pgto'])
-
             if df_trans_esp.empty:
                 st.info("Nenhum pagamento encontrado para esta obra.")
                 continue
@@ -734,6 +595,5 @@ if not df_real_detalhe.empty:
     final_row += "</tr></tbody></table></div>"
     
     st.markdown(final_row, unsafe_allow_html=True)
-
 else:
     st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
