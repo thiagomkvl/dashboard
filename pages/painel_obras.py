@@ -19,7 +19,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# 1. CUSTOM CSS (ESTILO CLEAN COM LARGURAS FIXAS PARA ALINHAMENTO)
+# 1. CUSTOM CSS (ESTILO CLEAN COM ALINHAMENTO FIXO RIGOROSO)
 # ==============================================================================
 css = """
 <style>
@@ -129,12 +129,12 @@ css = """
         box-shadow: var(--shadow-sm);
     }
     .fases-table { 
-        min-width: 100%; 
+        width: 100%; 
         border-collapse: collapse; 
         font-size: 11px; 
         white-space: nowrap;
         background: #ffffff;
-        table-layout: fixed; /* Força as larguras das colunas a serem exatas */
+        table-layout: fixed; /* Trava o tamanho das colunas garantindo o alinhamento */
     }
     
     .fases-table thead { position: sticky; top: 0; z-index: 15; }
@@ -157,20 +157,15 @@ css = """
         background: #ffffff;
     }
     
-    /* Larguras cravadas para manter as duas tabelas 100% idênticas */
+    /* Larguras cravadas para manter as duas tabelas 100% simétricas */
     .fases-table th:nth-child(1), .fases-table td:nth-child(1) { 
-        width: 290px; min-width: 290px; max-width: 290px;
+        width: 250px; 
         position: sticky; left: 0; z-index: 10; background: #ffffff; border-right: 2px solid var(--border-color); 
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .fases-table th:nth-child(1) { z-index: 20; background: #ffffff; }
 
     .fases-table th:nth-child(2), .fases-table td:nth-child(2) { 
-        width: 120px; min-width: 120px; max-width: 120px;
-    }
-    
-    .fases-table th:nth-child(n+3), .fases-table td:nth-child(n+3) { 
-        width: 100px; min-width: 100px; max-width: 100px;
+        width: 130px; 
     }
 
     .fases-table tr:hover td { background: #fafaf9; }
@@ -478,7 +473,7 @@ html_unified += "</tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - DRILL-DOWN NATIVO
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
 
@@ -493,14 +488,12 @@ if not df_fases.empty:
     col_fase = df_fases_view.columns[1]
     obras_unicas = df_fases_view[col_obra].dropna().unique()
 
-    # Filtra colunas para não mostrar '%' e renomeia 'Custo R$' para 'ORÇAMENTO R$'
     cols_to_show = []
     for col in df_fases_view.columns[2:]:
         if '%' in str(col) or 'perc' in str(col).lower():
             continue
         cols_to_show.append(col)
 
-    # Inicia a Tabela Master 
     html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
     html_fases += f"<th>OBRA / CATEGORIA</th>"
     for col in cols_to_show:
@@ -525,7 +518,6 @@ if not df_fases.empty:
 
         html_fases += "<tbody class='obra-group'>"
 
-        # 1. Imprime a Linha Master (TOTAL da Obra)
         html_fases += "<tr>"
         html_fases += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
 
@@ -537,10 +529,9 @@ if not df_fases.empty:
                 totais_mensais_fases[col_name] += num_v
             except:
                 val_str = "-"
-            html_fases += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
+            html_fases += f"<td style='text-align:right; font-weight:800;'>{val_str}</td>"
         html_fases += "</tr>"
 
-        # 2. Imprime as linhas detalhadas (Fases)
         for _, d_row in detail_rows.iterrows():
             fase_nome = d_row[col_fase]
             html_fases += "<tr class='sub-row'>"
@@ -558,7 +549,6 @@ if not df_fases.empty:
 
         html_fases += "</tbody>"
         
-    # TOTAL GERAL DO ORÇADO NO FINAL DA TABELA
     html_fases += "<tbody><tr class='total-geral-row'>"
     html_fases += "<td><b>TOTAL GERAL</b></td>"
     for col_name in cols_to_show:
@@ -571,7 +561,7 @@ else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS COM DRILL-DOWN MENSAL NATIVO
+# 8. TABELA DE DETALHAMENTO DE PAGAMENTOS REALIZADOS COM ALINHAMENTO FIXO
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
@@ -611,6 +601,7 @@ if not df_real_detalhe.empty:
     html_real += "<th>OBRA / CATEGORIA</th><th style='text-align:right;'>TOTAL</th>"
     for col_m in meses_tabela:
         html_real += f"<th style='text-align:right;'>{col_m}</th>"
+    html_real += "<th></th>" # Coluna fantasma para igualar as 14 colunas da tabela de cima
     html_real += "</tr></thead>"
     
     for _, row in df_matrix.iterrows():
@@ -631,9 +622,10 @@ if not df_real_detalhe.empty:
             val_m = limpa_valor(row[col_m])
             val_orc_m = orc_row[m_num] if orc_row is not None else 0.0
             html_real += f"<td style='text-align:right;'><span style='font-weight:800; color: var(--text-dark);'>{formatar_moeda(val_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(val_orc_m)}</span></td>"
+        html_real += "<td></td>"
         html_real += "</tr>"
 
-        # 2. Transações (Ocultas até o clique - alinhadas pelo Mês correspondente)
+        # 2. Transações
         df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor', 'Data_Pgto'])
         if not df_trans_esp.empty:
             for _, tr in df_trans_esp.iterrows():
@@ -642,19 +634,17 @@ if not df_real_detalhe.empty:
                 
                 html_real += "<tr class='sub-row'>"
                 
-                # Detalhes da transação na primeira coluna
                 detalhe_str = f"↳ {tr['Data_Pgto']} | {tr['Fornecedor']} | NF: {tr['NF']}"
                 html_real += f"<td title='{detalhe_str}' style='padding-left: 30px; font-size: 10px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>{detalhe_str}</td>"
                 
-                # Coluna do TOTAL (em branco para a transação individual para não poluir)
                 html_real += f"<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>-</td>"
                 
-                # Alocação exata na coluna do mês correto
                 for m_num in range(2, 13):
                     if m_num == mes_ref:
                         html_real += f"<td style='text-align:right; font-size: 10px; font-weight:600; color: var(--text-dark);'>{formatar_moeda(valor_pagamento)}</td>"
                     else:
                         html_real += f"<td style='text-align:right; font-size: 10px; color: #cbd5e1;'>-</td>"
+                html_real += "<td></td>"
                 html_real += "</tr>"
             
         html_real += "</tbody>"
@@ -671,6 +661,7 @@ if not df_real_detalhe.empty:
         tot_col_orc_m = df_orc_pivot[m_num].sum() if not df_orc_pivot.empty else 0.0
         html_real += f"<td style='text-align:right;'><span style='font-weight:900;'>{formatar_moeda(tot_col_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_col_orc_m)}</span></td>"
         
+    html_real += "<td></td>"
     html_real += "</tr></tbody></table></div>"
     
     st.markdown(html_real, unsafe_allow_html=True)
