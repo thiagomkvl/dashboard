@@ -171,7 +171,7 @@ css = """
         color: var(--text-dark); 
     }
 
-    /* SUB-TABELA DE TRANSAÇÕES */
+    /* SUB-TABELA DE TRANSAÇÕES E FASES */
     .transacao-subtable {
         width: 100%;
         border-collapse: collapse;
@@ -309,7 +309,7 @@ def carregar_dados_obras_detalhado():
 df_orcado, df_realizado, df_fases = carregar_dados_obras_detalhado()
 
 if df_orcado.empty and df_realizado.empty:
-    st.warning("Nenhum dado encontrado nas abas do banco de dados.")
+    st.warning("Nenhum dataprovido encontrado nas abas do banco de dados.")
     st.stop()
 
 obras_orcadas = df_orcado['Obra'].dropna().astype(str).unique().tolist() if not df_orcado.empty else []
@@ -469,7 +469,7 @@ html_unified += "</tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - DESIGN ORIGINAL
+# 7. TABELA DETALHADA DE ORÇADO X REALIZADO (FASES DA OBRA) - COM DRILL-DOWN POR OBRA
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
 
@@ -479,32 +479,90 @@ if not df_fases.empty:
         col_o = df_fases_view.columns[0]
         df_fases_view = df_fases_view[df_fases_view[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
         
+    col_obra = df_fases_view.columns[0]
+    col_fase = df_fases_view.columns[1]
+    col_custo = df_fases_view.columns[2]
+    
+    # Agrupa por Obra para montar a tabela consolidada de totais + expander de fases
+    obras_unicas = df_fases_view[col_obra].dropna().unique()
+    
+    # Prepara cabeçalho da tabela principal de fases (com o mesmo design original)
     html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr>"
     for col in df_fases_view.columns:
         html_fases += f"<th>{col}</th>"
     html_fases += "</tr></thead><tbody>"
+    st.markdown(html_fases, unsafe_allow_html=True)
     
-    for _, row in df_fases_view.iterrows():
-        is_total = any('total' in str(val).lower() for val in row.values)
-        tr_class = "total-geral-row" if is_total else ""
-        html_fases += f"<tr class='{tr_class}'>"
-        for i, val in enumerate(row.values):
+    totais_gerais_fases = {c: 0.0 for c in df_fases_view.columns[2:]}
+    
+    for obra_name in obras_unicas:
+        group = df_fases_view[df_fases_view[col_obra] == obra_name]
+        total_row = group[group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
+        detail_rows = group[~group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
+        
+        if not total_row.empty:
+            tot_r = total_row.iloc[0]
+        else:
+            tot_r = group.iloc[0].copy()
+            tot_r[col_fase] = "Total"
+            for c in df_fases_view.columns[2:]:
+                tot_r[c] = detail_rows[c].apply(limpa_valor).sum()
+                
+        # Renderiza a linha de total da obra na tabela principal
+        row_html = f"<tr class='total-geral-row'><td><b>{obra_name}</b></td>"
+        for i, col_name in enumerate(df_fases_view.columns[1:]):
+            val = tot_r[col_name]
             val_str = str(val).strip() if pd.notna(val) else "-"
             try:
                 num_v = limpa_valor(val)
-                if i == 3: # Coluna de percentual
+                if col_name == df_fases_view.columns[3]: # Coluna de percentual (%)
                     if abs(num_v) <= 1:
                         val_str = f"{num_v * 100:.2f}%"
                     else:
                         val_str = f"{num_v:.2f}%"
-                elif num_v != 0:
+                elif num_v != 0 and col_name != col_fase:
                     val_str = formatar_moeda(num_v)
+                    if col_name in totais_gerais_fases:
+                        totais_gerais_fases[col_name] += num_v
             except:
                 pass
-            html_fases += f"<td>{val_str}</td>"
-        html_fases += "</tr>"
-    html_fases += "</tbody></table></div>"
-    st.markdown(html_fases, unsafe_allow_html=True)
+            row_html += f"<td>{val_str}</td>"
+        row_html += "</tr>"
+        st.markdown(row_html, unsafe_allow_html=True)
+        
+        # Expander corporativo limpo para abrir as fases e serviços da obra
+        with st.expander(f"Ver fases, tarefas e atividades detalhadas de {obra_name}"):
+            sub_table_html = f"""
+            <table class='transacao-subtable'>
+                <thead>
+                    <tr>
+            """
+            for col in df_fases_view.columns:
+                sub_table_html += f"<th>{col}</th>"
+            sub_table_html += "</tr></thead><tbody>"
+            
+            for _, d_row in detail_rows.iterrows():
+                sub_table_html += "<tr>"
+                for i, col_name in enumerate(df_fases_view.columns):
+                    val = d_row[col_name]
+                    val_str = str(val).strip() if pd.notna(val) else "-"
+                    try:
+                        num_v = limpa_valor(val)
+                        if col_name == df_fases_view.columns[3]:
+                            if abs(num_v) <= 1:
+                                val_str = f"{num_v * 100:.2f}%"
+                            else:
+                                val_str = f"{num_v:.2f}%"
+                        elif num_v != 0 and col_name not in [col_obra, col_fase]:
+                            val_str = formatar_moeda(num_v)
+                    except:
+                        pass
+                    sub_table_html += f"<td>{val_str}</td>"
+                sub_table_html += "</tr>"
+            sub_table_html += "</tbody></table>"
+            st.markdown(sub_table_html, unsafe_allow_html=True)
+            
+    st.markdown("</tbody></table></div>", unsafe_allow_html=True)
 else:
     st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
