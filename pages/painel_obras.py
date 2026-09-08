@@ -87,7 +87,7 @@ css = """
     .unified-table th:last-child { border-right: none; }
     .unified-table td { padding: 10px 4px; border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color); background: #ffffff; }
     .unified-table td:last-child { border-right: none; }
-    .row-label { text-align: left; padding-left: 15px !important; font-weight: 700; color: var(--text-muted); background: #ffffff; width: 130px; border-right: 2px solid var(--border-color) !important; }
+    .row-label { text-align: left; padding-left: 15px !important; font-weight: 700; color: var(--text-muted); background: #ffffff; width: 160px; border-right: 2px solid var(--border-color) !important; }
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
@@ -189,7 +189,7 @@ def extract_month(m):
 def carregar_dados_obras_detalhado():
     conn = conectar_sheets()
     if not conn:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     try:
         # --- ORÇADO ---
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
@@ -212,6 +212,15 @@ def carregar_dados_obras_detalhado():
         except Exception:
             df_fases = pd.DataFrame()
 
+        # --- RECURSOS DA OBRA ---
+        df_recursos = pd.DataFrame()
+        try:
+            df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
+            valid_cols_rec = [c for c in df_recursos_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
+            df_recursos = df_recursos_raw[valid_cols_rec].copy()
+        except Exception:
+            df_recursos = pd.DataFrame()
+
         # --- REALIZADO ---
         df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
@@ -223,12 +232,12 @@ def carregar_dados_obras_detalhado():
         df_real['Fornecedor'] = df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.upper()
         df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
         df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
-        return df_orc_melt, df_real, df_fases
+        return df_orc_melt, df_real, df_fases, df_recursos
     except Exception as e:
         st.error(f"Erro ao processar dados de obras: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-df_orcado, df_realizado, df_fases = carregar_dados_obras_detalhado()
+df_orcado, df_realizado, df_fases, df_recursos = carregar_dados_obras_detalhado()
 if df_orcado.empty and df_realizado.empty:
     st.warning("Nenhum dado encontrado nas abas do banco de dados.")
     st.stop()
@@ -280,6 +289,8 @@ with st.sidebar:
             df_real_detalhe_exp.to_excel(writer, sheet_name='Transacoes_Realizadas', index=False)
         if not df_orc_filtrado.empty:
             df_orc_filtrado.to_excel(writer, sheet_name='Orcado_Mensal', index=False)
+        if not df_recursos.empty:
+            df_recursos.to_excel(writer, sheet_name='Recursos_Obra', index=False)
     relatorio_bytes = output_excel.getvalue()
 
     st.download_button(
@@ -414,14 +425,126 @@ with col_g1:
         fig_donut.update_layout(margin=dict(l=0, r=0, t=10, b=10), height=280, showlegend=True, legend=dict(orientation="v", yanchor="auto", y=0.5, xanchor="left", x=1.0))
         st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 with col_g2:
-    st.markdown("<div style='font-size:12px; font-weight:700; color:var(--text-dark); margin-bottom:10px;'>QUEIMA DE CAIXA MENSAL POR OBRA</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:12px; font-weight:700; color:var(--text-dark); margin-bottom:10px;'>CONSUMO DE CAIXA MENSAL POR OBRA</div>", unsafe_allow_html=True)
     df_stack = df_real_filtrado.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().reset_index()
     if not df_stack.empty:
         df_stack['Mes_Nome'] = df_stack['Mes'].map(meses_nomes)
         df_stack = df_stack.sort_values('Mes')
+        
+        df_stack_tot = df_stack.groupby(['Mes', 'Mes_Nome'])['Valor_Realizado'].sum().reset_index()
+        
         fig_stack = px.bar(df_stack, x='Mes_Nome', y='Valor_Realizado', color='Obra', color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig_stack.update_layout(margin=dict(l=0, r=0, t=10, b=10), height=280, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ "), xaxis_title=None, yaxis_title=None)
+        
+        fig_stack.add_trace(go.Scatter(
+            x=df_stack_tot['Mes_Nome'],
+            y=df_stack_tot['Valor_Realizado'],
+            text=df_stack_tot['Valor_Realizado'].apply(formatar_moeda_curta),
+            mode='text',
+            textposition='top center',
+            showlegend=False,
+            textfont=dict(size=10, color='#1e293b', family='Inter')
+        ))
+        
+        fig_stack.update_layout(margin=dict(l=0, r=0, t=20, b=10), height=280, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ "), xaxis_title=None, yaxis_title=None)
         st.plotly_chart(fig_stack, use_container_width=True, config={'displayModeBar': False})
+
+# ==============================================================================
+# 6.1 FLUXO DE CAIXA DA OBRA
+# ==============================================================================
+st.markdown("<div class='section-title'>Fluxo de Caixa da Obra (Realizado vs Projetado)</div>", unsafe_allow_html=True)
+
+caixa_inicial_base = 10_000_000.0
+if not df_recursos.empty:
+    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
+    if col_rec:
+        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
+        if val_rec > 0:
+            caixa_inicial_base = val_rec
+
+saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dict()
+saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
+max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
+
+s_ini_real_list = []
+saida_real_list = []
+s_fim_real_list = []
+
+s_ini_proj_list = []
+saida_proj_list = []
+s_fim_proj_list = []
+
+curr_real = caixa_inicial_base
+curr_proj = caixa_inicial_base
+
+for m in range(2, 13):
+    # Realizado
+    s_ini_r = curr_real
+    s_ini_real_list.append(s_ini_r)
+    
+    has_real_data = m in saidas_real_dict and m <= max_mes_realizado
+    if has_real_data:
+        saida_r = saidas_real_dict.get(m, 0.0)
+        saida_real_list.append(saida_r)
+        curr_real = s_ini_r - saida_r
+        s_fim_real_list.append(curr_real)
+    else:
+        saida_real_list.append(None)
+        s_fim_real_list.append(None)
+
+    # Projetado (Orçado)
+    s_ini_p = curr_proj
+    s_ini_proj_list.append(s_ini_p)
+    
+    saida_p = saidas_orc_dict.get(m, 0.0)
+    saida_proj_list.append(saida_p)
+    curr_proj = s_ini_p - saida_p
+    s_fim_proj_list.append(curr_proj)
+
+html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label' style='background:#ffffff;'>Fluxo de Caixa</th>"
+for m_num in range(2, 13):
+    html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
+html_fluxo += "</tr></thead><tbody>"
+
+# Saldo Inicial Real
+html_fluxo += "<tr><td class='row-label'>Saldo Inicial (Real)</td>"
+for val in s_ini_real_list:
+    html_fluxo += f"<td>{formatar_moeda_curta(val)}</td>"
+html_fluxo += "</tr>"
+
+# Saídas Realizadas
+html_fluxo += "<tr><td class='row-label'>(-) Saídas (Real)</td>"
+for val in saida_real_list:
+    v_str = formatar_moeda_curta(val) if val is not None else "-"
+    html_fluxo += f"<td style='color: var(--red-main);'>{v_str}</td>"
+html_fluxo += "</tr>"
+
+# Saldo Final Real
+html_fluxo += "<tr><td class='row-label'>(=) Saldo Final (Real)</td>"
+for val in s_fim_real_list:
+    v_str = formatar_moeda_curta(val) if val is not None else "-"
+    html_fluxo += f"<td class='val-real'>{v_str}</td>"
+html_fluxo += "</tr>"
+
+# Saldo Inicial Projetado
+html_fluxo += "<tr><td class='row-label' style='background:#f8fafc; border-top:2px solid var(--border-color);'><b>Saldo Inicial (Proj)</b></td>"
+for val in s_ini_proj_list:
+    html_fluxo += f"<td style='background:#f8fafc; border-top:2px solid var(--border-color);'>{formatar_moeda_curta(val)}</td>"
+html_fluxo += "</tr>"
+
+# Saídas Projetadas
+html_fluxo += "<tr><td class='row-label' style='background:#f8fafc;'>(-) Saídas (Proj/Orç)</td>"
+for val in saida_proj_list:
+    html_fluxo += f"<td style='background:#f8fafc; color: var(--red-main);'>{formatar_moeda_curta(val)}</td>"
+html_fluxo += "</tr>"
+
+# Saldo Final Projetado
+html_fluxo += "<tr><td class='row-label' style='background:#f8fafc;'><b>(=) Saldo Final (Proj)</b></td>"
+for val in s_fim_proj_list:
+    html_fluxo += f"<td style='background:#f8fafc;' class='val-orc'><b>{formatar_moeda_curta(val)}</b></td>"
+html_fluxo += "</tr>"
+
+html_fluxo += "</tbody></table></div>"
+st.markdown(html_fluxo, unsafe_allow_html=True)
 
 st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
 
