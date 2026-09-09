@@ -196,10 +196,10 @@ def carregar_dados_obras_detalhado():
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc = df_orc[df_orc['RESUMO OBRAS'].astype(str).str.upper() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc['RESUMO OBRAS'].astype(str).str.upper().str.strip()
-        meses_cols = ['Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+        meses_cols = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
         meses_existentes = [m for m in meses_cols if m in df_orc.columns]
         df_orc_melt = df_orc.melt(id_vars=['Obra'], value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
-        map_meses = {'Fevereiro': 2, 'Março': 3, 'Abril': 4, 'Maio': 5, 'Junho': 6, 'Julho': 7, 'Agosto': 8, 'Setembro': 9, 'Outubro': 10, 'Novembro': 11, 'Dezembro': 12}
+        map_meses = {'Janeiro': 1, 'Fevereiro': 2, 'Março': 3, 'Abril': 4, 'Maio': 5, 'Junho': 6, 'Julho': 7, 'Agosto': 8, 'Setembro': 9, 'Outubro': 10, 'Novembro': 11, 'Dezembro': 12}
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
@@ -257,7 +257,7 @@ df_fases_filtrado = df_fases.copy()
 
 with st.sidebar:
     st.markdown("### Filtros do Painel")
-    mes_selecionado = st.selectbox("Mês de Análise (Acumulado)", options=["Todos"] + list(range(2, 13)), format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x)
+    mes_selecionado = st.selectbox("Mês de Análise (Acumulado)", options=["Todos"] + list(range(1, 13)), format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x)
     obra_selecionada = st.selectbox("Empreendimento / Obra", ["Todas"] + lista_obras)
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
     if st.button("Limpar Filtros Aplicados", use_container_width=True):
@@ -402,17 +402,17 @@ if obra_selecionada != "Todas":
 df_orc_mensal = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().reset_index()
 df_real_mensal = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().reset_index()
 
-df_linha = pd.merge(pd.DataFrame({'Mes': range(2, 13)}), df_orc_mensal, on='Mes', how='left').fillna(0)
+df_linha = pd.merge(pd.DataFrame({'Mes': range(1, 13)}), df_orc_mensal, on='Mes', how='left').fillna(0)
 df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
 df_linha.loc[df_linha['Mes'] > (df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0), 'Valor_Realizado'] = None
-meses_nomes = {2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
+meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
 
 st.markdown("<div class='section-title'>Evolução Mensal: Orçado vs Realizado</div>", unsafe_allow_html=True)
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(x=df_linha['Mes_Nome'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado Mensal', line=dict(color='#0284c7', width=3), marker=dict(size=6)))
 fig_linha.add_trace(go.Scatter(x=df_linha['Mes_Nome'], y=df_linha['Valor_Realizado'], mode='lines+markers', name='Realizado Mensal', line=dict(color='#10b981', width=3), marker=dict(size=6), connectgaps=False))
-fig_linha.update_layout(height=250, margin=dict(l=20, r=20, t=10, b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False), xaxis=dict(showgrid=False, showline=False, showticklabels=False, range=[-0.2, 10.2]))
+fig_linha.update_layout(height=250, margin=dict(l=20, r=20, t=10, b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#e2e8f0', tickprefix="R$ ", showline=False), xaxis=dict(showgrid=False, showline=False, showticklabels=True, range=[-0.2, 11.2]))
 st.plotly_chart(fig_linha, use_container_width=True, config={'displayModeBar': False})
 
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label' style='background:#ffffff;'>Mês</th>"
@@ -481,7 +481,7 @@ saidas_tot_list = []
 s_fim_list = []
 
 curr_saldo = caixa_inicial_base
-for m in range(2, 13):
+for m in range(1, 13):
     s_ini_list.append(curr_saldo)
     if m <= max_mes_realizado:
         saida_m = saidas_real_dict.get(m, 0.0)
@@ -492,7 +492,7 @@ for m in range(2, 13):
     s_fim_list.append(curr_saldo)
 
 html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label' style='background:#ffffff;'>Fluxo de Caixa</th>"
-for m_num in range(2, 13):
+for m_num in range(1, 13):
     html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
 html_fluxo += "</tr></thead><tbody>"
 
@@ -509,7 +509,7 @@ html_fluxo += "</tr>"
 
 for obra_name in obras_fluxo:
     html_fluxo += f"<tr class='sub-row'><td class='row-label' style='padding-left: 28px; font-size: 10px; font-weight: normal; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {obra_name}</td>"
-    for m_num in range(2, 13):
+    for m_num in range(1, 13):
         if m_num <= max_mes_realizado:
             v_obra = real_por_obra_mes.get((m_num, obra_name), 0.0)
         else:
@@ -521,7 +521,7 @@ for obra_name in obras_fluxo:
 html_fluxo += "</tbody>"
 
 html_fluxo += "<tr><td class='row-label' style='font-weight: 800;'>(=) Saldo Final</td>"
-for m_num, val in enumerate(s_fim_list, start=2):
+for m_num, val in enumerate(s_fim_list, start=1):
     css_class = "val-real" if m_num <= max_mes_realizado else "val-orc"
     html_fluxo += f"<td class='{css_class}'><b>{formatar_moeda_curta(val)}</b></td>"
 html_fluxo += "</tr>"
@@ -612,114 +612,96 @@ if not df_fases.empty:
                 html_fases += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{val_str}</td>"
             html_fases += "</tr>"
         html_fases += "</tbody>"
-        
-    html_fases += "<tbody><tr class='total-geral-row'><td><b>TOTAL GERAL</b></td>"
+
+    html_fases += f"<tr class='total-geral-row'><td>TOTAL GERAL</td>"
     for col_name in cols_to_show:
-        html_fases += f"<td style='text-align:right;'>{formatar_moeda(totais_mensais_fases[col_name])}</td>"
-    html_fases += "</tr></tbody></table></div>"
+        tot_val = totais_mensais_fases[col_name]
+        html_fases += f"<td style='text-align:right;'>{formatar_moeda(tot_val) if tot_val != 0 else '-'}</td>"
+    html_fases += "</tr>"
+    html_fases += "</table></div>"
     st.markdown(html_fases, unsafe_allow_html=True)
-else:
-    st.info("⚠️ A aba 'Fases_Obra' não foi encontrada ou está vazia no Google Sheets.")
 
 # ==============================================================================
-# 8. TABELA PAGAMENTOS (HEATMAP + ORDENAÇÃO DE PESO)
+# 8. TABELA DETALHADA DE PAGAMENTOS REALIZADOS
 # ==============================================================================
-st.write("") 
-st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
 
-df_real_detalhe = df_real_filtrado.copy()
-if not df_real_detalhe.empty:
-    df_real_detalhe['Valor_Realizado'] = df_real_detalhe['Valor_Realizado'].apply(limpa_valor)
-    df_real_detalhe['Fornecedor'] = df_real_detalhe['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
-    df_real_detalhe['NF'] = df_real_detalhe['NF'].fillna('-').astype(str).str.strip()
-    df_real_detalhe['Data_Pgto'] = df_real_detalhe['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip()
-
-    map_m_inv = {2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
-    meses_tabela = list(map_m_inv.values())
-
-    df_group = df_real_detalhe.groupby(['Obra', 'Mes'], as_index=False)['Valor_Realizado'].sum()
-    df_matrix = df_group.pivot_table(index='Obra', columns='Mes', values='Valor_Realizado', fill_value=0)
-    for m in range(2, 13):
-        if m not in df_matrix.columns:
-            df_matrix[m] = 0.0
-    df_matrix = df_matrix[list(range(2, 13))]
-    df_matrix.columns = [map_m_inv[m] for m in range(2, 13)]
-    df_matrix['TOTAL'] = df_matrix.sum(axis=1)
-    df_matrix = df_matrix.reset_index()
-    
-    df_matrix = df_matrix.sort_values(by='TOTAL', ascending=False).reset_index(drop=True)
-
-    df_orc_group = df_orc_filtrado.groupby(['Obra', 'Mes'], as_index=False)['Valor_Orcado'].sum()
-    df_orc_pivot = df_orc_group.pivot_table(index='Obra', columns='Mes', values='Valor_Orcado', fill_value=0)
-    for m in range(2, 13):
-        if m not in df_orc_pivot.columns:
-            df_orc_pivot[m] = 0.0
-    df_orc_pivot = df_orc_pivot[list(range(2, 13))]
-    df_orc_pivot['TOTAL'] = df_orc_pivot.sum(axis=1)
-
-    html_real = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th><th style='text-align:right;'>TOTAL</th>"
-    for col_m in meses_tabela:
-        html_real += f"<th style='text-align:right;'>{col_m}</th>"
-    html_real += "</tr></thead>"
-    
-    for _, row in df_matrix.iterrows():
-        obra_r = row['Obra']
-        tot_r = limpa_valor(row['TOTAL'])
-        orc_row = df_orc_pivot.loc[obra_r] if obra_r in df_orc_pivot.index else None
-        tot_orc = orc_row['TOTAL'] if orc_row is not None else 0.0
-
-        if tot_r > tot_orc and tot_orc > 0:
-            color_tot = "#ef4444"
-        elif tot_r > 0 and tot_r <= tot_orc:
-            color_tot = "#10b981"
-        else:
-            color_tot = "var(--text-dark)"
-
-        html_real += "<tbody class='obra-group'><tr>"
-        html_real += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_r}</b></label></td>"
-        html_real += f"<td style='text-align:right;'><span style='font-weight:800; color: {color_tot};'>{formatar_moeda(tot_r)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_orc)}</span></td>"
+if not df_real_filtrado.empty:
+    df_real_tab = df_real_filtrado[df_real_filtrado['Mes'] > 0].copy()
+    if not df_real_tab.empty:
+        df_real_tab['Mes_Nome'] = df_real_tab['Mes'].map(meses_nomes)
         
-        for m_num, col_m in zip(range(2, 13), meses_tabela):
-            val_m = limpa_valor(row[col_m])
-            val_orc_m = orc_row[m_num] if orc_row is not None else 0.0
+        # Tabela dinâmica por Obra e Mês
+        pivot_real = pd.pivot_table(
+            df_real_tab,
+            index='Obra',
+            columns='Mes',
+            values='Valor_Realizado',
+            aggfunc='sum',
+            fill_value=0.0
+        )
+        
+        # Garantir colunas de 1 a 12
+        for m in range(1, 13):
+            if m not in pivot_real.columns:
+                pivot_real[m] = 0.0
+        pivot_real = pivot_real[sorted(pivot_real.columns)]
+        pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
+        
+        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FORNECEDOR</th>"
+        for m_num in range(1, 13):
+            html_real_det += f"<th style='text-align:right;'>{meses_nomes[m_num]}</th>"
+        html_real_det += "<th style='text-align:right;'>TOTAL</th></tr></thead>"
+        
+        totais_col_real = {m: 0.0 for m in range(1, 13)}
+        totais_geral_real = 0.0
+        
+        for obra_name, row in pivot_real.iterrows():
+            sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
+            pivot_sub = pd.pivot_table(
+                sub_df,
+                index='Fornecedor',
+                columns='Mes',
+                values='Valor_Realizado',
+                aggfunc='sum',
+                fill_value=0.0
+            )
+            for m in range(1, 13):
+                if m not in pivot_sub.columns:
+                    pivot_sub[m] = 0.0
+            pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
+            pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
             
-            if val_m > val_orc_m and val_orc_m > 0:
-                color_val = "#ef4444"
-            elif val_m > 0 and val_m <= val_orc_m:
-                color_val = "#10b981"
-            else:
-                color_val = "var(--text-dark)"
-                
-            html_real += f"<td style='text-align:right;'><span style='font-weight:800; color: {color_val};'>{formatar_moeda(val_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(val_orc_m)}</span></td>"
-        html_real += "</tr>"
-
-        df_trans_esp = df_real_detalhe[df_real_detalhe['Obra'] == obra_r].sort_values(['Mes', 'Fornecedor', 'Data_Pgto'])
-        if not df_trans_esp.empty:
-            for _, tr in df_trans_esp.iterrows():
-                valor_pagamento = limpa_valor(tr['Valor_Realizado'])
-                mes_ref = int(tr['Mes']) if pd.notna(tr['Mes']) else 0
-                html_real += "<tr class='sub-row'>"
-                detalhe_str = f"↳ {tr['Data_Pgto']} | {tr['Fornecedor']} | NF: {tr['NF']}"
-                html_real += f"<td title='{detalhe_str}' style='padding-left: 30px; font-size: 10px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>{detalhe_str}</td>"
-                html_real += "<td style='text-align:right; font-size: 10px; color: var(--text-muted);'>-</td>"
-                for m_num in range(2, 13):
-                    if m_num == mes_ref:
-                        html_real += f"<td style='text-align:right; font-size: 10px; font-weight:600; color: var(--text-dark);'>{formatar_moeda(valor_pagamento)}</td>"
-                    else:
-                        html_real += "<td style='text-align:right; font-size: 10px; color: #cbd5e1;'>-</td>"
-                html_real += "</tr>"
-        html_real += "</tbody>"
-        
-    tot_geral = limpa_valor(df_matrix['TOTAL'].sum())
-    tot_geral_orc = df_orc_pivot['TOTAL'].sum() if not df_orc_pivot.empty else 0.0
-    
-    html_real += "<tbody><tr class='total-geral-row'>"
-    html_real += f"<td><b>TOTAL GERAL</b></td><td style='text-align:right;'><span style='font-weight:900;'>{formatar_moeda(tot_geral)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_geral_orc)}</span></td>"
-    for m_num, col_m in zip(range(2, 13), meses_tabela):
-        tot_col_m = limpa_valor(df_matrix[col_m].sum())
-        tot_col_orc_m = df_orc_pivot[m_num].sum() if not df_orc_pivot.empty else 0.0
-        html_real += f"<td style='text-align:right;'><span style='font-weight:900;'>{formatar_moeda(tot_col_m)}</span><span class='orcado-indicator'>Orç: {formatar_moeda_curta(tot_col_orc_m)}</span></td>"
-    html_real += "</tr></tbody></table></div>"
-    st.markdown(html_real, unsafe_allow_html=True)
-else:
-    st.info("Nenhum pagamento realizado encontrado para os filtros selecionados.")
+            tot_obra = row['Total_Geral']
+            totais_geral_real += tot_obra
+            
+            html_real_det += f"<tbody class='obra-group'><tr>"
+            html_real_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
+            
+            for m_num in range(1, 13):
+                val_m = row.get(m_num, 0.0)
+                totais_col_real[m_num] += val_m
+                val_str = formatar_moeda_curta(val_m) if val_m > 0 else "-"
+                html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
+            
+            html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--green-main);'>{formatar_moeda(tot_obra)}</td></tr>"
+            
+            for forn_name, sub_row in pivot_sub.iterrows():
+                html_real_det += f"<tr class='sub-row'>"
+                html_real_det += f"<td title='↳ {forn_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {forn_name}</td>"
+                for m_num in range(1, 13):
+                    v_sub = sub_row.get(m_num, 0.0)
+                    v_str_sub = formatar_moeda_curta(v_sub) if v_sub > 0 else "-"
+                    html_real_det += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{v_str_sub}</td>"
+                tot_sub_geral = sub_row['Total_Geral']
+                html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-muted);'>{formatar_moeda(tot_sub_geral)}</td></tr>"
+            
+            html_real_det += "</tbody>"
+            
+        html_real_det += f"<tr class='total-geral-row'><td>TOTAL GERAL</td>"
+        for m_num in range(1, 13):
+            t_col = totais_col_real[m_num]
+            html_real_det += f"<td style='text-align:right;'>{formatar_moeda_curta(t_col) if t_col > 0 else '-'}</td>"
+        html_real_det += f"<td style='text-align:right; color: var(--green-main);'>{formatar_moeda(totais_geral_real)}</td></tr>"
+        html_real_det += "</table></div>"
+        st.markdown(html_real_det, unsafe_allow_html=True)
