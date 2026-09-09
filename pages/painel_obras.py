@@ -194,13 +194,21 @@ def carregar_dados_obras_detalhado():
     try:
         # --- ORÇADO ---
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
-        df_orc = df_orc[df_orc['RESUMO OBRAS'].astype(str).str.upper() != 'TOTAL'].copy()
-        df_orc['Obra'] = df_orc['RESUMO OBRAS'].astype(str).str.upper().str.strip()
-        meses_cols = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-        meses_existentes = [m for m in meses_cols if m in df_orc.columns]
+        df_orc.columns = [str(c).strip() for c in df_orc.columns]
+        
+        col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
+        df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
+        df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
+        
+        map_meses = {
+            'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'MARCO': 3,
+            'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6, 'JULHO': 7,
+            'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+        }
+        meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
+        
         df_orc_melt = df_orc.melt(id_vars=['Obra'], value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
-        map_meses = {'Janeiro': 1, 'Fevereiro': 2, 'Março': 3, 'Abril': 4, 'Maio': 5, 'Junho': 6, 'Julho': 7, 'Agosto': 8, 'Setembro': 9, 'Outubro': 10, 'Novembro': 11, 'Dezembro': 12}
-        df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].map(map_meses)
+        df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
         # --- FASES DA OBRA ---
@@ -398,13 +406,15 @@ df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
 if obra_selecionada != "Todas":
     df_orc_m_base = df_orc_m_base[df_orc_m_base['Obra'] == obra_selecionada]
     df_real_m_base = df_real_m_base[df_real_m_base['Obra'] == obra_selecionada]
-    
+
 df_orc_mensal = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().reset_index()
 df_real_mensal = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().reset_index()
 
-df_linha = pd.merge(pd.DataFrame({'Mes': range(1, 13)}), df_orc_mensal, on='Mes', how='left').fillna(0)
+df_linha = pd.DataFrame({'Mes': range(1, 13)})
+df_linha = pd.merge(df_linha, df_orc_mensal, on='Mes', how='left').fillna({'Valor_Orcado': 0.0})
 df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
 df_linha.loc[df_linha['Mes'] > (df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0), 'Valor_Realizado'] = None
+
 meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
 
@@ -469,7 +479,6 @@ saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dic
 saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
 max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
 
-# CORREÇÃO: Unir as obras da base de realizados com as obras da base de orçados
 todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
 if not df_orc_m_base.empty:
     todas_obras_fluxo = todas_obras_fluxo.union(set(df_orc_m_base['Obra'].unique()))
@@ -538,6 +547,63 @@ st.markdown(html_fluxo, unsafe_allow_html=True)
 st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
 
 # ==============================================================================
+# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA
+# ==============================================================================
+st.markdown("<div class='section-title'>Detalhamento do Orçamento por Obra</div>", unsafe_allow_html=True)
+
+if not df_orc_filtrado.empty:
+    df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy()
+    if not df_orc_tab.empty:
+        pivot_orc = pd.pivot_table(
+            df_orc_tab,
+            index='Obra',
+            columns='Mes',
+            values='Valor_Orcado',
+            aggfunc='sum',
+            fill_value=0.0
+        )
+        for m in range(1, 13):
+            if m not in pivot_orc.columns:
+                pivot_orc[m] = 0.0
+        pivot_orc = pivot_orc[sorted(pivot_orc.columns)]
+        pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
+        pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
+
+        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / EMPREENDIMENTO</th>"
+        html_orc_det += "<th style='text-align:right;'>TOTAL ORÇADO</th>"
+        for m_num in range(1, 13):
+            html_orc_det += f"<th style='text-align:right;'>{meses_nomes[m_num].upper()}</th>"
+        html_orc_det += "</tr></thead><tbody>"
+
+        totais_col_orc = {m: 0.0 for m in range(1, 13)}
+        total_geral_orc = 0.0
+
+        for obra_name, row in pivot_orc.iterrows():
+            tot_obra = row['Total_Geral']
+            total_geral_orc += tot_obra
+            html_orc_det += f"<tr><td><b>{obra_name}</b></td>"
+            html_orc_det += f"<td style='text-align:right; font-weight:800; color:var(--blue-main);'>{formatar_moeda(tot_obra)}</td>"
+
+            for m_num in range(1, 13):
+                val_m = row.get(m_num, 0.0)
+                totais_col_orc[m_num] += val_m
+                val_str = formatar_moeda(val_m) if val_m > 0 else "-"
+                html_orc_det += f"<td style='text-align:right; color:var(--text-dark);'>{val_str}</td>"
+            html_orc_det += "</tr>"
+
+        html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
+        html_orc_det += f"<td style='text-align:right; font-weight:900; color:var(--blue-main);'>{formatar_moeda(total_geral_orc)}</td>"
+
+        for m_num in range(1, 13):
+            t_col = totais_col_orc[m_num]
+            val_col_str = formatar_moeda(t_col) if t_col > 0 else "-"
+            html_orc_det += f"<td style='text-align:right; font-weight:900; color:var(--text-dark);'>{val_col_str}</td>"
+
+        html_orc_det += "</tr></tbody></table></div>"
+        st.markdown(html_orc_det, unsafe_allow_html=True)
+        st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
+
+# ==============================================================================
 # 8. TABELA DETALHADA DE PAGAMENTOS REALIZADOS
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</div>", unsafe_allow_html=True)
@@ -547,7 +613,6 @@ if not df_real_filtrado.empty:
     df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy() if not df_orc_filtrado.empty else pd.DataFrame()
     
     if not df_real_tab.empty:
-        # Mapeamento do Orçado por Obra e Mês
         orc_obra_mes = {}
         orc_obra_tot = {}
         orc_mes_tot = {m: 0.0 for m in range(1, 13)}
@@ -561,7 +626,6 @@ if not df_real_filtrado.empty:
         
         total_orcado_geral = sum(orc_mes_tot.values())
 
-        # Tabela dinâmica do Realizado por Obra e Mês
         pivot_real = pd.pivot_table(
             df_real_tab,
             index='Obra',
@@ -571,17 +635,13 @@ if not df_real_filtrado.empty:
             fill_value=0.0
         )
         
-        # Garantir todas as colunas de Janeiro (1) a Dezembro (12)
         for m in range(1, 13):
             if m not in pivot_real.columns:
                 pivot_real[m] = 0.0
         pivot_real = pivot_real[sorted(pivot_real.columns)]
         pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
-
-        # Ordenar as Obras do maior total para o menor
         pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
 
-        # Montagem do Cabeçalho
         html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
         html_real_det += "<th style='text-align:right;'>TOTAL</th>"
         for m_num in range(1, 13):
@@ -591,7 +651,6 @@ if not df_real_filtrado.empty:
         totais_col_real = {m: 0.0 for m in range(1, 13)}
         totais_geral_real = 0.0
 
-        # Linhas das Obras
         for obra_name, row in pivot_real.iterrows():
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
             pivot_sub = pd.pivot_table(
@@ -607,8 +666,6 @@ if not df_real_filtrado.empty:
                     pivot_sub[m] = 0.0
             pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
             pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
-
-            # Ordenar os Fornecedores da Obra do maior total para o menor
             pivot_sub = pivot_sub.sort_values(by='Total_Geral', ascending=False)
 
             tot_obra_real = row['Total_Geral']
@@ -624,11 +681,8 @@ if not df_real_filtrado.empty:
 
             html_real_det += "<tbody class='obra-group'><tr>"
             html_real_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
-            
-            # Célula TOTAL da Obra
             html_real_det += f"<td style='text-align:right;'><span style='font-weight:800; color:{cor_tot_obra};'>{formatar_moeda(tot_obra_real)}</span><span class='orcado-indicator'>{str_orc_tot_obra}</span></td>"
 
-            # Células Mensais (1 a 12)
             for m_num in range(1, 13):
                 val_m_real = row.get(m_num, 0.0)
                 totais_col_real[m_num] += val_m_real
@@ -646,16 +700,12 @@ if not df_real_filtrado.empty:
 
             html_real_det += "</tr>"
 
-            # Sublinhas de Fornecedores / Categorias
             for forn_name, sub_row in pivot_sub.iterrows():
                 tot_sub_geral = sub_row['Total_Geral']
                 html_real_det += "<tr class='sub-row'>"
                 html_real_det += f"<td title='↳ {forn_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {forn_name}</td>"
-                
-                # Total do Fornecedor
                 html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:700; color: var(--text-dark);'>{formatar_moeda(tot_sub_geral)}</td>"
 
-                # Valores Mensais do Fornecedor
                 for m_num in range(1, 13):
                     v_sub = sub_row.get(m_num, 0.0)
                     v_str_sub = formatar_moeda(v_sub) if v_sub > 0 else "-"
@@ -665,7 +715,6 @@ if not df_real_filtrado.empty:
 
             html_real_det += "</tbody>"
 
-        # Linha Rodapé - TOTAL GERAL
         str_orc_tot_geral = f"Orç: {formatar_moeda_curta(total_orcado_geral)}" if total_orcado_geral > 0 else "Orç: -"
         
         html_real_det += "<tr class='total-geral-row'><td>TOTAL GERAL</td>"
