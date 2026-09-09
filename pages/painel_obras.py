@@ -469,7 +469,13 @@ saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dic
 saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
 max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
 
-obras_fluxo = sorted(df_real_m_base['Obra'].unique().tolist() if not df_real_m_base.empty else list(todas_obras))
+# CORREÇÃO: Unir as obras da base de realizados com as obras da base de orçados
+todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
+if not df_orc_m_base.empty:
+    todas_obras_fluxo = todas_obras_fluxo.union(set(df_orc_m_base['Obra'].unique()))
+
+obras_fluxo = sorted(list(todas_obras_fluxo))
+
 if obra_selecionada != "Todas":
     obras_fluxo = [obra_selecionada]
 
@@ -530,96 +536,6 @@ html_fluxo += "</tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
 
 st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
-
-# ==============================================================================
-# 7. TABELA DETALHADA DE FASES DA OBRA
-# ==============================================================================
-st.markdown("<div class='section-title' style='margin-top:0;'>Detalhamento do Orçado x Realizado - Fases da Obra</div>", unsafe_allow_html=True)
-
-if not df_fases.empty:
-    df_fases_view = df_fases.copy()
-    if obra_selecionada != "Todas":
-        col_o = df_fases_view.columns[0]
-        df_fases_view = df_fases_view[df_fases_view[col_o].astype(str).str.upper().str.strip() == obra_selecionada]
-
-    col_obra, col_fase = df_fases_view.columns[0], df_fases_view.columns[1]
-    obras_unicas = df_fases_view[col_obra].dropna().unique()
-
-    cols_to_show = [c for c in df_fases_view.columns[2:] if not ('%' in str(c) or 'perc' in str(c).lower() or str(c).strip().upper() == 'TOTAL')]
-    col_orcamento_principal = cols_to_show[0] if cols_to_show else df_fases_view.columns[2]
-
-    obra_totals_calc = []
-    totais_mensais_fases = {c: 0.0 for c in cols_to_show}
-    fases_group_data = {}
-
-    for obra_name in obras_unicas:
-        group = df_fases_view[df_fases_view[col_obra] == obra_name]
-        total_row = group[group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
-        detail_rows = group[~group[col_fase].astype(str).str.lower().str.contains('total', na=False)]
-        
-        if not total_row.empty:
-            tot_r = total_row.iloc[0]
-            val_total_obra = limpa_valor(tot_r[col_orcamento_principal])
-        else:
-            tot_r = group.iloc[0].copy()
-            tot_r[col_fase] = "Total"
-            val_total_obra = 0.0
-            for c in cols_to_show:
-                soma_col = detail_rows[c].apply(limpa_valor).sum()
-                tot_r[c] = soma_col
-                if c == col_orcamento_principal:
-                    val_total_obra = soma_col
-                    
-        obra_totals_calc.append((obra_name, val_total_obra))
-        fases_group_data[obra_name] = {'tot_r': tot_r, 'detail_rows': detail_rows}
-
-    obra_totals_calc.sort(key=lambda x: x[1], reverse=True)
-    obras_unicas_sorted = [x[0] for x in obra_totals_calc]
-
-    html_fases = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
-    for col in cols_to_show:
-        col_lbl = 'ORÇAMENTO R$' if 'custo' in str(col).lower() else col
-        html_fases += f"<th style='text-align:right;'>{col_lbl}</th>"
-    html_fases += "</tr></thead>"
-
-    for obra_name in obras_unicas_sorted:
-        data = fases_group_data[obra_name]
-        tot_r, detail_rows = data['tot_r'], data['detail_rows']
-        html_fases += "<tbody class='obra-group'><tr>"
-        html_fases += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
-        for col_name in cols_to_show:
-            val = tot_r[col_name]
-            try:
-                num_v = limpa_valor(val)
-                val_str = formatar_moeda(num_v) if num_v != 0 else "-"
-                totais_mensais_fases[col_name] += num_v
-            except Exception:
-                val_str = "-"
-            html_fases += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
-        html_fases += "</tr>"
-
-        for _, d_row in detail_rows.iterrows():
-            fase_nome = d_row[col_fase]
-            html_fases += "<tr class='sub-row'>"
-            html_fases += f"<td title='↳ {fase_nome}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {fase_nome}</td>" 
-            for col_name in cols_to_show:
-                val = d_row[col_name]
-                try:
-                    num_v = limpa_valor(val)
-                    val_str = formatar_moeda(num_v) if num_v != 0 else "-"
-                except Exception:
-                    val_str = "-"
-                html_fases += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{val_str}</td>"
-            html_fases += "</tr>"
-        html_fases += "</tbody>"
-
-    html_fases += f"<tr class='total-geral-row'><td>TOTAL GERAL</td>"
-    for col_name in cols_to_show:
-        tot_val = totais_mensais_fases[col_name]
-        html_fases += f"<td style='text-align:right;'>{formatar_moeda(tot_val) if tot_val != 0 else '-'}</td>"
-    html_fases += "</tr>"
-    html_fases += "</table></div>"
-    st.markdown(html_fases, unsafe_allow_html=True)
 
 # ==============================================================================
 # 8. TABELA DETALHADA DE PAGAMENTOS REALIZADOS
