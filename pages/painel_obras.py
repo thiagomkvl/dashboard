@@ -92,7 +92,7 @@ css = """
     .val-real { font-weight: 800; color: var(--green-main); }
     .val-orc { font-weight: 800; color: var(--blue-main); }
 
-    /* TABELAS COM ALINHAMENTO FIXO */
+    /* TABELAS COM ALINHAMENTO FIXO E DRILLDOWN */
     .fases-table-container {
         max-height: 500px; overflow-y: auto; overflow-x: auto;
         border: 1px solid var(--border-color); border-radius: 8px; background: #ffffff; box-shadow: var(--shadow-sm);
@@ -115,7 +115,7 @@ css = """
     .fases-table tr:hover td { background: #fafaf9; }
     .total-geral-row td { font-weight: 900; background: #ffffff !important; border-top: 2px solid var(--text-dark); color: var(--text-dark); }
 
-    /* DRILL-DOWN */
+    /* ESTRUTURA DE DRILLDOWN (CSS PURO) */
     .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; }
     .toggle-checkbox { display: none; }
     .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: var(--blue-main); }
@@ -196,10 +196,6 @@ def carregar_dados_obras_detalhado():
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc.columns = [str(c).strip() for c in df_orc.columns]
         
-        col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
-        df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
-        df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
-        
         map_meses = {
             'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'MARCO': 3,
             'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6, 'JULHO': 7,
@@ -207,7 +203,25 @@ def carregar_dados_obras_detalhado():
         }
         meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
         
-        df_orc_melt = df_orc.melt(id_vars=['Obra'], value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
+        col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
+        col_item = next((c for c in df_orc.columns if c.upper() in ['CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA']), None)
+        
+        df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
+        df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
+        
+        if col_item and col_item != col_resumo:
+            df_orc['Item'] = df_orc[col_item].fillna('GERAL').astype(str).str.strip().str.upper()
+            id_vars = ['Obra', 'Item']
+        else:
+            outras_cols = [c for c in df_orc.columns if c.upper() not in map_meses and c != col_resumo and c.upper() != 'OBRA']
+            if outras_cols:
+                df_orc['Item'] = df_orc[outras_cols[0]].fillna('GERAL').astype(str).str.strip().str.upper()
+                id_vars = ['Obra', 'Item']
+            else:
+                df_orc['Item'] = df_orc['Obra']
+                id_vars = ['Obra', 'Item']
+
+        df_orc_melt = df_orc.melt(id_vars=id_vars, value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
@@ -547,7 +561,7 @@ st.markdown(html_fluxo, unsafe_allow_html=True)
 st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA
+# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA (COM DRILLDOWN)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçamento por Obra</div>", unsafe_allow_html=True)
 
@@ -569,27 +583,66 @@ if not df_orc_filtrado.empty:
         pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
         pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
 
-        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / EMPREENDIMENTO</th>"
+        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / ITEM ORÇADO</th>"
         html_orc_det += "<th style='text-align:right;'>TOTAL ORÇADO</th>"
         for m_num in range(1, 13):
             html_orc_det += f"<th style='text-align:right;'>{meses_nomes[m_num].upper()}</th>"
-        html_orc_det += "</tr></thead><tbody>"
+        html_orc_det += "</tr></thead>"
 
         totais_col_orc = {m: 0.0 for m in range(1, 13)}
         total_geral_orc = 0.0
 
         for obra_name, row in pivot_orc.iterrows():
+            sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
+            
+            has_item_col = 'Item' in sub_df_orc.columns
+            if has_item_col:
+                pivot_sub_orc = pd.pivot_table(
+                    sub_df_orc,
+                    index='Item',
+                    columns='Mes',
+                    values='Valor_Orcado',
+                    aggfunc='sum',
+                    fill_value=0.0
+                )
+                for m in range(1, 13):
+                    if m not in pivot_sub_orc.columns:
+                        pivot_sub_orc[m] = 0.0
+                pivot_sub_orc = pivot_sub_orc[sorted(pivot_sub_orc.columns)]
+                pivot_sub_orc['Total_Geral'] = pivot_sub_orc.sum(axis=1)
+                pivot_sub_orc = pivot_sub_orc.sort_values(by='Total_Geral', ascending=False)
+            else:
+                pivot_sub_orc = pd.DataFrame()
+
             tot_obra = row['Total_Geral']
             total_geral_orc += tot_obra
-            html_orc_det += f"<tr><td><b>{obra_name}</b></td>"
+
+            html_orc_det += "<tbody class='obra-group'><tr>"
+            html_orc_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             html_orc_det += f"<td style='text-align:right; font-weight:800; color:var(--blue-main);'>{formatar_moeda(tot_obra)}</td>"
 
             for m_num in range(1, 13):
                 val_m = row.get(m_num, 0.0)
                 totais_col_orc[m_num] += val_m
                 val_str = formatar_moeda(val_m) if val_m > 0 else "-"
-                html_orc_det += f"<td style='text-align:right; color:var(--text-dark);'>{val_str}</td>"
+                html_orc_det += f"<td style='text-align:right; font-weight:700; color:var(--text-dark);'>{val_str}</td>"
             html_orc_det += "</tr>"
+
+            if not pivot_sub_orc.empty:
+                for item_name, sub_row in pivot_sub_orc.iterrows():
+                    tot_sub_geral = sub_row['Total_Geral']
+                    html_orc_det += "<tr class='sub-row'>"
+                    html_orc_det += f"<td title='↳ {item_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {item_name}</td>"
+                    html_orc_det += f"<td style='text-align:right; font-size: 11px; font-weight:700; color: var(--blue-main);'>{formatar_moeda(tot_sub_geral)}</td>"
+
+                    for m_num in range(1, 13):
+                        v_sub = sub_row.get(m_num, 0.0)
+                        v_str_sub = formatar_moeda(v_sub) if v_sub > 0 else "-"
+                        html_orc_det += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{v_str_sub}</td>"
+                    
+                    html_orc_det += "</tr>"
+
+            html_orc_det += "</tbody>"
 
         html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
         html_orc_det += f"<td style='text-align:right; font-weight:900; color:var(--blue-main);'>{formatar_moeda(total_geral_orc)}</td>"
@@ -599,7 +652,7 @@ if not df_orc_filtrado.empty:
             val_col_str = formatar_moeda(t_col) if t_col > 0 else "-"
             html_orc_det += f"<td style='text-align:right; font-weight:900; color:var(--text-dark);'>{val_col_str}</td>"
 
-        html_orc_det += "</tr></tbody></table></div>"
+        html_orc_det += "</tr></table></div>"
         st.markdown(html_orc_det, unsafe_allow_html=True)
         st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
 
