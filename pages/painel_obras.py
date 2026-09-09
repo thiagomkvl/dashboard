@@ -628,10 +628,24 @@ st.markdown("<div class='section-title'>Detalhamento de Pagamentos Realizados</d
 
 if not df_real_filtrado.empty:
     df_real_tab = df_real_filtrado[df_real_filtrado['Mes'] > 0].copy()
+    df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy() if not df_orc_filtrado.empty else pd.DataFrame()
+    
     if not df_real_tab.empty:
-        df_real_tab['Mes_Nome'] = df_real_tab['Mes'].map(meses_nomes)
+        # Mapeamento do Orçado por Obra e Mês
+        orc_obra_mes = {}
+        orc_obra_tot = {}
+        orc_mes_tot = {m: 0.0 for m in range(1, 13)}
         
-        # Tabela dinâmica por Obra e Mês
+        if not df_orc_tab.empty:
+            df_orc_grp = df_orc_tab.groupby(['Obra', 'Mes'])['Valor_Orcado'].sum().reset_index()
+            for _, r in df_orc_grp.iterrows():
+                orc_obra_mes[(r['Obra'], r['Mes'])] = r['Valor_Orcado']
+                orc_obra_tot[r['Obra']] = orc_obra_tot.get(r['Obra'], 0.0) + r['Valor_Orcado']
+                orc_mes_tot[r['Mes']] = orc_mes_tot.get(r['Mes'], 0.0) + r['Valor_Orcado']
+        
+        total_orcado_geral = sum(orc_mes_tot.values())
+
+        # Tabela dinâmica do Realizado por Obra e Mês
         pivot_real = pd.pivot_table(
             df_real_tab,
             index='Obra',
@@ -641,32 +655,24 @@ if not df_real_filtrado.empty:
             fill_value=0.0
         )
         
-        # Garantir colunas de 1 a 12 (A partir de Janeiro)
+        # Garantir todas as colunas de Janeiro (1) a Dezembro (12)
         for m in range(1, 13):
             if m not in pivot_real.columns:
                 pivot_real[m] = 0.0
         pivot_real = pivot_real[sorted(pivot_real.columns)]
         pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
-        
-        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FORNECEDOR</th>"
-        for m_num in range(1, 13):
-            html_real_det += f"<th style='text-align:right;'>{meses_nomes[m_num]}</th>"
-        html_real_det += "<th style='text-align:right;'>TOTAL</th><th style='text-align:center;'>INDICADOR</th></tr></thead>"
-        
-        # Calcular totais gerais
-        totais_col_real = {m: 0.0 for m in range(1, 13)}
-        totais_geral_real = pivot_real['Total_Geral'].sum()
-        for m_num in range(1, 13):
-            totais_col_real[m_num] = pivot_real[m_num].sum()
 
-        # Totalizador na Primeira Linha (Top Row)
-        html_real_det += f"<tbody><tr class='total-geral-row' style='background-color: #f8fafc;'><td><b>TOTAL GERAL</b></td>"
+        # Montagem do Cabeçalho
+        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
+        html_real_det += "<th style='text-align:right;'>TOTAL</th>"
         for m_num in range(1, 13):
-            t_col = totais_col_real[m_num]
-            html_real_det += f"<td style='text-align:right;'><b>{formatar_moeda_curta(t_col) if t_col > 0 else '-'}</b></td>"
-        html_real_det += f"<td style='text-align:right; color: var(--green-main);'><b>{formatar_moeda(totais_geral_real)}</b></td>"
-        html_real_det += f"<td style='text-align:center; color: var(--text-muted); font-size:11px;'><b>100%</b></td></tr></tbody>"
-        
+            html_real_det += f"<th style='text-align:right;'>{meses_nomes[m_num].upper()}</th>"
+        html_real_det += "</tr></thead>"
+
+        totais_col_real = {m: 0.0 for m in range(1, 13)}
+        totais_geral_real = 0.0
+
+        # Linhas das Obras
         for obra_name, row in pivot_real.iterrows():
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
             pivot_sub = pd.pivot_table(
@@ -682,40 +688,75 @@ if not df_real_filtrado.empty:
                     pivot_sub[m] = 0.0
             pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
             pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
-            
-            tot_obra = row['Total_Geral']
-            perc_obra = (tot_obra / totais_geral_real * 100) if totais_geral_real > 0 else 0
-            
-            # Barra de progresso para a Obra
-            html_bar = f"<div style='width:100%; background:#e2e8f0; height:6px; border-radius:3px; margin-top:4px;'><div style='width:{min(perc_obra, 100)}%; background:var(--blue-main); height:100%; border-radius:3px;'></div></div>"
-            
-            html_real_det += f"<tbody class='obra-group'><tr>"
+
+            tot_obra_real = row['Total_Geral']
+            tot_obra_orc = orc_obra_tot.get(obra_name, 0.0)
+            totais_geral_real += tot_obra_real
+
+            if tot_obra_orc > 0:
+                cor_tot_obra = "var(--green-main)" if tot_obra_real <= tot_obra_orc else "var(--red-main)"
+            else:
+                cor_tot_obra = "var(--text-dark)"
+
+            str_orc_tot_obra = f"Orç: {formatar_moeda_curta(tot_obra_orc)}" if tot_obra_orc > 0 else "Orç: -"
+
+            html_real_det += "<tbody class='obra-group'><tr>"
             html_real_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             
+            # Célula TOTAL da Obra
+            html_real_det += f"<td style='text-align:right;'><span style='font-weight:800; color:{cor_tot_obra};'>{formatar_moeda(tot_obra_real)}</span><span class='orcado-indicator'>{str_orc_tot_obra}</span></td>"
+
+            # Células Mensais (1 a 12)
             for m_num in range(1, 13):
-                val_m = row.get(m_num, 0.0)
-                val_str = formatar_moeda_curta(val_m) if val_m > 0 else "-"
-                html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
-            
-            html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--green-main);'>{formatar_moeda(tot_obra)}</td>"
-            html_real_det += f"<td style='text-align:center; min-width:90px;'><span style='font-size:11px; font-weight:700; color:var(--text-dark);'>{perc_obra:.1f}%</span>{html_bar}</td></tr>"
-            
+                val_m_real = row.get(m_num, 0.0)
+                totais_col_real[m_num] += val_m_real
+                val_m_orc = orc_obra_mes.get((obra_name, m_num), 0.0)
+
+                if val_m_real > 0 and val_m_orc > 0:
+                    cor_m = "var(--green-main)" if val_m_real <= val_m_orc else "var(--red-main)"
+                else:
+                    cor_m = "var(--text-dark)"
+
+                val_str = formatar_moeda(val_m_real) if val_m_real > 0 else "-"
+                str_orc_m = f"Orç: {formatar_moeda_curta(val_m_orc)}" if val_m_orc > 0 else "Orç: -"
+
+                html_real_det += f"<td style='text-align:right;'><span style='font-weight:800; color:{cor_m};'>{val_str}</span><span class='orcado-indicator'>{str_orc_m}</span></td>"
+
+            html_real_det += "</tr>"
+
+            # Sublinhas de Fornecedores / Categorias
             for forn_name, sub_row in pivot_sub.iterrows():
-                html_real_det += f"<tr class='sub-row'>"
+                tot_sub_geral = sub_row['Total_Geral']
+                html_real_det += "<tr class='sub-row'>"
                 html_real_det += f"<td title='↳ {forn_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {forn_name}</td>"
                 
+                # Total do Fornecedor
+                html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:700; color: var(--text-dark);'>{formatar_moeda(tot_sub_geral)}</td>"
+
+                # Valores Mensais do Fornecedor
                 for m_num in range(1, 13):
                     v_sub = sub_row.get(m_num, 0.0)
-                    v_str_sub = formatar_moeda_curta(v_sub) if v_sub > 0 else "-"
+                    v_str_sub = formatar_moeda(v_sub) if v_sub > 0 else "-"
                     html_real_det += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{v_str_sub}</td>"
                 
-                tot_sub_geral = sub_row['Total_Geral']
-                perc_forn = (tot_sub_geral / tot_obra * 100) if tot_obra > 0 else 0
-                
-                html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-muted);'>{formatar_moeda(tot_sub_geral)}</td>"
-                html_real_det += f"<td style='text-align:center; font-size:10px; color:var(--text-muted);'>{perc_forn:.1f}% da obra</td></tr>"
-            
+                html_real_det += "</tr>"
+
             html_real_det += "</tbody>"
+
+        # Linha Rodapé - TOTAL GERAL
+        str_orc_tot_geral = f"Orç: {formatar_moeda_curta(total_orcado_geral)}" if total_orcado_geral > 0 else "Orç: -"
+        
+        html_real_det += "<tr class='total-geral-row'><td>TOTAL GERAL</td>"
+        html_real_det += f"<td style='text-align:right;'><span style='font-weight:900; color:var(--text-dark);'>{formatar_moeda(totais_geral_real)}</span><span class='orcado-indicator'>{str_orc_tot_geral}</span></td>"
+        
+        for m_num in range(1, 13):
+            t_col_real = totais_col_real[m_num]
+            t_col_orc = orc_mes_tot.get(m_num, 0.0)
+            str_orc_col = f"Orç: {formatar_moeda_curta(t_col_orc)}" if t_col_orc > 0 else "Orç: -"
+            val_col_str = formatar_moeda(t_col_real) if t_col_real > 0 else "-"
             
+            html_real_det += f"<td style='text-align:right;'><span style='font-weight:900; color:var(--text-dark);'>{val_col_str}</span><span class='orcado-indicator'>{str_orc_col}</span></td>"
+        
+        html_real_det += "</tr>"
         html_real_det += "</table></div>"
         st.markdown(html_real_det, unsafe_allow_html=True)
