@@ -387,7 +387,7 @@ kpi_html = f"""
     <div class='kpi-item bg-blue'>
         <div class='kpi-title'>Caixa Disponível</div>
         <div class='kpi-value' style='color: {caixa_disp_color};'>{formatar_moeda(caixa_disponivel)}</div>
-        <div class='kpi-subtitle'>Saldo Recurso Alocado em caixa</div>
+        <div class='kpi-subtitle'>Saldo Recurso Alocado</div>
     </div>
 </div>
 """
