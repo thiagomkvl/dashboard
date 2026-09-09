@@ -662,6 +662,9 @@ if not df_real_filtrado.empty:
         pivot_real = pivot_real[sorted(pivot_real.columns)]
         pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
 
+        # Ordenar as Obras do maior total para o menor
+        pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
+
         # Montagem do Cabeçalho
         html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
         html_real_det += "<th style='text-align:right;'>TOTAL</th>"
@@ -688,6 +691,9 @@ if not df_real_filtrado.empty:
                     pivot_sub[m] = 0.0
             pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
             pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
+
+            # Ordenar os Fornecedores da Obra do maior total para o menor
+            pivot_sub = pivot_sub.sort_values(by='Total_Geral', ascending=False)
 
             tot_obra_real = row['Total_Geral']
             tot_obra_orc = orc_obra_tot.get(obra_name, 0.0)
