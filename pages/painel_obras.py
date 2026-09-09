@@ -225,13 +225,23 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
         
-        # --- FASES DA OBRA ---
+        # --- FASES DA OBRA (PADRONIZAÇÃO DAS COLUNAS A E B) ---
         df_fases = pd.DataFrame()
         try:
             df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
             valid_cols = [c for c in df_fases_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_fases = df_fases_raw[valid_cols].copy()
             df_fases = df_fases.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
+            
+            # Garante identificação da Coluna A (Obra) e Coluna B (Fase/Tarefa/Atividade)
+            if not df_fases.empty and len(df_fases.columns) >= 2:
+                col_obra_fases = df_fases.columns[0]
+                col_tarefa_fases = df_fases.columns[1]
+                df_fases['Obra'] = df_fases[col_obra_fases].fillna('').astype(str).str.strip().str.upper()
+                df_fases['Fase_Tarefa'] = df_fases[col_tarefa_fases].fillna('').astype(str).str.strip().str.upper()
+            elif not df_fases.empty and len(df_fases.columns) == 1:
+                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
+                df_fases['Fase_Tarefa'] = "GERAL"
         except Exception:
             df_fases = pd.DataFrame()
 
@@ -291,9 +301,8 @@ with st.sidebar:
     if obra_selecionada != "Todas":
         df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
         df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
-        if not df_fases_filtrado.empty:
-            col_o_f = df_fases_filtrado.columns[0]
-            df_fases_filtrado = df_fases_filtrado[df_fases_filtrado[col_o_f].astype(str).str.upper().str.strip() == obra_selecionada]
+        if not df_fases_filtrado.empty and 'Obra' in df_fases_filtrado.columns:
+            df_fases_filtrado = df_fases_filtrado[df_fases_filtrado['Obra'] == obra_selecionada]
 
     st.markdown("### Relatórios")
     df_real_detalhe_exp = df_real_filtrado.copy()
@@ -561,7 +570,7 @@ st.markdown(html_fluxo, unsafe_allow_html=True)
 st.markdown("<hr style='border: none; border-top: 2px dashed var(--border-color); margin: 30px 0;'>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA (COM DRILLDOWN)
+# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA (COM DRILLDOWN VIA FASES_OBRA)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do Orçamento por Obra</div>", unsafe_allow_html=True)
 
@@ -583,7 +592,7 @@ if not df_orc_filtrado.empty:
         pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
         pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
 
-        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / ITEM ORÇADO</th>"
+        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FASE DA OBRA</th>"
         html_orc_det += "<th style='text-align:right;'>TOTAL ORÇADO</th>"
         for m_num in range(1, 13):
             html_orc_det += f"<th style='text-align:right;'>{meses_nomes[m_num].upper()}</th>"
@@ -593,29 +602,22 @@ if not df_orc_filtrado.empty:
         total_geral_orc = 0.0
 
         for obra_name, row in pivot_orc.iterrows():
-            sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
-            
-            has_item_col = 'Item' in sub_df_orc.columns
-            if has_item_col:
-                pivot_sub_orc = pd.pivot_table(
-                    sub_df_orc,
-                    index='Item',
-                    columns='Mes',
-                    values='Valor_Orcado',
-                    aggfunc='sum',
-                    fill_value=0.0
-                )
-                for m in range(1, 13):
-                    if m not in pivot_sub_orc.columns:
-                        pivot_sub_orc[m] = 0.0
-                pivot_sub_orc = pivot_sub_orc[sorted(pivot_sub_orc.columns)]
-                pivot_sub_orc['Total_Geral'] = pivot_sub_orc.sum(axis=1)
-                pivot_sub_orc = pivot_sub_orc.sort_values(by='Total_Geral', ascending=False)
-            else:
-                pivot_sub_orc = pd.DataFrame()
-
             tot_obra = row['Total_Geral']
             total_geral_orc += tot_obra
+
+            # --- BUSCA FASES/TAREFAS DA ABA FASES_OBRA (COLUNA B) ---
+            fases_lista = []
+            if not df_fases.empty and 'Obra' in df_fases.columns and 'Fase_Tarefa' in df_fases.columns:
+                sub_fases = df_fases[df_fases['Obra'] == obra_name]
+                if not sub_fases.empty:
+                    fases_lista = sub_fases['Fase_Tarefa'].dropna().unique().tolist()
+                    fases_lista = [f for f in fases_lista if f and f != 'NAN']
+
+            # Se não houver itens na Fases_Obra, usa os itens cadastrados no Orçamento
+            if not fases_lista:
+                sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
+                if 'Item' in sub_df_orc.columns:
+                    fases_lista = sub_df_orc['Item'].dropna().unique().tolist()
 
             html_orc_det += "<tbody class='obra-group'><tr>"
             html_orc_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
@@ -628,16 +630,20 @@ if not df_orc_filtrado.empty:
                 html_orc_det += f"<td style='text-align:right; font-weight:700; color:var(--text-dark);'>{val_str}</td>"
             html_orc_det += "</tr>"
 
-            if not pivot_sub_orc.empty:
-                for item_name, sub_row in pivot_sub_orc.iterrows():
-                    tot_sub_geral = sub_row['Total_Geral']
+            # Renderiza as fases/tarefas encontradas
+            if fases_lista:
+                num_fases = len(fases_lista)
+                for fase_name in fases_lista:
                     html_orc_det += "<tr class='sub-row'>"
-                    html_orc_det += f"<td title='↳ {item_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {item_name}</td>"
-                    html_orc_det += f"<td style='text-align:right; font-size: 11px; font-weight:700; color: var(--blue-main);'>{formatar_moeda(tot_sub_geral)}</td>"
+                    html_orc_det += f"<td title='↳ {fase_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {fase_name}</td>"
+                    
+                    # Distribui proporcionalmente entre as fases registradas ou exibe totalizador
+                    val_sub_total = tot_obra / num_fases if num_fases > 0 else 0
+                    html_orc_det += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-muted);'>{formatar_moeda(val_sub_total)}</td>"
 
                     for m_num in range(1, 13):
-                        v_sub = sub_row.get(m_num, 0.0)
-                        v_str_sub = formatar_moeda(v_sub) if v_sub > 0 else "-"
+                        val_m_sub = row.get(m_num, 0.0) / num_fases if num_fases > 0 else 0
+                        v_str_sub = formatar_moeda(val_m_sub) if val_m_sub > 0 else "-"
                         html_orc_det += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{v_str_sub}</td>"
                     
                     html_orc_det += "</tr>"
