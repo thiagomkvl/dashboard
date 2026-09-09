@@ -641,7 +641,7 @@ if not df_real_filtrado.empty:
             fill_value=0.0
         )
         
-        # Garantir colunas de 1 a 12
+        # Garantir colunas de 1 a 12 (A partir de Janeiro)
         for m in range(1, 13):
             if m not in pivot_real.columns:
                 pivot_real[m] = 0.0
@@ -651,10 +651,21 @@ if not df_real_filtrado.empty:
         html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FORNECEDOR</th>"
         for m_num in range(1, 13):
             html_real_det += f"<th style='text-align:right;'>{meses_nomes[m_num]}</th>"
-        html_real_det += "<th style='text-align:right;'>TOTAL</th></tr></thead>"
+        html_real_det += "<th style='text-align:right;'>TOTAL</th><th style='text-align:center;'>INDICADOR</th></tr></thead>"
         
+        # Calcular totais gerais
         totais_col_real = {m: 0.0 for m in range(1, 13)}
-        totais_geral_real = 0.0
+        totais_geral_real = pivot_real['Total_Geral'].sum()
+        for m_num in range(1, 13):
+            totais_col_real[m_num] = pivot_real[m_num].sum()
+
+        # Totalizador na Primeira Linha (Top Row)
+        html_real_det += f"<tbody><tr class='total-geral-row' style='background-color: #f8fafc;'><td><b>TOTAL GERAL</b></td>"
+        for m_num in range(1, 13):
+            t_col = totais_col_real[m_num]
+            html_real_det += f"<td style='text-align:right;'><b>{formatar_moeda_curta(t_col) if t_col > 0 else '-'}</b></td>"
+        html_real_det += f"<td style='text-align:right; color: var(--green-main);'><b>{formatar_moeda(totais_geral_real)}</b></td>"
+        html_real_det += f"<td style='text-align:center; color: var(--text-muted); font-size:11px;'><b>100%</b></td></tr></tbody>"
         
         for obra_name, row in pivot_real.iterrows():
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
@@ -673,35 +684,38 @@ if not df_real_filtrado.empty:
             pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
             
             tot_obra = row['Total_Geral']
-            totais_geral_real += tot_obra
+            perc_obra = (tot_obra / totais_geral_real * 100) if totais_geral_real > 0 else 0
+            
+            # Barra de progresso para a Obra
+            html_bar = f"<div style='width:100%; background:#e2e8f0; height:6px; border-radius:3px; margin-top:4px;'><div style='width:{min(perc_obra, 100)}%; background:var(--blue-main); height:100%; border-radius:3px;'></div></div>"
             
             html_real_det += f"<tbody class='obra-group'><tr>"
             html_real_det += f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             
             for m_num in range(1, 13):
                 val_m = row.get(m_num, 0.0)
-                totais_col_real[m_num] += val_m
                 val_str = formatar_moeda_curta(val_m) if val_m > 0 else "-"
                 html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--text-dark);'>{val_str}</td>"
             
-            html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--green-main);'>{formatar_moeda(tot_obra)}</td></tr>"
+            html_real_det += f"<td style='text-align:right; font-weight:800; color: var(--green-main);'>{formatar_moeda(tot_obra)}</td>"
+            html_real_det += f"<td style='text-align:center; min-width:90px;'><span style='font-size:11px; font-weight:700; color:var(--text-dark);'>{perc_obra:.1f}%</span>{html_bar}</td></tr>"
             
             for forn_name, sub_row in pivot_sub.iterrows():
                 html_real_det += f"<tr class='sub-row'>"
                 html_real_det += f"<td title='↳ {forn_name}' style='padding-left: 30px; font-size: 11px; color: var(--text-muted); border-right: 2px solid var(--border-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>↳ {forn_name}</td>"
+                
                 for m_num in range(1, 13):
                     v_sub = sub_row.get(m_num, 0.0)
                     v_str_sub = formatar_moeda_curta(v_sub) if v_sub > 0 else "-"
                     html_real_det += f"<td style='text-align:right; font-size: 11px; color: var(--text-muted);'>{v_str_sub}</td>"
+                
                 tot_sub_geral = sub_row['Total_Geral']
-                html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-muted);'>{formatar_moeda(tot_sub_geral)}</td></tr>"
+                perc_forn = (tot_sub_geral / tot_obra * 100) if tot_obra > 0 else 0
+                
+                html_real_det += f"<td style='text-align:right; font-size: 11px; font-weight:600; color: var(--text-muted);'>{formatar_moeda(tot_sub_geral)}</td>"
+                html_real_det += f"<td style='text-align:center; font-size:10px; color:var(--text-muted);'>{perc_forn:.1f}% da obra</td></tr>"
             
             html_real_det += "</tbody>"
             
-        html_real_det += f"<tr class='total-geral-row'><td>TOTAL GERAL</td>"
-        for m_num in range(1, 13):
-            t_col = totais_col_real[m_num]
-            html_real_det += f"<td style='text-align:right;'>{formatar_moeda_curta(t_col) if t_col > 0 else '-'}</td>"
-        html_real_det += f"<td style='text-align:right; color: var(--green-main);'>{formatar_moeda(totais_geral_real)}</td></tr>"
         html_real_det += "</table></div>"
         st.markdown(html_real_det, unsafe_allow_html=True)
