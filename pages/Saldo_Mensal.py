@@ -18,7 +18,7 @@ except Exception as e:
         st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
         return None
 
-# --- CUSTOM CSS (IDENTIDADE VISUAL IDÊNTICA) ---
+# --- CUSTOM CSS (IDENTIDADE VISUAL IDÊNTICA AO DASHBOARD_SALDO) ---
 css = """
 <style>
     :root {
@@ -83,41 +83,7 @@ css = """
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO DA BARRA LATERAL
-# ==============================================================================
-hoje = datetime.now().date()
-inicio_ano = hoje.replace(month=1, day=1)
-
-with st.sidebar:
-    st.markdown("### Filtros do Painel")
-    
-    data_selecionada = st.date_input(
-        "Selecione o Período:",
-        value=(inicio_ano, hoje),
-        min_value=datetime(2020, 1, 1).date(),
-        max_value=hoje,
-        format="DD/MM/YYYY"
-    )
-    
-    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
-    st.markdown("### Relatório")
-    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
-    
-    components.html("""
-        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(0, 138, 140, 0.2); transition: transform 0.2s;">
-        🖨️ Salvar Dashboard (PDF)
-        </button>
-    """, height=55)
-
-if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
-    data_inicio_filtro, data_fim_filtro = data_selecionada
-else:
-    data_inicio_filtro = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
-    data_fim_filtro = data_inicio_filtro
-
-# ==============================================================================
-# 1. FUNÇÕES DE LIMPEZA E FORMATAÇÃO
+# 1. FUNÇÕES DE TRATAMENTO DE DADOS DO TASY
 # ==============================================================================
 def limpa_valor_bruto(valor):
     try:
@@ -163,95 +129,181 @@ def formatar_abreviado(valor):
         return ""
 
 # ==============================================================================
-# 2. CARGA E PROCESSAMENTO DOS DADOS (EXTRATO MENSAL TASY)
+# 2. CARGA E CONSOLIDAÇÃO DE DADOS BANCÁRIOS (TASY)
 # ==============================================================================
 @st.cache_data(ttl=60)
-def carregar_dados_mensais(data_inicio, data_fim):
+def carregar_dados_tasy():
     conn = conectar_sheets()
-    if conn is None: 
-        return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0, data_inicio, data_fim
+    if conn is None:
+        return pd.DataFrame(), pd.DataFrame(), []
 
     try:
-        # 2.1 Puxando Saldo Inicial do Ano
+        # 2.1 Carrega Saldo Inicial por Conta
         df_saldo = conn.read(worksheet="Saldo_Inicial_Ano", ttl=0)
-        saldo_inicial_base = 0.0
-        if not df_saldo.empty:
-            col_saldo = next((c for c in df_saldo.columns if 'saldo' in str(c).lower() or 'valor' in str(c).lower()), None)
-            if col_saldo:
-                saldo_inicial_base = sum(df_saldo[col_saldo].apply(limpa_valor_bruto))
+        df_saldo.columns = [str(c).strip() for c in df_saldo.columns]
+        
+        col_conta_s = next((c for c in df_saldo.columns if 'conta' in c.lower() or 'banco' in c.lower() or 'ds_conta' in c.lower()), df_saldo.columns[0])
+        col_val_s = next((c for c in df_saldo.columns if 'saldo' in c.lower() or 'valor' in c.lower() or 'inicial' in c.lower()), df_saldo.columns[1])
+        
+        df_saldo_clean = pd.DataFrame()
+        df_saldo_clean['Conta'] = df_saldo[col_conta_s].astype(str).str.strip()
+        df_saldo_clean['Saldo_Inicial'] = df_saldo[col_val_s].apply(limpa_valor_bruto)
 
-        # 2.2 Puxando Extratos Tasy
+        # 2.2 Carrega Extratos do Tasy
         df_extrato = conn.read(worksheet="Extratos_Tasy", ttl=0)
         if df_extrato.empty:
-            return pd.DataFrame(), saldo_inicial_base, 0.0, 0.0, saldo_inicial_base, data_inicio, data_fim
+            return df_saldo_clean, pd.DataFrame(), list(df_saldo_clean['Conta'].unique())
 
         df_extrato.columns = [str(c).strip() for c in df_extrato.columns]
-        
-        # Identificação das colunas (flexível para os padrões do Tasy)
-        col_data = next((c for c in df_extrato.columns if 'data' in c.lower()), df_extrato.columns[0])
-        col_valor = next((c for c in df_extrato.columns if 'valor' in c.lower() or 'lançamento' in c.lower() or 'movimento' in c.lower()), None)
 
-        if not col_valor:
-            raise ValueError("Coluna de Valor não encontrada no Extrato_Tasy.")
+        # Mapeamento flexível das colunas no padrão Tasy / Conciliação
+        col_data = next((c for c in df_extrato.columns if 'data' in c.lower() or 'dt_' in c.lower()), df_extrato.columns[0])
+        col_conta = next((c for c in df_extrato.columns if 'conta' in c.lower() or 'banco' in c.lower() or 'ds_conta' in c.lower()), None)
+        col_valor = next((c for c in df_extrato.columns if 'valor' in c.lower() or 'vl_' in c.lower() or 'lançamento' in c.lower() or 'movimento' in c.lower()), None)
+        col_tipo = next((c for c in df_extrato.columns if 'tipo' in c.lower() or 'ie_tipo' in c.lower() or 'd/c' in c.lower() or 'natureza' in c.lower()), None)
+        col_debito = next((c for c in df_extrato.columns if 'debito' in c.lower() or 'débito' in c.lower() or 'saida' in c.lower()), None)
+        col_credito = next((c for c in df_extrato.columns if 'credito' in c.lower() or 'crédito' in c.lower() or 'entrada' in c.lower()), None)
 
         df_process = pd.DataFrame()
         df_process['Data'] = pd.to_datetime(df_extrato[col_data], dayfirst=True, errors='coerce').dt.normalize()
         df_process = df_process.dropna(subset=['Data'])
-        df_process['Valor'] = df_extrato[col_valor].apply(limpa_valor_bruto)
         
-        # Classifica Entradas (positivas) e Saídas (negativas)
-        df_process['Entrada'] = df_process['Valor'].apply(lambda x: x if x > 0 else 0)
-        df_process['Saida'] = df_process['Valor'].apply(lambda x: x if x < 0 else 0)
+        if col_conta:
+            df_process['Conta'] = df_extrato[col_conta].astype(str).str.strip()
+        else:
+            df_process['Conta'] = "CONTA PRINCIPAL"
+
+        # Regras do Tasy para apurar o valor líquido e sinal (+/ -)
+        if col_credito and col_debito:
+            v_cred = df_extrato[col_credito].apply(limpa_valor_bruto)
+            v_deb = df_extrato[col_debito].apply(limpa_valor_bruto)
+            df_process['Valor_Liquido'] = v_cred - v_deb
+            df_process['Entrada'] = v_cred
+            df_process['Saida'] = -v_deb
+        elif col_valor:
+            vals = df_extrato[col_valor].apply(limpa_valor_bruto)
+            if col_tipo:
+                tipos = df_extrato[col_tipo].astype(str).str.upper()
+                # Tratamento para 'D' (Débito/Saída) vs 'C' (Crédito/Entrada)
+                is_debito = tipos.str.contains('D') | tipos.str.contains('DEB') | tipos.str.contains('SAI') | tipos.str.contains('PAG')
+                vals = vals.index.map(lambda i: -abs(vals[i]) if is_debito[i] else abs(vals[i]))
+            
+            df_process['Valor_Liquido'] = vals
+            df_process['Entrada'] = df_process['Valor_Liquido'].apply(lambda x: x if x > 0 else 0.0)
+            df_process['Saida'] = df_process['Valor_Liquido'].apply(lambda x: x if x < 0 else 0.0)
+
         df_process['AnoMes_Sort'] = df_process['Data'].dt.to_period('M')
 
-        # Agrupamento Mensal de TODO o ano para cascata correta do saldo
-        df_mensal = df_process.groupby('AnoMes_Sort').agg({'Entrada': 'sum', 'Saida': 'sum'}).reset_index()
-        df_mensal = df_mensal.sort_values('AnoMes_Sort')
-        
-        df_mensal['Movimento_Liquido'] = df_mensal['Entrada'] + df_mensal['Saida']
-        
-        # Cálculo da Cascata de Saldo Mensal
-        df_mensal['Saldo Final'] = saldo_inicial_base + df_mensal['Movimento_Liquido'].cumsum()
-        df_mensal['Saldo Inicial Mês'] = df_mensal['Saldo Final'] - df_mensal['Movimento_Liquido']
-        
-        # Label para os gráficos/tabelas
-        df_mensal['Mês'] = df_mensal['AnoMes_Sort'].dt.strftime('%m/%Y')
-        
-        # 2.3 Filtrando apenas para o período selecionado no painel
-        dt_ini_pd = pd.to_datetime(data_inicio).to_period('M')
-        dt_fim_pd = pd.to_datetime(data_fim).to_period('M')
-        
-        df_periodo = df_mensal[(df_mensal['AnoMes_Sort'] >= dt_ini_pd) & (df_mensal['AnoMes_Sort'] <= dt_fim_pd)].copy()
+        # Lista unificada de contas
+        todas_contas = sorted(list(set(df_saldo_clean['Conta'].unique()).union(set(df_process['Conta'].unique()))))
 
-        # Totais do período filtrado
-        if not df_periodo.empty:
-            saldo_inicio_periodo = df_periodo.iloc[0]['Saldo Inicial Mês']
-            saldo_fim_periodo = df_periodo.iloc[-1]['Saldo Final']
-            tot_entradas = df_periodo['Entrada'].sum()
-            tot_saidas = df_periodo['Saida'].sum()
-        else:
-            saldo_inicio_periodo = saldo_inicial_base
-            saldo_fim_periodo = saldo_inicial_base
-            tot_entradas = 0.0
-            tot_saidas = 0.0
-
-        return df_periodo, saldo_inicio_periodo, tot_entradas, tot_saidas, saldo_fim_periodo, data_inicio, data_fim
+        return df_saldo_clean, df_process, todas_contas
 
     except Exception as e:
-        st.error(f"Erro ao processar dados mensais: {e}")
-        return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0, data_inicio, data_fim
+        st.error(f"Erro ao processar abas do Tasy: {e}")
+        return pd.DataFrame(), pd.DataFrame(), []
+
+# Carga inicial para popular a barra lateral
+df_saldo_base, df_extrato_base, lista_contas = carregar_dados_tasy()
 
 # ==============================================================================
-# CHAMADA PRINCIPAL
+# 3. BARRA LATERAL (FILTROS)
 # ==============================================================================
-df_mensal, saldo_inicio, tot_entradas, tot_saidas, saldo_fim, data_ini_painel, data_fim_painel = carregar_dados_mensais(data_inicio_filtro, data_fim_filtro)
+hoje = datetime.now().date()
+inicio_ano = hoje.replace(month=1, day=1)
+
+with st.sidebar:
+    st.markdown("### Filtros do Painel")
+    
+    data_selecionada = st.date_input(
+        "Selecione o Período:",
+        value=(inicio_ano, hoje),
+        min_value=datetime(2020, 1, 1).date(),
+        max_value=hoje,
+        format="DD/MM/YYYY"
+    )
+
+    contas_filtradas = st.multiselect(
+        "Contas Bancárias / Tasy:",
+        options=lista_contas,
+        default=lista_contas
+    )
+    
+    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+    st.markdown("### Relatório")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
+    
+    components.html("""
+        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
+        style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(0, 138, 140, 0.2); transition: transform 0.2s;">
+        🖨️ Salvar Dashboard (PDF)
+        </button>
+    """, height=55)
+
+if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
+    data_inicio_filtro, data_fim_filtro = data_selecionada
+else:
+    data_inicio_filtro = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
+    data_fim_filtro = data_inicio_filtro
+
+# ==============================================================================
+# 4. CONSOLIDAÇÃO E CÁLCULO DA CASCATA MENSAL
+# ==============================================================================
+def processar_mensal_cascata(df_saldo, df_extrato, contas_sel, dt_inicio, dt_fim):
+    if not contas_sel:
+        return pd.DataFrame(), 0.0, 0.0, 0.0, 0.0
+
+    # 1. Saldo Inicial Acumulado das contas selecionadas
+    df_saldo_sel = df_saldo[df_saldo['Conta'].isin(contas_sel)]
+    saldo_inicial_base = df_saldo_sel['Saldo_Inicial'].sum() if not df_saldo_sel.empty else 0.0
+
+    # 2. Filtrar movimentações das contas selecionadas
+    df_ext_sel = df_extrato[df_extrato['Conta'].isin(contas_sel)].copy() if not df_extrato.empty else pd.DataFrame()
+
+    if df_ext_sel.empty:
+        return pd.DataFrame(), saldo_inicial_base, 0.0, 0.0, saldo_inicial_base
+
+    # Agrupamento Mensal Global do ano para manter a integridade da cascata
+    df_mensal = df_ext_sel.groupby('AnoMes_Sort').agg({
+        'Entrada': 'sum',
+        'Saida': 'sum',
+        'Valor_Liquido': 'sum'
+    }).reset_index().sort_values('AnoMes_Sort')
+
+    # Efeito Cascata de Saldo mês a mês
+    df_mensal['Saldo Final'] = saldo_inicial_base + df_mensal['Valor_Liquido'].cumsum()
+    df_mensal['Saldo Inicial Mês'] = df_mensal['Saldo Final'] - df_mensal['Valor_Liquido']
+    df_mensal['Mês'] = df_mensal['AnoMes_Sort'].dt.strftime('%m/%Y')
+
+    # Filtrar para o período visualizado no painel
+    dt_ini_pd = pd.to_datetime(dt_inicio).to_period('M')
+    dt_fim_pd = pd.to_datetime(dt_fim).to_period('M')
+
+    df_periodo = df_mensal[(df_mensal['AnoMes_Sort'] >= dt_ini_pd) & (df_mensal['AnoMes_Sort'] <= dt_fim_pd)].copy()
+
+    if not df_periodo.empty:
+        s_ini_periodo = df_periodo.iloc[0]['Saldo Inicial Mês']
+        s_fim_periodo = df_periodo.iloc[-1]['Saldo Final']
+        tot_ent = df_periodo['Entrada'].sum()
+        tot_sai = df_periodo['Saida'].sum()
+    else:
+        s_ini_periodo = saldo_inicial_base
+        s_fim_periodo = saldo_inicial_base
+        tot_ent = 0.0
+        tot_sai = 0.0
+
+    return df_periodo, s_ini_periodo, tot_ent, tot_sai, s_fim_periodo
+
+df_mensal, saldo_inicio, tot_entradas, tot_saidas, saldo_fim = processar_mensal_cascata(
+    df_saldo_base, df_extrato_base, contas_filtradas, data_inicio_filtro, data_fim_filtro
+)
 
 if df_mensal.empty:
-    st.warning("⚠️ Nenhuma movimentação mensal encontrada para o período selecionado.")
+    st.warning("⚠️ Nenhuma movimentação do Tasy encontrada para os filtros selecionados.")
     st.stop()
 
 # ==============================================================================
-# 3. CÁLCULOS DOS KPIs E VARIAÇÕES
+# 5. KPIS E GRÁFICOS
 # ==============================================================================
 movimento_liquido = tot_entradas + tot_saidas
 
@@ -260,10 +312,7 @@ def get_var_html(valor):
     elif valor < 0: return f"<div class='kpi-var down'>↘ Negativo</div>"
     else: return f"<div class='kpi-var neutral'>→ Zero</div>"
 
-# ==============================================================================
-# 4. MONTAGEM DOS GRÁFICOS
-# ==============================================================================
-periodo_str = f"{data_ini_painel.strftime('%m/%Y')} a {data_fim_painel.strftime('%m/%Y')}"
+periodo_str = f"{data_inicio_filtro.strftime('%m/%Y')} a {data_fim_filtro.strftime('%m/%Y')}"
 
 # Donut Entradas vs Saídas
 fig_donut = go.Figure(data=[go.Pie(
@@ -278,13 +327,12 @@ fig_donut = go.Figure(data=[go.Pie(
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
     margin=dict(t=10, b=10, l=0, r=0), height=315,
-    annotations=[dict(text=f"<b>Movimento</b><br>Mensal", x=0.5, y=0.5, font_size=13, font_color="#172033", showarrow=False)]
+    annotations=[dict(text=f"<b>Fluxo Tasy</b><br>Mensal", x=0.5, y=0.5, font_size=13, font_color="#172033", showarrow=False)]
 )
 
-# Gráfico de Barras Agrupadas e Linha de Saldo Mensal
+# Gráfico de Barras (Entradas/Saídas) + Linha de Saldo Acumulado
 fig_combinado = go.Figure()
 
-# Barras de Entrada e Saída
 fig_combinado.add_trace(go.Bar(
     x=df_mensal['Mês'], y=df_mensal['Entrada'], name='Entradas',
     marker_color='#1cc88a', text=[formatar_abreviado(v) for v in df_mensal['Entrada']],
@@ -295,7 +343,6 @@ fig_combinado.add_trace(go.Bar(
     marker_color='#e74a3b', text=[formatar_abreviado(abs(v)) for v in df_mensal['Saida']],
     textposition='outside', textfont=dict(size=10)
 ))
-# Linha do Saldo Final
 fig_combinado.add_trace(go.Scatter(
     x=df_mensal['Mês'], y=df_mensal['Saldo Final'], name='Saldo Final',
     mode='lines+markers', line=dict(color='#008A8C', width=3),
@@ -313,7 +360,7 @@ fig_combinado.update_layout(
 )
 
 # ==============================================================================
-# 5. MONTAGEM DO PAINEL
+# 6. LAYOUT PRINCIPAL DO PAINEL
 # ==============================================================================
 st.markdown(f"""
 <div class="dashboard-header">
@@ -322,8 +369,8 @@ st.markdown(f"""
         <div class="label">Período Selecionado</div>
     </div>
     <div class="header-center">
-        <h1>ANÁLISE DE MOVIMENTAÇÃO MENSAL</h1>
-        <p>Consolidação de Extratos Tasy e Fluxo de Caixa</p>
+        <h1>ANÁLISE DE MOVIMENTAÇÃO MENSAL (TASY)</h1>
+        <p>Consolidação de Extratos e Fluxo Bancário</p>
     </div>
     <div style="min-width: 200px;"></div>
 </div>
