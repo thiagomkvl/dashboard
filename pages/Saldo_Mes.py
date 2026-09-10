@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 import textwrap
 
 # BLINDAGEM MÁXIMA DE CONEXÃO
