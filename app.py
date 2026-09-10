@@ -74,14 +74,14 @@ with st.sidebar:
 
 # Registra os painéis
 pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldo Diário", icon="📊")
-pg_saldo = st.Page("pages/Saldo_Mes.py", title="Saldo Mensal", icon="📊")
 pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰")
 pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
 pg_obras = st.Page("pages/painel_obras.py", title="Acompanhamento de Obras", icon="🏗️")
+pg_saldo = st.Page("pages/Saldo_Mes.py", title="Saldo Mensal", icon="📊")
 
 # Cria o menu lateral automaticamente
 nav = st.navigation(
-    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras]},
+    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo]},
     position="sidebar"
 )
 
