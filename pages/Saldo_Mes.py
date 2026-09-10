@@ -96,6 +96,7 @@ st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 # ==============================================================================
 # 0. CONFIGURAÇÃO DA BARRA LATERAL
 # ==============================================================================
+
 hoje = datetime.now().date()
 primeiro_dia_mes = hoje.replace(day=1)
 
@@ -107,29 +108,52 @@ with st.sidebar:
         value=(primeiro_dia_mes, primeiro_dia_mes),
         min_value=datetime(2020, 1, 1).date(),
         max_value=hoje,
-        format="MM/YYYY"
+        format="DD/MM/YYYY"
     )
 
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
+
     st.markdown("### Relatório")
-    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
+    st.info(
+        "💡 Para um relatório de alta qualidade, gere um PDF. "
+        "Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.",
+        icon="ℹ️"
+    )
 
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }"
-        style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(0, 138, 140, 0.2); transition: transform 0.2s;">
+        style="width:100%; background:linear-gradient(135deg, #008A8C, #004D4E);
+        color:white; border:none; padding:12px; border-radius:8px;
+        font-family:sans-serif; font-weight:bold; font-size:14px;
+        cursor:pointer; box-shadow:0 4px 6px rgba(0,138,140,0.2);
+        transition:transform 0.2s;">
         🖨️ Salvar Dashboard (PDF)
         </button>
     """, height=55)
 
+
+# ==============================================================================
+# NORMALIZAÇÃO DO FILTRO PARA MÊS
+# ==============================================================================
+
 if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
+
     data_inicio_filtro = data_selecionada[0].replace(day=1)
     data_fim_filtro = data_selecionada[1].replace(day=1)
+
 else:
-    data_inicio_filtro = data_selecionada.replace(day=1) if hasattr(data_selecionada, "replace") else primeiro_dia_mes
+
+    data_inicio_filtro = data_selecionada.replace(day=1)
     data_fim_filtro = data_inicio_filtro
 
-# O filtro é mensal: sempre considera o mês inteiro.
-data_fim_filtro = data_fim_filtro + relativedelta(months=1) - timedelta(days=1)
+
+# Primeiro dia do mês inicial
+data_inicio_filtro = data_inicio_filtro.replace(day=1)
+
+# Último dia do mês final
+data_fim_filtro = (
+    data_fim_filtro + relativedelta(months=1) - timedelta(days=1)
+)
 
 # ==============================================================================
 # 1. FUNÇÕES DE LIMPEZA E FORMATAÇÃO
