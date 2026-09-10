@@ -73,7 +73,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Registra os painéis
-pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldo Diário", icon="📊")
+pg_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldo", icon="📊")
 pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰")
 pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
 pg_obras = st.Page("pages/painel_obras.py", title="Acompanhamento de Obras", icon="🏗️")
