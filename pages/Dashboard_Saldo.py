@@ -470,15 +470,19 @@ kp_data = [
 ]
 
 for col, title, val, color, var_html in kp_data:
-    card_html = f"""
-    <div class='kpi-card {color}'>
-        <div style='display: flex; align-items: center;'>
-            {var_html}
-            <div class='kpi-title' style='margin-left: 10px;'>{title}</div>
-        </div>
-        <div class='kpi-value'>{val}</div>
-    </div>
-    """
+    # Se não houver variação, zera a margem para o título não ficar "voando" para a direita
+    margem = "10px" if var_html.strip() else "0px"
+    
+    # HTML montado sem indentação no início das linhas para evitar o bug de code block do Markdown
+    card_html = (
+        f"<div class='kpi-card {color}'>"
+        f"<div style='display: flex; align-items: center;'>"
+        f"{var_html}"
+        f"<div class='kpi-title' style='margin-left: {margem};'>{title}</div>"
+        f"</div>"
+        f"<div class='kpi-value'>{val}</div>"
+        f"</div>"
+    )
     col.markdown(card_html, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
