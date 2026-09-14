@@ -1,6 +1,5 @@
 import streamlit as st
 
-# O set_page_config OBRIGATORIAMENTE tem que ser a primeira coisa do arquivo
 st.set_page_config(page_title="Painel Financeiro Mensal", layout="wide", page_icon="📊", initial_sidebar_state="expanded")
 
 import streamlit.components.v1 as components
