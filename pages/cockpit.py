@@ -1,5 +1,5 @@
-import io  # <--- Manipulação de bytes na memória para download
 from datetime import datetime, timedelta
+import io  # <--- Manipulação de bytes na memória para download
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -264,7 +264,7 @@ with col_left:
           df_display,
           hide_index=True,
           use_container_width=True,
-          height=760,
+          height=680,
           column_config={
               "Pagar?": st.column_config.CheckboxColumn("Pagar", default=True),
               "NOME_FAVORECIDO": "Pagamento",
@@ -278,25 +278,45 @@ with col_left:
           },
       )
 
-      st.write("")
+      st.markdown("---")
 
-      # --- LÓGICA DE GERAÇÃO DO ARQUIVO CNAB (MANTIDA INTACTA) ---
+      # --- LÓGICA DE GERAÇÃO DO ARQUIVO CNAB COM SEQUENCIAL AJUSTÁVEL ---
+      col_seq1, col_seq2 = st.columns([1, 2])
+      with col_seq1:
+        seq_arquivo = st.number_input(
+            "Nº Sequencial do Arquivo (NSA)",
+            min_value=1,
+            value=17,  # Valor 17 configurado para evitar o erro do 16 duplicado
+            step=1,
+            help=(
+                "Altere este número caso o banco informe que o arquivo já foi"
+                " processado."
+            ),
+        )
+
       linhas_selecionadas = edited_df[edited_df["Pagar?"] == True].index
 
       if st.button("🚀 Gerar Arquivo de Remessa (CNAB 240)", type="primary"):
         if len(linhas_selecionadas) > 0:
           df_pagar_completo = df_real.loc[linhas_selecionadas].copy()
-          df_pagar_completo["VALOR_PAGAMENTO"] = (
-              np.floor(df_pagar_completo["VALOR_PAGAMENTO"] * 100 + 0.5) / 100
-          )
 
-          arquivo_cnab = gerar_cnab_pix(df_pagar_completo)
+          # Arredondamento limpo em float com 2 casas decimais
+          df_pagar_completo["VALOR_PAGAMENTO"] = df_pagar_completo[
+              "VALOR_PAGAMENTO"
+          ].round(2)
+
+          # Passa o dataframe e o sequencial numérico para a função
+          arquivo_cnab = gerar_cnab_pix(
+              df_pagar_completo, sequencial=int(seq_arquivo)
+          )
 
           if arquivo_cnab:
             st.download_button(
                 label="📥 Baixar CNAB",
                 data=arquivo_cnab,
-                file_name=f"REM_{datetime.now().strftime('%d%m')}.txt",
+                file_name=(
+                    f"REM_{datetime.now().strftime('%d%m')}_SEQ{int(seq_arquivo)}.txt"
+                ),
                 mime="text/plain",
             )
         else:
@@ -310,7 +330,7 @@ with col_left:
         " títulos vencidos."
     )
 
-  # --- CONVERSOR DE PROTESTOS PDF (MANTIDO INTACTO) ---
+  # --- CONVERSOR DE PROTESTOS PDF ---
   with tab3:
     st.subheader("Conversor Inteligente de Certidões de Protesto")
     st.markdown(
@@ -371,7 +391,6 @@ with col_left:
 
 # --- DIREITA: GRÁFICOS E ANÁLISES BASEADOS NA PLANILHA ---
 with col_right:
-  # Identifica as duas maiores categorias para os cards de topo
   if not df_real.empty and "Categoria" in df_real.columns:
     cat_summary = (
         df_real.groupby("Categoria")["VALOR_PAGAMENTO"]
@@ -408,7 +427,7 @@ with col_right:
 
   chart_config = {"scrollZoom": False, "displayModeBar": False}
 
-  # --- GRÁFICO 1: EVOLUÇÃO DIÁRIA (TOTAL PLANILHA X SELECIONADO CNAB) ---
+  # --- GRÁFICO 1: EVOLUÇÃO DIÁRIA ---
   if not df_real.empty:
     df_agrupado_dia = (
         df_real.groupby("DATA_PAGAMENTO")
@@ -477,7 +496,7 @@ with col_right:
 
     st.plotly_chart(fig1, use_container_width=True, config=chart_config)
 
-    # --- GRÁFICO 2: DESPESAS POR CATEGORIA (POR DATA) ---
+    # --- GRÁFICO 2: DESPESAS POR CATEGORIA ---
     pivot_cat = df_real.pivot_table(
         index="DATA_PAGAMENTO",
         columns="Categoria",
