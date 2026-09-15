@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-import io  # <--- Manipulação de bytes na memória para download
+import io
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -83,6 +83,33 @@ st.markdown(
 
 
 # ==============================================================================
+# FUNÇÃO DE CONVERSÃO LIMPA DE VALORES MONETÁRIOS
+# ==============================================================================
+def tratar_valor_monetario(val):
+  if pd.isna(val):
+    return 0.0
+  if isinstance(val, (int, float)):
+    return float(val)
+
+  s = str(val).replace("R$", "").strip()
+  if not s:
+    return 0.0
+
+  # Se for formato brasileiro ("32.057,23"), remove ponto de milhar e troca vírgula por ponto
+  if "." in s and "," in s:
+    s = s.replace(".", "").replace(",", ".")
+  # Se for apenas vírgula decimal ("32057,23")
+  elif "," in s:
+    s = s.replace(",", ".")
+  # Se for formato float padrão ("32057.23"), mantém o ponto decimal!
+
+  try:
+    return float(s)
+  except ValueError:
+    return 0.0
+
+
+# ==============================================================================
 # 1. CARGA DE DADOS (100% PLANILHA)
 # ==============================================================================
 @st.cache_data(ttl=60)
@@ -98,15 +125,7 @@ def carregar_dados_reais():
     df["Pagar?"] = df["Pagar?"].astype(bool)
 
     if "VALOR_PAGAMENTO" in df.columns:
-      df["VALOR_PAGAMENTO"] = pd.to_numeric(
-          df["VALOR_PAGAMENTO"]
-          .astype(str)
-          .str.replace("R$", "", regex=False)
-          .str.replace(".", "", regex=False)
-          .str.replace(",", ".", regex=False)
-          .str.strip(),
-          errors="coerce",
-      ).fillna(0.0)
+      df["VALOR_PAGAMENTO"] = df["VALOR_PAGAMENTO"].apply(tratar_valor_monetario)
     else:
       df["VALOR_PAGAMENTO"] = 0.0
 
@@ -280,18 +299,15 @@ with col_left:
 
       st.markdown("---")
 
-      # --- LÓGICA DE GERAÇÃO DO ARQUIVO CNAB COM SEQUENCIAL AJUSTÁVEL ---
+      # --- CONTROLE DO SEQUENCIAL E GERAÇÃO DO ARQUIVO ---
       col_seq1, col_seq2 = st.columns([1, 2])
       with col_seq1:
         seq_arquivo = st.number_input(
             "Nº Sequencial do Arquivo (NSA)",
             min_value=1,
-            value=17,  # Valor 17 configurado para evitar o erro do 16 duplicado
+            value=17,
             step=1,
-            help=(
-                "Altere este número caso o banco informe que o arquivo já foi"
-                " processado."
-            ),
+            help="Altere o número se o banco informar que o sequencial já foi processado.",
         )
 
       linhas_selecionadas = edited_df[edited_df["Pagar?"] == True].index
@@ -299,16 +315,17 @@ with col_left:
       if st.button("🚀 Gerar Arquivo de Remessa (CNAB 240)", type="primary"):
         if len(linhas_selecionadas) > 0:
           df_pagar_completo = df_real.loc[linhas_selecionadas].copy()
-
-          # Arredondamento limpo em float com 2 casas decimais
           df_pagar_completo["VALOR_PAGAMENTO"] = df_pagar_completo[
               "VALOR_PAGAMENTO"
           ].round(2)
 
-          # Passa o dataframe e o sequencial numérico para a função
-          arquivo_cnab = gerar_cnab_pix(
-              df_pagar_completo, sequencial=int(seq_arquivo)
-          )
+          # Fallback seguro para evitar TypeError caso cnab_engine.py ainda não receba 'sequencial'
+          try:
+            arquivo_cnab = gerar_cnab_pix(
+                df_pagar_completo, sequencial=int(seq_arquivo)
+            )
+          except TypeError:
+            arquivo_cnab = gerar_cnab_pix(df_pagar_completo)
 
           if arquivo_cnab:
             st.download_button(
@@ -334,8 +351,8 @@ with col_left:
   with tab3:
     st.subheader("Conversor Inteligente de Certidões de Protesto")
     st.markdown(
-        "Arraste e solte uma ou múltiplas certidões em PDF recebidas dos"
-        " cartórios para estruturar em uma planilha limpa para a Controladoria."
+        "Arraste e solte certidões em PDF dos cartórios para estruturar em uma"
+        " planilha limpa para a Controladoria."
     )
 
     arquivos_pdf = st.file_uploader(
@@ -356,7 +373,7 @@ with col_left:
           if not df_protestos.empty:
             st.success(
                 f"Sucesso! {len(df_protestos)} registros de protesto"
-                " identificados de forma estruturada."
+                " identificados."
             )
             st.data_editor(
                 df_protestos,
@@ -374,7 +391,7 @@ with col_left:
 
             st.write("")
             st.download_button(
-                label="📥 Baixar Planilha Pronta para Auditoria (.xlsx)",
+                label="📥 Baixar Planilha Pronta (.xlsx)",
                 data=processado_excel,
                 file_name=(
                     f"Protestos_Processados_{datetime.now().strftime('%d%m')}.xlsx"
@@ -384,12 +401,9 @@ with col_left:
                 ),
             )
           else:
-            st.warning(
-                "Nenhuma estrutura padrão de bloco de protesto foi reconhecida"
-                " nos PDFs enviados."
-            )
+            st.warning("Nenhum bloco de protesto reconhecido nos PDFs.")
 
-# --- DIREITA: GRÁFICOS E ANÁLISES BASEADOS NA PLANILHA ---
+# --- DIREITA: GRÁFICOS E ANÁLISES ---
 with col_right:
   if not df_real.empty and "Categoria" in df_real.columns:
     cat_summary = (
