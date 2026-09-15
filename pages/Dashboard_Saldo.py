@@ -912,8 +912,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 # ==============================================================================
 st.markdown("<div class='section-title'>SALDO DETALHADO POR BANCO</div>", unsafe_allow_html=True)
 
-html_bancos = """
-<div class='tabela-container'>
+html_bancos = """<div class='tabela-container'>
 <table class='tabela-financeira'>
 <thead>
     <tr>
@@ -927,22 +926,20 @@ html_bancos = """
         <th class='valores'>Saldo Final</th>
     </tr>
 </thead>
-<tbody>
-"""
+<tbody>"""
 
 for _, row in df_consolidado.iterrows():
     html_bancos += f"""
-    <tr>
-        <td><b>{row['Conta Bancária']}</b></td>
-        <td>{row['Tipo']}</td>
-        <td class='valores'>{formatar_moeda(row['Saldo Inicial'])}</td>
-        <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['Entrada Op'])}</td>
-        <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['Saída Op'])}</td>
-        <td class='valores'>{formatar_moeda(row['Entrada Tr'])}</td>
-        <td class='valores'>{formatar_moeda(row['Saída Tr'])}</td>
-        <td class='valores valor-destaque'>{formatar_moeda(row['Saldo Final'])}</td>
-    </tr>
-    """
+<tr>
+    <td><b>{row['Conta Bancária']}</b></td>
+    <td>{row['Tipo']}</td>
+    <td class='valores'>{formatar_moeda(row['Saldo Inicial'])}</td>
+    <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['Entrada Op'])}</td>
+    <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['Saída Op'])}</td>
+    <td class='valores'>{formatar_moeda(row['Entrada Tr'])}</td>
+    <td class='valores'>{formatar_moeda(row['Saída Tr'])}</td>
+    <td class='valores valor-destaque'>{formatar_moeda(row['Saldo Final'])}</td>
+</tr>"""
 
 # Totais consolidados
 tot_init = df_consolidado['Saldo Inicial'].sum()
@@ -965,8 +962,8 @@ html_bancos += f"""
 </tr>
 </tbody>
 </table>
-</div>
-"""
+</div>"""
+
 st.markdown(html_bancos, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -977,42 +974,39 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("<div class='section-title'>CONSOLIDADO DIÁRIO E DELTA</div>", unsafe_allow_html=True)
 
 if not df_graficos.empty:
-    html_diario = """
-    <div class='tabela-container-scroll'>
-    <table class='tabela-financeira'>
-    <thead>
-        <tr>
-            <th>Data</th>
-            <th class='valores'>Saldo Inicial</th>
-            <th class='valores'>Entradas</th>
-            <th class='valores'>Saídas</th>
-            <th class='valores'>Mov. Líquida</th>
-            <th class='valores'>Saldo Final</th>
-            <th class='valores'>Delta (R$)</th>
-            <th class='valores'>Delta (%)</th>
-        </tr>
-    </thead>
-    <tbody>
-    """
+    html_diario = """<div class='tabela-container-scroll'>
+<table class='tabela-financeira'>
+<thead>
+    <tr>
+        <th>Data</th>
+        <th class='valores'>Saldo Inicial</th>
+        <th class='valores'>Entradas</th>
+        <th class='valores'>Saídas</th>
+        <th class='valores'>Mov. Líquida</th>
+        <th class='valores'>Saldo Final</th>
+        <th class='valores'>Delta (R$)</th>
+        <th class='valores'>Delta (%)</th>
+    </tr>
+</thead>
+<tbody>"""
     for _, row in df_graficos.iterrows():
         delta_color = "#1cc88a" if row["Delta R$"] >= 0 else "#e74a3b"
         html_diario += f"""
-        <tr>
-            <td><b>{row['Data_Label']}</b></td>
-            <td class='valores'>{formatar_moeda(row['Saldo Inicial'])}</td>
-            <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['Vl Crédito'])}</td>
-            <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['Vl Débito'])}</td>
-            <td class='valores'>{formatar_moeda(row['Movimentação Líquida'])}</td>
-            <td class='valores valor-destaque'>{formatar_moeda(row['Saldo Final'])}</td>
-            <td class='valores' style='color:{delta_color}; font-weight:800;'>{formatar_moeda(row['Delta R$'])}</td>
-            <td class='valores' style='color:{delta_color}; font-weight:800;'>{row['Delta %']:.1f}%</td>
-        </tr>
-        """
+<tr>
+    <td><b>{row['Data_Label']}</b></td>
+    <td class='valores'>{formatar_moeda(row['Saldo Inicial'])}</td>
+    <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['Vl Crédito'])}</td>
+    <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['Vl Débito'])}</td>
+    <td class='valores'>{formatar_moeda(row['Movimentação Líquida'])}</td>
+    <td class='valores valor-destaque'>{formatar_moeda(row['Saldo Final'])}</td>
+    <td class='valores' style='color:{delta_color}; font-weight:800;'>{formatar_moeda(row['Delta R$'])}</td>
+    <td class='valores' style='color:{delta_color}; font-weight:800;'>{row['Delta %']:.1f}%</td>
+</tr>"""
+    
     html_diario += """
-    </tbody>
-    </table>
-    </div>
-    """
+</tbody>
+</table>
+</div>"""
     st.markdown(html_diario, unsafe_allow_html=True)
 else:
     st.info("Nenhuma movimentação registrada no período selecionado.")
@@ -1024,37 +1018,34 @@ if not df_aplicacoes_nova.empty:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>RESUMO DE APLICAÇÕES FINANCEIRAS</div>", unsafe_allow_html=True)
 
-    html_app = """
-    <div class='tabela-container'>
-    <table class='tabela-financeira'>
-    <thead>
-        <tr>
-            <th>Banco / Conta</th>
-            <th class='valores'>Saldo Inicial</th>
-            <th class='valores'>Aplicações</th>
-            <th class='valores'>Rendimentos</th>
-            <th class='valores'>Impostos</th>
-            <th class='valores'>Resgates</th>
-            <th class='valores'>Saldo Atual</th>
-        </tr>
-    </thead>
-    <tbody>
-    """
+    html_app = """<div class='tabela-container'>
+<table class='tabela-financeira'>
+<thead>
+    <tr>
+        <th>Banco / Conta</th>
+        <th class='valores'>Saldo Inicial</th>
+        <th class='valores'>Aplicações</th>
+        <th class='valores'>Rendimentos</th>
+        <th class='valores'>Impostos</th>
+        <th class='valores'>Resgates</th>
+        <th class='valores'>Saldo Atual</th>
+    </tr>
+</thead>
+<tbody>"""
     for _, row in df_aplicacoes_nova.iterrows():
         html_app += f"""
-        <tr>
-            <td><b>{row['banco']}</b></td>
-            <td class='valores'>{formatar_moeda(row['inicial'])}</td>
-            <td class='valores'>{formatar_moeda(row['aplicaç'])}</td>
-            <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['rendimento'])}</td>
-            <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['imposto'])}</td>
-            <td class='valores'>{formatar_moeda(row['resgate'])}</td>
-            <td class='valores valor-destaque'>{formatar_moeda(row['atual'])}</td>
-        </tr>
-        """
+<tr>
+    <td><b>{row['banco']}</b></td>
+    <td class='valores'>{formatar_moeda(row['inicial'])}</td>
+    <td class='valores'>{formatar_moeda(row['aplicaç'])}</td>
+    <td class='valores' style='color:#1cc88a;'>{formatar_moeda(row['rendimento'])}</td>
+    <td class='valores' style='color:#e74a3b;'>{formatar_moeda(row['imposto'])}</td>
+    <td class='valores'>{formatar_moeda(row['resgate'])}</td>
+    <td class='valores valor-destaque'>{formatar_moeda(row['atual'])}</td>
+</tr>"""
+        
     html_app += """
-    </tbody>
-    </table>
-    </div>
-    """
+</tbody>
+</table>
+</div>"""
     st.markdown(html_app, unsafe_allow_html=True)
