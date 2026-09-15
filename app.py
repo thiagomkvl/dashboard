@@ -83,7 +83,7 @@ pg_cockpit = st.Page("pages/cockpit.py", title="Motor Cnab", icon="🏗️")
 
 # Cria o menu lateral automaticamente
 nav = st.navigation(
-    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo]},
+    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo, pg_cockpit]},
     position="sidebar"
 )
 
