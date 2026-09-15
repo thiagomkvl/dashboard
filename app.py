@@ -78,6 +78,7 @@ pg_saldo = st.Page("pages/Saldo_Mes.py", title="Saldo Mensal", icon="📊")
 pg_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa Analítico", icon="💰")
 pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="📄")
 pg_obras = st.Page("pages/painel_obras.py", title="Acompanhamento de Obras", icon="🏗️")
+pg_cockpit = st.Page("pages/cockpit.py", title="Motor Cnab", icon="🏗️")
 
 
 # Cria o menu lateral automaticamente
