@@ -207,7 +207,7 @@ def carregar_dados(data_inicio, data_fim):
         entradas_periodo = 0.0
         saidas_periodo = 0.0
         df_process = pd.DataFrame()
-        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %', 'Mov_Delta_Caixa'])
+        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %'])
 
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -224,80 +224,46 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
                 
-                def normalizar_texto(txt):
-                    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
-
-                # ------------------------------------------------------------------
-                # CLASSIFICAÇÃO DOS MOVIMENTOS
-                # ------------------------------------------------------------------
+                def normalizar_texto(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
                 serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
-                serie_operac_norm = df_ext[col_operac].fillna('OPERACIONAL').astype(str).apply(normalizar_texto).str.strip()
+                serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
                 serie_subgrupo = df_ext[col_subgrupo].fillna('').astype(str).apply(normalizar_texto)
 
-                # Transferência interna: permanece fora da operação.
+                # Regra de transferência interna: não é operacional.
                 df_process['É Transf'] = (
                     serie_tipo.str.contains('transferencia', na=False)
                     & serie_tipo.str.contains('interna', na=False)
                 )
 
-                # Liberação de empréstimo:
-                # movimento financeiro real, porém não operacional.
+                # Regra de liberação de empréstimo: é um ingresso/saída real de caixa,
+                # portanto continua afetando o saldo bancário, mas NÃO participa do
+                # resultado líquido operacional nem do Delta gerencial.
                 texto_classificacao = (
-                    serie_tipo + ' ' + serie_operac_norm + ' ' + serie_subgrupo
-                ).str.strip()
-
-                df_process['É Empréstimo'] = (
-                    texto_classificacao.str.contains(r'emprestimo', regex=True, na=False)
-                    & texto_classificacao.str.contains(r'liberacao|liberado', regex=True, na=False)
+                    serie_tipo + ' ' +
+                    serie_operac.apply(normalizar_texto) + ' ' +
+                    serie_subgrupo
+                )
+                df_process['É Emprestimo'] = (
+                    texto_classificacao.str.contains(r'liberacao.*emprestimo|emprestimo.*liberacao', regex=True, na=False)
+                    | texto_classificacao.str.contains(r'liberado.*emprestimo|emprestimo.*liberado', regex=True, na=False)
                 )
 
-                is_operacional = serie_operac_norm.eq('operacional')
-
-                # Classificação gerencial do movimento.
-                df_process['Classificação Financeira'] = 'NÃO OPERACIONAL'
-                df_process.loc[df_process['É Transf'], 'Classificação Financeira'] = 'TRANSFERÊNCIA INTERNA'
-                df_process.loc[df_process['É Empréstimo'], 'Classificação Financeira'] = 'EMPRÉSTIMO - NÃO OPERACIONAL'
-                df_process.loc[
-                    is_operacional & ~df_process['É Transf'] & ~df_process['É Empréstimo'],
-                    'Classificação Financeira'
-                ] = 'OPERACIONAL'
-
-                # Entradas/Saídas Operacionais.
-                df_process['Cred_Op'] = df_process['Vl Crédito'].where(
-                    is_operacional & ~df_process['É Transf'] & ~df_process['É Empréstimo'],
-                    0.0
-                )
-                df_process['Deb_Op'] = df_process['Vl Débito'].where(
-                    is_operacional & ~df_process['É Transf'] & ~df_process['É Empréstimo'],
-                    0.0
+                is_operacional = (
+                    serie_operac.eq('OPERACIONAL')
+                    & ~df_process['É Transf']
+                    & ~df_process['É Emprestimo']
                 )
 
-                # Transferências internas.
-                df_process['Cred_Tr'] = df_process['Vl Crédito'].where(
-                    df_process['É Transf'], 0.0
-                )
-                df_process['Deb_Tr'] = df_process['Vl Débito'].where(
-                    df_process['É Transf'], 0.0
-                )
+                df_process['Cred_Op'] = df_process['Vl Crédito'].where(is_operacional, 0.0)
+                df_process['Deb_Op'] = df_process['Vl Débito'].where(is_operacional, 0.0)
+                df_process['Cred_Tr'] = df_process['Vl Crédito'].where(df_process['É Transf'], 0.0)
+                df_process['Deb_Tr'] = df_process['Vl Débito'].where(df_process['É Transf'], 0.0)
 
-                # Empréstimos: entram no saldo bancário real, mas ficam
-                # separados da operação e do Delta gerencial.
-                df_process['Cred_Emp'] = df_process['Vl Crédito'].where(
-                    df_process['É Empréstimo'], 0.0
-                )
-                df_process['Deb_Emp'] = df_process['Vl Débito'].where(
-                    df_process['É Empréstimo'], 0.0
-                )
-
-                # Movimento utilizado exclusivamente no Delta do Caixa.
-                # Exclui transferências internas e liberações de empréstimo.
-                df_process['Mov_Delta_Caixa'] = (
+                # Movimento gerencial: empréstimo entra no saldo real, mas não no Delta/resultado.
+                df_process['Mov_Delta'] = (
                     df_process['Vl Crédito'] - df_process['Vl Débito']
-                ).where(
-                    (~df_process['É Transf']) & (~df_process['É Empréstimo']),
-                    0.0
-                )
-
+                ).where(~df_process['É Emprestimo'], 0.0)
+                
                 dt_ini_pd = pd.to_datetime(data_inicio); dt_fim_pd = pd.to_datetime(data_fim)
                 
                 df_before = df_process[df_process['Data'] < dt_ini_pd].copy()
@@ -318,50 +284,36 @@ def carregar_dados(data_inicio, data_fim):
                     return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
 
                 if not df_period.empty:
+                    # Movimentação bancária real: tudo o que efetivamente entrou/saiu da conta,
+                    # incluindo transferências, empréstimos e demais movimentos não operacionais.
                     df_period_grouped = df_period.groupby('Conta Bancária').agg({
                         'Cred_Op': 'sum',
                         'Deb_Op': 'sum',
                         'Cred_Tr': 'sum',
                         'Deb_Tr': 'sum',
-                        'Cred_Emp': 'sum',
-                        'Deb_Emp': 'sum'
+                        'Vl Crédito': 'sum',
+                        'Vl Débito': 'sum'
                     }).reset_index()
-
-                    df_fim_mes = df_fim_mes.merge(
-                        df_period_grouped,
-                        on='Conta Bancária',
-                        how='outer'
-                    ).fillna(0)
-
-                    # Totais operacionais do período.
-                    # Empréstimos e transferências ficam fora da movimentação operacional.
+                    df_period_grouped['Mov_Banco'] = (
+                        df_period_grouped['Vl Crédito'] - df_period_grouped['Vl Débito']
+                    )
+                    df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
+                    
+                    # Totais operacionais do período selecionado.
+                    # Empréstimos continuam no saldo real, porém não compõem
+                    # entradas/saídas operacionais nem o resultado líquido.
                     df_period_caixa = df_period[
                         df_period['Conta Bancária'].apply(definir_tipo_aux).isin(['Disponível', 'Aplicação'])
-                    ]
+                    ].copy()
                     entradas_periodo = df_period_caixa['Cred_Op'].sum()
                     saidas_periodo = df_period_caixa['Deb_Op'].sum()
                 else:
-                    for c in [
-                        'Cred_Op', 'Deb_Op',
-                        'Cred_Tr', 'Deb_Tr',
-                        'Cred_Emp', 'Deb_Emp'
-                    ]:
+                    for c in ['Cred_Op', 'Deb_Op', 'Cred_Tr', 'Deb_Tr', 'Vl Crédito', 'Vl Débito', 'Mov_Banco']:
                         df_fim_mes[c] = 0.0
-
+                
                 df_fim_mes['Saldo Inicial'] = df_fim_mes['Saldo Inicial'].fillna(0)
                 df_fim_mes['Conta Garantida'] = df_fim_mes['Conta Garantida'].fillna(0)
-
-                df_fim_mes.rename(
-                    columns={
-                        'Cred_Op': 'Entrada Op',
-                        'Deb_Op': 'Saída Op',
-                        'Cred_Tr': 'Entrada Tr',
-                        'Deb_Tr': 'Saída Tr',
-                        'Cred_Emp': 'Entrada Emp',
-                        'Deb_Emp': 'Saída Emp'
-                    },
-                    inplace=True
-                )
+                df_fim_mes.rename(columns={'Cred_Op': 'Entrada Op', 'Deb_Op': 'Saída Op', 'Cred_Tr': 'Entrada Tr', 'Deb_Tr': 'Saída Tr'}, inplace=True)
         except Exception as e: print("Aviso ao ler e processar extratos:", e)
 
         def definir_tipo(nome): 
@@ -370,80 +322,56 @@ def carregar_dados(data_inicio, data_fim):
             return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
 
         df_fim_mes['Tipo'] = df_fim_mes['Conta Bancária'].apply(definir_tipo)
+        # Saldo bancário real: considera toda movimentação da conta, inclusive
+        # liberação de empréstimo, transferência interna e demais movimentos não operacionais.
+        df_fim_mes['Saldo Final'] = df_fim_mes['Saldo Inicial'] + df_fim_mes['Mov_Banco']
 
-        # Saldo Final = saldo bancário REAL.
-        # A liberação de empréstimo entra no saldo, pois o dinheiro entrou
-        # efetivamente na conta, mas permanece fora do resultado operacional.
-        df_fim_mes['Saldo Final'] = (
-            df_fim_mes['Saldo Inicial']
-            + df_fim_mes['Entrada Op'] - df_fim_mes['Saída Op']
-            + df_fim_mes['Entrada Tr'] - df_fim_mes['Saída Tr']
-            + df_fim_mes['Entrada Emp'] - df_fim_mes['Saída Emp']
-        )
-
-        saldo_inicial_caixa = df_fim_mes[
-            df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])
-        ]['Saldo Inicial'].sum()
-
+        saldo_inicial_caixa = df_fim_mes[df_fim_mes['Tipo'].isin(['Disponível', 'Aplicação'])]['Saldo Inicial'].sum()
+        
         if df_extratos is not None and not df_extratos.empty:
-            df_ext_caixa = df_extratos[
-                df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])
-            ].copy()
-
+            df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({
                 'Vl Crédito': 'sum',
                 'Vl Débito': 'sum',
                 'Cred_Op': 'sum',
                 'Deb_Op': 'sum',
-                'Cred_Emp': 'sum',
-                'Deb_Emp': 'sum',
-                'Mov_Delta_Caixa': 'sum'
+                'Mov_Delta': 'sum'
             }).reset_index()
-
+            
             df_graficos = df_extratos_diario.sort_values('Data').copy()
-
-            # Movimento bancário REAL do dia.
-            df_graficos['Movimentação Líquida'] = (
-                df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
-            )
-
-            # Movimento operacional do dia.
+            # Movimentação Líquida representa o caixa físico/real.
+            # O empréstimo permanece aqui porque efetivamente altera o saldo bancário.
+            df_graficos['Movimentação Líquida'] = df_graficos['Vl Crédito'] - df_graficos['Vl Débito']
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
-
+            
             saldos_iniciais = []
             saldos_finais = []
             delta_rs = []
             delta_pct = []
-
+            
             saldo_atual_iter = saldo_inicial_caixa
             delta_acumulado = 0.0
-
             for idx, row in df_graficos.iterrows():
                 si = saldo_atual_iter
 
-                # Saldo Final continua refletindo toda a movimentação bancária,
-                # inclusive a liberação de empréstimo.
-                mov_bancario = row['Vl Crédito'] - row['Vl Débito']
-                sf = si + mov_bancario
+                # Saldo final real: inclui empréstimos e qualquer outra movimentação bancária.
+                mov_saldo_real = row['Vl Crédito'] - row['Vl Débito']
+                sf = si + mov_saldo_real
 
-                # Delta gerencial não considera empréstimo nem transferência interna.
-                delta_acumulado += row['Mov_Delta_Caixa']
+                # Delta gerencial: exclui somente a liberação de empréstimo.
+                # Assim, o empréstimo não cria resultado positivo artificial.
+                delta_acumulado += row['Mov_Delta']
                 d_rs = delta_acumulado
-
-                d_pct = (
-                    (d_rs / saldo_inicial_caixa) * 100
-                    if saldo_inicial_caixa != 0
-                    else 0.0
-                )
-
+                d_pct = (delta_acumulado / saldo_inicial_caixa) * 100 if saldo_inicial_caixa != 0 else 0.0
+                
                 saldos_iniciais.append(si)
                 saldos_finais.append(sf)
                 delta_rs.append(d_rs)
                 delta_pct.append(d_pct)
-
+                
                 saldo_atual_iter = sf
-
+                
             df_graficos['Saldo Inicial'] = saldos_iniciais
             df_graficos['Saldo Final'] = saldos_finais
             df_graficos['Delta R$'] = delta_rs
@@ -690,8 +618,6 @@ col_tab, col_diario = st.columns([1.6, 1])
 
 with col_tab:
     st.markdown(f"<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
-    # A tabela gerencial continua exibindo Operação e Transferências.
-    # O empréstimo fica fora dessas colunas, mas já está incorporado ao Saldo Final.
     df_view = df_consolidado[['Tipo', col_conta, 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Entrada Tr', 'Saída Tr', 'Saldo Final']].copy()
     
     def get_ordem(banco_nome):
@@ -746,8 +672,6 @@ with col_diario:
     st.markdown(f"<div class='section-title'>SALDO DIÁRIO CONSOLIDADO</div>", unsafe_allow_html=True)
     
     if not df_graficos.empty:
-        # Delta = variação gerencial acumulada, sem liberações de empréstimos
-        # e sem transferências internas.
         df_diario_view = df_graficos.sort_values(by='Data', ascending=False)[['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %']].copy()
     else:
         df_diario_view = pd.DataFrame(columns=['Data_Label', 'Saldo Inicial', 'Entrada Op', 'Saída Op', 'Saldo Final', 'Delta R$', 'Delta %'])
