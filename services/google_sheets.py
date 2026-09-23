@@ -17,7 +17,7 @@ def obter_config_gsheets():
         )
         st.stop()
 
-    # Filtra apenas as chaves da Service Account aceitas pelo gspread
+    # Chaves da Service Account aceitas pelo gspread / gspread_pandas
     sa_keys = [
         "type", "project_id", "private_key_id", "private_key",
         "client_email", "client_id", "auth_uri", "token_uri",
@@ -27,18 +27,8 @@ def obter_config_gsheets():
     
     return creds_dict, spreadsheet_ref
 
-def obter_cliente_gsheets():
-    """Autentica o cliente gspread com base nas credenciais salvas."""
-    try:
-        creds_dict, _ = obter_config_gsheets()
-        return Client.from_json_dict(creds_dict)
-    except Exception as e:
-        st.error(f"⚠️ Erro ao autenticar no Google Sheets: {e}")
-        st.stop()
-
-@st.cache_data(ttl=120)
-def carregar_dados_sheets(spreadsheet_ref: str = None):
-    """Carrega as abas Extratos_Bancos e Base_Tasy."""
+def obter_spread(spreadsheet_ref: str = None):
+    """Instancia a classe Spread da biblioteca gspread_pandas com as credenciais."""
     creds_dict, ref_secret = obter_config_gsheets()
     ref_final = spreadsheet_ref or ref_secret
 
@@ -47,8 +37,22 @@ def carregar_dados_sheets(spreadsheet_ref: str = None):
         st.stop()
 
     try:
-        c = Client.from_json_dict(creds_dict)
-        spread = Spread(ref_final, client=c)
+        # No gspread_pandas, o dicionário é passado via parâmetro config
+        client = Client(config=creds_dict)
+        return Spread(ref_final, client=client)
+    except Exception as e:
+        try:
+            # Fallback passando o config diretamente para a Spread
+            return Spread(ref_final, config=creds_dict)
+        except Exception as ex:
+            st.error(f"⚠️ Erro ao conectar ao Google Sheets: {e}")
+            st.stop()
+
+@st.cache_data(ttl=120)
+def carregar_dados_sheets(spreadsheet_ref: str = None):
+    """Carrega as abas Extratos_Bancos e Base_Tasy."""
+    try:
+        spread = obter_spread(spreadsheet_ref)
         
         df_bancos = spread.sheet_to_df(sheet='Extratos_Bancos', index=None)
         df_tasy = spread.sheet_to_df(sheet='Base_Tasy', index=None)
@@ -61,11 +65,7 @@ def carregar_dados_sheets(spreadsheet_ref: str = None):
 def salvar_matriz_sheets(df_matriz: pd.DataFrame, spreadsheet_ref: str = None):
     """Grava o resultado da conciliação na aba Matriz_Conciliacao."""
     try:
-        creds_dict, ref_secret = obter_config_gsheets()
-        ref_final = spreadsheet_ref or ref_secret
-
-        c = Client.from_json_dict(creds_dict)
-        spread = Spread(ref_final, client=c)
+        spread = obter_spread(spreadsheet_ref)
         
         df_gravar = df_matriz.copy()
         if 'tasy_ids' in df_gravar.columns:
