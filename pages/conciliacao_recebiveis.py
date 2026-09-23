@@ -4,8 +4,6 @@ from core.normalizacao import normalizar_recebimentos, normalizar_tasy
 from core.conciliacao import executar_conciliacao
 from services.google_sheets import carregar_dados_sheets, salvar_matriz_sheets
 
-SPREADSHEET_ID = st.secrets.get("SPREADSHEET_ID")
-
 st.set_page_config(page_title="Conciliação de Recebíveis", layout="wide", page_icon="🏦")
 st.title("🏦 Painel de Conciliação de Recebíveis")
 
@@ -15,7 +13,8 @@ with col_h2:
         st.cache_data.clear()
         st.rerun()
 
-df_bancos_raw, df_tasy_raw = carregar_dados_sheets(SPREADSHEET_ID)
+# Carregamento automático utilizando as credenciais de st.secrets["connections"]["gsheets"]
+df_bancos_raw, df_tasy_raw = carregar_dados_sheets()
 
 if df_bancos_raw.empty or df_tasy_raw.empty:
     st.warning("Aguardando lançamentos nas abas Extratos_Bancos e Base_Tasy no Google Sheets.")
@@ -49,7 +48,7 @@ c5.metric("Tasy Sem Recebimento", f"R$ {tot_tasy_sobra:,.2f}", delta_color="off"
 
 st.divider()
 
-# Navegação interna por Abas
+# Navegação por Abas
 tab1, tab2, tab3, tab4 = st.tabs([
     "🔍 Validador", "⚠️ Pendências", "📊 Data + Banco", "🛡️ Integridade"
 ])
@@ -63,7 +62,10 @@ with tab1:
     if f_banco: df_f = df_f[df_f['banco'].isin(f_banco)]
     if f_status: df_f = df_f[df_f['status'].isin(f_status)]
     
-    st.dataframe(df_f[['conciliacao_id', 'data_recebimento', 'banco', 'valor_recebimento', 'valor_tasy', 'diferenca', 'tipo_conciliacao', 'status', 'motivo']], use_container_width=True)
+    st.dataframe(
+        df_f[['conciliacao_id', 'data_recebimento', 'banco', 'valor_recebimento', 'valor_tasy', 'diferenca', 'tipo_conciliacao', 'status', 'motivo']], 
+        use_container_width=True
+    )
 
 with tab2:
     st.subheader("Pendências Operacionais")
@@ -71,7 +73,10 @@ with tab2:
     if df_p.empty:
         st.success("Tudo conciliado! Nenhuma pendência encontrada.")
     else:
-        st.dataframe(df_p[['recebimento_id', 'data_recebimento', 'banco', 'valor_recebimento', 'valor_tasy', 'diferenca', 'status', 'motivo']], use_container_width=True)
+        st.dataframe(
+            df_p[['recebimento_id', 'data_recebimento', 'banco', 'valor_recebimento', 'valor_tasy', 'diferenca', 'status', 'motivo']], 
+            use_container_width=True
+        )
 
 with tab3:
     st.subheader("Conferência Agregada por Data e Banco")
@@ -91,5 +96,5 @@ with tab4:
         st.error(f"❌ Divergência em Recebimentos: Matriz ({soma_matriz}) vs Extrato ({tot_rec})")
 
 if st.sidebar.button("💾 Persistir Resultado no Google Sheets", use_container_width=True):
-    salvar_matriz_sheets(SPREADSHEET_ID, df_matriz)
-    st.sidebar.success("Matriz gravada com sucesso!")
+    if salvar_matriz_sheets(df_matriz):
+        st.sidebar.success("Matriz gravada com sucesso no Google Sheets!")
