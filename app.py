@@ -85,7 +85,7 @@ pg_conciliação = st.Page("pages/conciliacao_recebiveis.py", title="Conciliaç�
 
 # Cria o menu lateral automaticamente
 nav = st.navigation(
-    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo, pg_cockpit, pg_conciliação]},
+    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo, pg_cockpit]},
     position="sidebar"
 )
 
