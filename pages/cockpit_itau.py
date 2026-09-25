@@ -19,6 +19,12 @@ def format_moeda(valor, tamanho):
     valor_str = f"{valor_float:.2f}".replace('.', '')
     return format_num(valor_str, tamanho)
 
+def validar_tamanho(linha, nome_registro):
+    """Garante que todas as linhas possuam rigorosamente 240 caracteres."""
+    if len(linha) != 240:
+        raise ValueError(f"Erro no registro '{nome_registro}': gerado com {len(linha)} caracteres (esperado: 240).")
+    return linha
+
 # ==========================================
 # GERADORES DE REGISTRO - ITAÚ SISPAG
 # ==========================================
@@ -50,7 +56,7 @@ def gerar_header_arquivo(empresa, seq_arquivo=1):
         format_num("1600", 5) +             # 167-171: Densidade
         format_str("", 69)                  # 172-240: Brancos
     )
-    return linha
+    return validar_tamanho(linha, "Header de Arquivo")
 
 def gerar_header_lote(empresa):
     linha = (
@@ -83,26 +89,27 @@ def gerar_header_lote(empresa):
         format_str("", 8) +                 # 223-230: Brancos
         format_str("", 10)                  # 231-240: Ocorrências
     )
-    return linha
+    return validar_tamanho(linha, "Header de Lote")
 
 def gerar_segmento_a(pagamento, num_registro):
+    # Formatação zerada de Agência/Conta para pagamento via Chave PIX (Pos 024 a 043)
+    dados_bancarios_fav = "00000 000000000000 0" # 5 zeros + 1 espaço + 12 zeros + 1 espaço + 1 zero = 20 posições
+    
     linha = (
         "341" +                             # 001-003: Banco
         "0001" +                            # 004-007: Lote
         "3" +                               # 008-008: Tipo de Registro (3 = Detalhe)
-        format_num(num_registro, 5) +       # 009-013: Número do Registro
+        format_num(num_registro, 5) +       # 009-013: Número do Registro no Lote
         "A" +                               # 014-014: Segmento A
         "000" +                             # 015-017: Tipo de Movimentação (000 = Inclusão)
         "000" +                             # 018-020: Câmara (000 para PIX)
-        format_num(pagamento['banco_fav'], 3) + # 021-023: Banco Favorecido
-        format_str("", 20) +                # 024-043: Ag/Conta (Em branco para PIX Chave)
+        format_num(pagamento['banco_fav'], 3) + # 021-023: Banco Favorecido (000 p/ PIX Chave)
+        dados_bancarios_fav +               # 024-043: Agência e Conta Zeradas (20 posições)
         format_str(pagamento['nome_fav'], 30) + # 044-073: Nome Favorecido
         format_str(pagamento['seu_numero'], 20) + # 074-093: Seu Número / ID Doc
         format_num(pagamento['data_pagto'], 8) +  # 094-101: Data de Pagto (DDMMAAAA)
         "009" +                             # 102-104: Moeda (009 p/ PIX)
-        format_str("", 8) +                 # 105-112: ISPB
-        "  " +                              # 113-114: Identificação Transação
-        format_num("", 5) +                 # 115-119: Zeros
+        format_num(0, 15) +                 # 105-119: ISPB (8), Complemento (2) e Zeros (5) -> Total 15 Zeros
         format_moeda(pagamento['valor'], 15) + # 120-134: Valor Pagto
         format_str("", 15) +                # 135-149: Nosso Número (Banco)
         format_str("", 5) +                 # 150-154: Brancos
@@ -117,25 +124,25 @@ def gerar_segmento_a(pagamento, num_registro):
         "0" +                               # 230-230: Aviso
         format_str("", 10)                  # 231-240: Ocorrências
     )
-    return linha
+    return validar_tamanho(linha, f"Segmento A (Registro {num_registro})")
 
 def gerar_segmento_b_pix(pagamento, num_registro):
     linha = (
         "341" +                             # 001-003: Banco
         "0001" +                            # 004-007: Lote
         "3" +                               # 008-008: Tipo de Registro (3)
-        format_num(num_registro, 5) +       # 009-013: Número do Registro
+        format_num(num_registro, 5) +       # 009-013: Número do Registro no Lote
         "B" +                               # 014-014: Segmento B
-        format_str(pagamento['tipo_chave'], 2) + # 015-016: Tipo Chave (01=CPF, 02=CNPJ, 03=Celular, 04=E-mail, 05=Aleatória)
+        format_str(pagamento['tipo_chave'], 2) + # 015-016: Tipo Chave (01=CPF, 02=CNPJ, 03=Celular, 04=E-mail, 05=EVP)
         " " +                               # 017-017: Branco
         str(pagamento['tipo_doc_fav']) +    # 018-018: Inscrição Fav (1=CPF, 2=CNPJ)
         format_num(pagamento['cnpj_cpf_fav'], 14) + # 019-032: CNPJ/CPF
-        format_str("", 65) +                # 033-127: Zeros/Brancos para Info entre Usuários
-        format_str(pagamento['chave_pix'], 100) + # 128-227: Chave PIX
-        format_str("", 3) +                 # 228-230: Brancos
+        format_str("", 95) +                # 033-127: Brancos (95 posições)
+        format_str(pagamento['chave_pix'], 100) + # 128-227: Chave PIX (100 posições)
+        format_str("", 3) +                 # 228-230: Brancos (3 posições)
         format_str("", 10)                  # 231-240: Ocorrências
     )
-    return linha
+    return validar_tamanho(linha, f"Segmento B (Registro {num_registro})")
 
 def gerar_trailer_lote(qtd_registros, valor_total):
     linha = (
@@ -143,13 +150,13 @@ def gerar_trailer_lote(qtd_registros, valor_total):
         "0001" +                            # 004-007: Lote
         "5" +                               # 008-008: Trailer de Lote
         format_str("", 9) +                 # 009-017: Brancos
-        format_num(qtd_registros, 6) +      # 018-023: Qtd Registros no Lote
+        format_num(qtd_registros, 6) +      # 018-023: Qtd Registros no Lote (Header + Detalhes + Trailer)
         format_moeda(valor_total, 18) +     # 024-041: Somatório dos Valores
         format_num("", 18) +                # 042-059: Zeros
         format_str("", 171) +               # 060-230: Brancos
         format_str("", 10)                  # 231-240: Ocorrências
     )
-    return linha
+    return validar_tamanho(linha, "Trailer de Lote")
 
 def gerar_trailer_arquivo(qtd_lotes, qtd_registros_arq):
     linha = (
@@ -158,10 +165,10 @@ def gerar_trailer_arquivo(qtd_lotes, qtd_registros_arq):
         "9" +                               # 008-008: Trailer de Arquivo
         format_str("", 9) +                 # 009-017: Brancos
         format_num(qtd_lotes, 6) +          # 018-023: Qtd Lotes
-        format_num(qtd_registros_arq, 6) +  # 024-029: Qtd Registros Arquivo
+        format_num(qtd_registros_arq, 6) +  # 024-029: Qtd Registros Arquivo (Header Arq + Lote + Details + Trailers)
         format_str("", 211)                 # 030-240: Brancos
     )
-    return linha
+    return validar_tamanho(linha, "Trailer de Arquivo")
 
 # ==========================================
 # INTERFACE STREAMLIT
@@ -169,11 +176,11 @@ def gerar_trailer_arquivo(qtd_lotes, qtd_registros_arq):
 st.set_page_config(page_title="Gerador CNAB 240 - Itaú PIX", layout="wide")
 
 st.title("Motor CNAB 240 - Itaú SISPAG (Foco PIX)")
-st.markdown("Interface para geração de lotes de pagamento PIX (Transferência por Chave) no padrão Itaú SISPAG com terminação de linha `CRLF` corrigida.")
+st.markdown("Interface para geração de lotes de pagamento PIX (Transferência por Chave) no padrão Itaú SISPAG.")
 
 st.sidebar.header("Dados do Hospital (Pagador)")
 empresa = {
-    'cnpj': st.sidebar.text_input("CNPJ (Apenas números)", "04238968000100"),
+    'cnpj': st.sidebar.text_input("CNPJ (Apenas números)", "04238968000101"), # CNPJ ajustado com DV correto
     'agencia': st.sidebar.text_input("Agência", "6305"),
     'conta': st.sidebar.text_input("Conta", "01566"),
     'dac': st.sidebar.text_input("Dígito Conta (DAC)", "8"),
@@ -187,14 +194,13 @@ empresa = {
 
 st.header("Lançamentos de Pagamento PIX")
 
-# Tabela de dados iniciais para testes / demonstração
 data_inicial = {
     "Seu Número": ["DOC001", "DOC002"],
     "Nome Favorecido": ["FORNECEDOR MEDICAMENTOS LTDA", "SERVICOS MEDICOS LTDA"],
-    "CPF/CNPJ Favorecido": ["11111111000199", "22222222000188"],
+    "CPF/CNPJ Favorecido": ["11111111000191", "22222222000191"],
     "Tipo Doc (1=CPF, 2=CNPJ)": ["2", "2"],
     "Tipo Chave": ["02", "02"],  # 01=CPF, 02=CNPJ, 03=Celular, 04=E-mail, 05=EVP
-    "Chave PIX": ["11111111000199", "22222222000188"],
+    "Chave PIX": ["11111111000191", "22222222000191"],
     "Valor": [1500.50, 3400.00],
     "Data Pagto (DDMMAAAA)": [datetime.now().strftime("%d%m%Y"), datetime.now().strftime("%d%m%Y")]
 }
@@ -203,59 +209,62 @@ df_pagamentos = pd.DataFrame(data_inicial)
 df_editado = st.data_editor(df_pagamentos, num_rows="dynamic")
 
 if st.button("Gerar Remessa CNAB 240 (PIX)"):
-    linhas_cnab = []
-    
-    # 1. Header do Arquivo
-    linhas_cnab.append(gerar_header_arquivo(empresa, 1))
-    
-    # 2. Header do Lote (Lote 1)
-    linhas_cnab.append(gerar_header_lote(empresa))
-    
-    num_registro_lote = 1
-    valor_total_lote = 0.0
-    
-    # 3. Lançamentos PIX (Segmentos A e B)
-    for index, row in df_editado.iterrows():
-        pagamento = {
-            'seu_numero': str(row["Seu Número"]),
-            'nome_fav': str(row["Nome Favorecido"]),
-            'cnpj_cpf_fav': str(row["CPF/CNPJ Favorecido"]),
-            'tipo_doc_fav': str(row["Tipo Doc (1=CPF, 2=CNPJ)"]),
-            'banco_fav': "000",
-            'data_pagto': str(row["Data Pagto (DDMMAAAA)"]),
-            'valor': float(row["Valor"]),
-            'tipo_chave': str(row["Tipo Chave"]),
-            'chave_pix': str(row["Chave PIX"])
-        }
+    try:
+        linhas_cnab = []
         
-        # Segmento A
-        linhas_cnab.append(gerar_segmento_a(pagamento, num_registro_lote))
-        num_registro_lote += 1
+        # 1. Header do Arquivo
+        linhas_cnab.append(gerar_header_arquivo(empresa, 1))
         
-        # Segmento B (Informa a Chave PIX)
-        linhas_cnab.append(gerar_segmento_b_pix(pagamento, num_registro_lote))
-        num_registro_lote += 1
+        # 2. Header do Lote (Lote 1)
+        linhas_cnab.append(gerar_header_lote(empresa))
         
-        valor_total_lote += pagamento['valor']
+        num_registro_lote = 1
+        valor_total_lote = 0.0
         
-    # 4. Trailer do Lote
-    qtd_registros_lote = num_registro_lote + 1 
-    linhas_cnab.append(gerar_trailer_lote(qtd_registros_lote, valor_total_lote))
-    
-    # 5. Trailer do Arquivo
-    qtd_lotes = 1
-    qtd_registros_arq = qtd_registros_lote + 2
-    linhas_cnab.append(gerar_trailer_arquivo(qtd_lotes, qtd_registros_arq))
-    
-    # Concatenação com quebra CRLF (\r\n) em todas as linhas, inclusive após a última
-    cnab_texto = "\r\n".join(linhas_cnab) + "\r\n"
-    
-    st.success("Remessa Gerada com Sucesso!")
-    st.text_area("Pré-visualização CNAB 240", cnab_texto, height=300)
-    
-    st.download_button(
-        label="Download Arquivo de Remessa (.REM)",
-        data=cnab_texto,
-        file_name=f"ITAU_PIX_{datetime.now().strftime('%d%m%Y_%H%M%S')}.REM",
-        mime="text/plain"
-    )
+        # 3. Lançamentos PIX (Segmentos A e B)
+        for index, row in df_editado.iterrows():
+            pagamento = {
+                'seu_numero': str(row["Seu Número"]),
+                'nome_fav': str(row["Nome Favorecido"]),
+                'cnpj_cpf_fav': str(row["CPF/CNPJ Favorecido"]),
+                'tipo_doc_fav': str(row["Tipo Doc (1=CPF, 2=CNPJ)"]),
+                'banco_fav': "000",
+                'data_pagto': str(row["Data Pagto (DDMMAAAA)"]),
+                'valor': float(row["Valor"]),
+                'tipo_chave': str(row["Tipo Chave"]),
+                'chave_pix': str(row["Chave PIX"])
+            }
+            
+            # Segmento A
+            linhas_cnab.append(gerar_segmento_a(pagamento, num_registro_lote))
+            num_registro_lote += 1
+            
+            # Segmento B (Informa a Chave PIX)
+            linhas_cnab.append(gerar_segmento_b_pix(pagamento, num_registro_lote))
+            num_registro_lote += 1
+            
+            valor_total_lote += pagamento['valor']
+            
+        # 4. Trailer do Lote (Qtd de registros no lote = Header Lote + Detalhes + Trailer Lote)
+        qtd_registros_lote = num_registro_lote + 1 
+        linhas_cnab.append(gerar_trailer_lote(qtd_registros_lote, valor_total_lote))
+        
+        # 5. Trailer do Arquivo (Qtd total = Header Arq + Lote + Trailer Arq)
+        qtd_lotes = 1
+        qtd_registros_arq = len(linhas_cnab) + 1
+        linhas_cnab.append(gerar_trailer_arquivo(qtd_lotes, qtd_registros_arq))
+        
+        # Concatenação com quebra CRLF (\r\n) em todas as linhas, inclusive no final do arquivo
+        cnab_texto = "\r\n".join(linhas_cnab) + "\r\n"
+        
+        st.success("Remessa Gerada com Sucesso! Todos os registros possuem exatamente 240 caracteres.")
+        st.text_area("Pré-visualização CNAB 240", cnab_texto, height=300)
+        
+        st.download_button(
+            label="Download Arquivo de Remessa (.REM)",
+            data=cnab_texto,
+            file_name=f"ITAU_PIX_{datetime.now().strftime('%d%m%Y_%H%M%S')}.REM",
+            mime="text/plain"
+        )
+    except Exception as e:
+        st.error(f"Erro na geração do arquivo: {str(e)}")
