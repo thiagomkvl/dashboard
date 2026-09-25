@@ -80,12 +80,14 @@ pg_pagar = st.Page("pages/painel_pagar.py", title="Painel de Pagamentos", icon="
 pg_obras = st.Page("pages/painel_obras.py", title="Acompanhamento de Obras", icon="🏗️")
 pg_cockpit = st.Page("pages/cockpit.py", title="Motor Cnab", icon="🏗️")
 pg_conciliação = st.Page("pages/conciliacao_recebiveis.py", title="Conciliação Mensal", icon="🏗️")
+pg_cockpititau = st.Page("pages/cockpit_itau.py", title="Cnab Itaí", icon="🏗️")
+
 
 
 
 # Cria o menu lateral automaticamente
 nav = st.navigation(
-    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo, pg_cockpit]},
+    {"Módulos Financeiros": [pg_saldos, pg_fluxo, pg_pagar, pg_obras, pg_saldo, pg_cockpit, pg_cockpititau]},
     position="sidebar"
 )
 
