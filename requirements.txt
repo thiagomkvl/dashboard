@@ -1,0 +1,7 @@
+pandas
+plotly
+st-gsheets-connection
+openpyxl
+pdfplumber
+xlsxwriter
+html2image
