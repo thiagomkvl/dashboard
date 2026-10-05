@@ -26,112 +26,464 @@ except Exception as _err:
         st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
         return None
 
-# --- CUSTOM CSS (REFINADO) ---
+# --- CUSTOM CSS (MILIMETRICAMENTE ALINHADO) ---
 css = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
     :root {
-        --bg: #f8fafc;
+        --bg: #f4f7f8;
         --surface: #ffffff;
-        --border: #d0e3e4;
-        --text: #1a2035;
-        --muted: #64748b;
-        --primary: #008A8C;
-        --primary-dark: #004D4E;
-        --primary-medium: #006E6F;
-        --success: #10b981;
-        --danger: #ef4444;
-        --shadow: 0 4px 15px rgba(0, 77, 78, 0.08);
-        --shadow-soft: 0 1px 3px rgba(0, 77, 78, 0.06);
+        --surface-soft: #f8fbfb;
+        --border: #dbe5e6;
+        --border-soft: #edf2f3;
+        --text: #162326;
+        --muted: #647579;
+        --primary: #008a8c;
+        --primary-dark: #004d4e;
+        --primary-medium: #006e6f;
+        --success: #059669;
+        --danger: #dc4444;
+        --warning: #b7791f;
+        --shadow: 0 2px 10px rgba(0, 55, 56, 0.055);
+        --shadow-hover: 0 7px 22px rgba(0, 55, 56, 0.09);
         --radius: 10px;
     }
 
-    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
-    .main { background: var(--bg); }
-    .main .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 98%; }
-    div[data-testid="stVerticalBlock"] > div { gap: 0.5rem !important; }
+    html, body, [class*="css"] {
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+    }
 
-    /* Limpa o chrome padrão do Streamlit */
-    #MainMenu, footer { visibility: hidden; }
-    header[data-testid="stHeader"] { background: transparent; }
+    .main {
+        background:
+            linear-gradient(180deg, #f8fbfb 0%, var(--bg) 210px, var(--bg) 100%);
+    }
 
-    .stPlotlyChart { background: transparent !important; }
-    .js-plotly-plot, .plot-container { margin: 0 auto; }
+    .main .block-container {
+        padding-top: 0.55rem;
+        padding-bottom: 1.5rem;
+        max-width: 99%;
+    }
 
-    /* Sidebar */
-    [data-testid="stSidebar"] { background: var(--surface); border-right: 1px solid var(--border); }
-    [data-testid="stSidebar"] h3 { color: var(--primary-dark); font-size: 13px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; }
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.42rem !important;
+    }
 
-    /* Cabeçalho */
-    .dashboard-header { display: flex; justify-content: space-between; align-items: center; min-height: 64px; padding: 8px 4px 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
-    .header-period { min-width: 200px; }
-    .header-period .date { font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -0.25px; font-variant-numeric: tabular-nums; }
-    .header-period .label { margin-top: 3px; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
-    .header-center { text-align: center; }
-    .header-center h1 { margin: 0; padding: 0; color: var(--primary-dark); font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: 0.5px; }
-    .header-center p { margin: 3px 0 0; color: var(--muted); font-size: 10.5px; font-weight: 500; letter-spacing: 0.3px; }
+    .stPlotlyChart {
+        background: transparent !important;
+    }
 
-    /* KPIs Topo */
-    .kpi-card { position: relative; overflow: hidden; min-height: 92px; padding: 16px 20px; border-radius: var(--radius); box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
-    .kpi-card::after { content: ""; position: absolute; right: -28px; top: -28px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,0.06); pointer-events: none; }
-    .kpi-card.total { background: #003839; }
-    .kpi-card.corrente { background: #004D4E; }
-    .kpi-card.aplicado { background: #006E6F; }
-    .kpi-card.inicial { background: #008A8C; }
-    .kpi-title { font-size: 10px; line-height: 1.2; font-weight: 700; color: rgba(255,255,255,0.88); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0; }
-    .kpi-value { font-size: 25px; line-height: 1.15; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; white-space: nowrap; margin-top: 6px; font-variant-numeric: tabular-nums; }
-    .kpi-var { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; display: inline-flex; align-items: center; letter-spacing: 0.4px; font-variant-numeric: tabular-nums; }
-    .kpi-var.up { background: rgba(74, 222, 128, 0.25); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); }
-    .kpi-var.down { background: rgba(248, 113, 113, 0.25); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.4); }
-    .kpi-var.neutral { background: rgba(255, 255, 255, 0.18); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.3); }
+    .js-plotly-plot, .plot-container {
+        margin: 0 auto;
+    }
 
-    /* Seções */
-    .section-title { display: flex; align-items: center; min-height: 24px; margin-bottom: 8px; padding: 0 0 6px; border-bottom: 1.5px solid var(--border); color: var(--primary-dark); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
-    .section-title::before { content: ""; width: 3px; height: 12px; margin-right: 8px; border-radius: 3px; background: var(--primary); flex-shrink: 0; }
-    .section-title-inline { font-size: 9px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; margin-bottom: 2px; }
+    /* =========================
+       CABEÇALHO
+       ========================= */
+    .dashboard-header {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        min-height: 66px;
+        padding: 7px 2px 11px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+    }
 
-    /* Cards de movimentação */
-    .movement-card { padding: 9px 12px; border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-soft); min-height: 56px; }
-    .movement-card div:last-child { font-variant-numeric: tabular-nums; letter-spacing: -0.2px; white-space: nowrap; }
+    .header-period {
+        min-width: 210px;
+    }
 
-    /* Tabelas */
-    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 0px; }
-    .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 520px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 8px; }
+    .header-period .date {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.25px;
+    }
 
-    .tabela-container::-webkit-scrollbar, .tabela-container-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-    .tabela-container::-webkit-scrollbar-thumb, .tabela-container-scroll::-webkit-scrollbar-thumb { background: #b8d4d5; border-radius: 6px; }
-    .tabela-container::-webkit-scrollbar-track, .tabela-container-scroll::-webkit-scrollbar-track { background: transparent; }
+    .header-period .label {
+        margin-top: 3px;
+        font-size: 9px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.85px;
+    }
 
-    .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; font-size: 11px; }
-    .tabela-financeira th { background: #edf6f6; color: #475569; font-size: 9px; font-weight: 800; text-align: left; padding: 9px 10px; border-bottom: 1.5px solid var(--border); text-transform: uppercase; letter-spacing: 0.4px; position: sticky; top: 0; z-index: 2; white-space: nowrap; }
-    .tabela-financeira td { padding: 8px 10px; border-bottom: 1px solid #eef3f4; font-size: 11px; font-weight: 600; color: #1e293b; white-space: nowrap; }
-    .tabela-financeira tbody tr:nth-child(even) td { background: #fbfdfd; }
-    .tabela-financeira tbody tr:hover td { background: #f0fdfa; }
-    .tabela-financeira tbody tr:last-child td { border-bottom: none; }
+    .header-center {
+        text-align: center;
+        padding: 0 28px;
+    }
 
-    .tabela-financeira .linha-total td { background: #e0f2f1 !important; color: var(--primary-dark); font-weight: 800; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); font-size: 11px; }
-    .tabela-financeira .linha-limite td { background: #fef3c7 !important; color: #92400e; font-weight: 700; border-top: 1px solid #fde68a; }
+    .header-center h1 {
+        margin: 0;
+        color: var(--primary-dark);
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 900;
+        letter-spacing: 0.45px;
+    }
 
-    .tabela-financeira th.valores, .tabela-financeira td.valores { text-align: right !important; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .tabela-financeira td.valor-destaque { font-weight: 800; color: var(--text); }
+    .header-center p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.65px;
+        text-transform: uppercase;
+    }
 
-    /* Telas menores */
-    @media (max-width: 1200px) {
-        .kpi-value { font-size: 21px; }
-        .header-center h1 { font-size: 18px; }
-        .tabela-financeira th, .tabela-financeira td { padding: 7px 8px; }
+    /* =========================
+       KPIs
+       ========================= */
+    .kpi-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 88px;
+        padding: 14px 17px;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        text-align: left;
+        border: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .kpi-card:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-hover);
+    }
+
+    .kpi-card::after {
+        content: "";
+        position: absolute;
+        right: -28px;
+        bottom: -42px;
+        width: 110px;
+        height: 110px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.055);
+    }
+
+    .kpi-card.total { background: linear-gradient(135deg, #003839, #00585a); }
+    .kpi-card.corrente { background: linear-gradient(135deg, #004d4e, #006668); }
+    .kpi-card.aplicado { background: linear-gradient(135deg, #006e6f, #008a8c); }
+    .kpi-card.inicial { background: linear-gradient(135deg, #008a8c, #00a1a3); }
+
+    .kpi-title {
+        font-size: 9px;
+        line-height: 1.2;
+        font-weight: 800;
+        color: rgba(255,255,255,0.82);
+        text-transform: uppercase;
+        letter-spacing: 0.85px;
+        margin-bottom: 0;
+    }
+
+    .kpi-value {
+        font-size: 23px;
+        line-height: 1.15;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.6px;
+        white-space: nowrap;
+        margin-top: 5px;
+    }
+
+    .kpi-var {
+        font-size: 9px;
+        font-weight: 800;
+        padding: 2px 6px;
+        border-radius: 5px;
+        display: inline-flex;
+        align-items: center;
+        letter-spacing: 0.35px;
+    }
+
+    .kpi-var.up {
+        background: rgba(74,222,128,0.18);
+        color: #86efac;
+        border: 1px solid rgba(134,239,172,0.25);
+    }
+
+    .kpi-var.down {
+        background: rgba(248,113,113,0.18);
+        color: #fca5a5;
+        border: 1px solid rgba(252,165,165,0.25);
+    }
+
+    .kpi-var.neutral {
+        background: rgba(255,255,255,0.12);
+        color: #e2e8f0;
+        border: 1px solid rgba(255,255,255,0.20);
+    }
+
+    /* =========================
+       SEÇÕES
+       ========================= */
+    .section-title {
+        display: flex;
+        align-items: center;
+        min-height: 25px;
+        margin: 2px 0 7px;
+        padding: 0 0 6px;
+        border-bottom: 1px solid var(--border);
+        color: var(--primary-dark);
+        font-size: 10px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.85px;
+    }
+
+    .section-title::before {
+        content: "";
+        width: 3px;
+        height: 13px;
+        margin-right: 7px;
+        border-radius: 4px;
+        background: linear-gradient(180deg, var(--primary), var(--primary-dark));
+    }
+
+    .section-title-inline {
+        font-size: 8px;
+        font-weight: 900;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.55px;
+    }
+
+    .movement-card {
+        padding: 8px 9px;
+        min-height: 54px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 1px 5px rgba(0,55,56,0.035);
+    }
+
+    /* =========================
+       TABELAS
+       ========================= */
+    .tabela-container {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        width: 100%;
+        margin-bottom: 0;
+    }
+
+    .tabela-container-scroll {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: 520px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .tabela-financeira {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 0;
+        font-size: 10px;
+        table-layout: auto;
+    }
+
+    .tabela-financeira th {
+        background: #eef5f5;
+        color: #526468;
+        font-size: 8px;
+        font-weight: 900;
+        text-align: left;
+        padding: 8px 7px;
+        border-bottom: 1px solid #cfdcdd;
+        text-transform: uppercase;
+        letter-spacing: 0.35px;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .tabela-financeira td {
+        padding: 7px 7px;
+        border-bottom: 1px solid var(--border-soft);
+        font-size: 10px;
+        font-weight: 600;
+        color: #26363a;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .tabela-financeira tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .tabela-financeira tbody tr:hover td {
+        background: #f5fbfb;
+    }
+
+    .tabela-financeira .linha-total td {
+        background: #e5f3f2;
+        color: var(--primary-dark);
+        font-weight: 900;
+        border-top: 2px solid var(--primary);
+        border-bottom: 0;
+        font-size: 10px;
+    }
+
+    .tabela-financeira .linha-limite td {
+        background: #fff8e8;
+        color: #8a5a12;
+        font-weight: 700;
+        border-top: 1px solid #f3dfaa;
+    }
+
+    .tabela-financeira th.valores,
+    .tabela-financeira td.valores {
+        text-align: right !important;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum";
+    }
+
+    .tabela-financeira td.valor-destaque {
+        font-weight: 900;
+        color: var(--text);
+    }
+
+    /* Tabela principal: cabe inteira na tela, sem rolagem */
+    .tabela-bancos {
+        table-layout: fixed;
+        width: 100%;
+        font-size: 9.5px;
+    }
+
+    .tabela-bancos th,
+    .tabela-bancos td {
+        padding-left: 5px;
+        padding-right: 5px;
+    }
+
+    .tabela-bancos th {
+        font-size: 7.5px;
+        letter-spacing: 0.15px;
+    }
+
+    .tabela-bancos td {
+        font-size: 9.5px;
+    }
+
+    .tabela-bancos th:nth-child(1),
+    .tabela-bancos td:nth-child(1) { width: 4%; text-align: center; }
+
+    .tabela-bancos th:nth-child(2),
+    .tabela-bancos td:nth-child(2) { width: 19%; }
+
+    .tabela-bancos th:nth-child(3),
+    .tabela-bancos td:nth-child(3) { width: 9%; }
+
+    .tabela-bancos th:nth-child(n+4),
+    .tabela-bancos td:nth-child(n+4) { width: 13.6%; }
+
+    .tabela-bancos td:nth-child(2) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tabela-bancos td {
+        white-space: nowrap;
+    }
+
+    /* =========================
+       STREAMLIT / SIDEBAR
+       ========================= */
+    [data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid var(--border);
+    }
+
+    [data-testid="stSidebar"] h3 {
+        color: var(--primary-dark);
+        font-weight: 900;
+        letter-spacing: -0.1px;
+    }
+
+    [data-testid="stSidebar"] hr {
+        border-color: var(--border);
+    }
+
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="select"] > div {
+        border-radius: 8px !important;
+        border-color: var(--border) !important;
+    }
+
+    /* =========================
+       RESPONSIVO
+       ========================= */
+    @media (max-width: 1100px) {
+        .kpi-value { font-size: 19px; }
+        .tabela-bancos th { font-size: 7px; }
+        .tabela-bancos td { font-size: 8.5px; }
+    }
+
+    @media (max-width: 760px) {
+        .dashboard-header {
+            grid-template-columns: 1fr;
+            gap: 5px;
+            text-align: center;
+        }
+
+        .header-period {
+            text-align: center;
+            min-width: 0;
+        }
+
+        .header-center {
+            padding: 0;
+            grid-row: 1;
+        }
+
+        .tabela-bancos {
+            font-size: 8px;
+        }
+
+        .tabela-bancos th,
+        .tabela-bancos td {
+            padding-left: 3px;
+            padding-right: 3px;
+        }
     }
 
     @media print {
         [data-testid="stSidebar"] { display: none !important; }
         header[data-testid="stHeader"] { display: none !important; }
-        .main .block-container { max-width: 100% !important; padding: 5px !important; }
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        .kpi-card, .tabela-container, .tabela-container-scroll, .movement-card { break-inside: avoid; max-height: none !important; overflow: visible !important; }
+        .main .block-container {
+            max-width: 100% !important;
+            padding: 5px !important;
+        }
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+        .kpi-card, .tabela-container, .tabela-container-scroll, .movement-card {
+            break-inside: avoid;
+            max-height: none !important;
+            overflow: visible !important;
+        }
     }
 </style>
 """
+
 st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
 
 # ==============================================================================
@@ -496,7 +848,7 @@ fig_donut = go.Figure(data=[go.Pie(
 )])
 fig_donut.update_layout(
     showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=0, b=0, l=0, r=0), height=205,
+    margin=dict(t=2, b=4, l=2, r=2), height=205,
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.5, font_size=11, font_color="#004D4E", showarrow=False)]
 )
 
@@ -515,12 +867,12 @@ fig_combinado.add_trace(go.Bar(
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=15, b=0, l=0, r=0), height=138,
+    margin=dict(t=12, b=2, l=0, r=0), height=145,
     xaxis=dict(tickfont=dict(size=9), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
     showlegend=False,
-    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='#f8fafc', paper_bgcolor='#f8fafc',
     hovermode='x unified'
 )
 
@@ -651,7 +1003,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # 6. TABELAS INFERIORES (LADO A LADO)
 # ==============================================================================
-col_bancos, col_diario = st.columns([1.75, 1.0])
+col_bancos, col_diario = st.columns([1.85, 1.0], gap='medium')
 
 # --- TABELA DA ESQUERDA: SALDO DE TODOS OS BANCOS ---
 with col_bancos:
@@ -663,7 +1015,7 @@ with col_bancos:
     df_padrao['Ordem'] = df_padrao['Tipo'].map({'Disponível': 1, 'Aplicação': 2}).fillna(3)
     df_padrao = df_padrao.sort_values(by=['Ordem', 'Saldo Final'], ascending=[True, False]).reset_index(drop=True)
     
-    tb_bancos = f"<div class='tabela-container-scroll'><table class='tabela-financeira'>"
+    tb_bancos = f"<div class='tabela-container'><table class='tabela-financeira tabela-bancos'>"
     tb_bancos += f"<thead><tr>"
     tb_bancos += f"<th>#</th>"
     tb_bancos += f"<th>CONTA BANCÁRIA</th>"
