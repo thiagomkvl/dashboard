@@ -25,7 +25,7 @@ except Exception as e:
         st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
         return None
 
-# --- CUSTOM CSS (ALINHADO COM AS IMAGENS DE REFERÊNCIA) ---
+# --- CUSTOM CSS (MILIMETRICAMENTE ALINHADO) ---
 css = """
 <style>
     :root {
@@ -71,19 +71,19 @@ css = """
     .kpi-var.neutral { background: rgba(255, 255, 255, 0.18); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.3); }
     
     /* Seções */
-    .section-title { display: flex; align-items: center; min-height: 22px; margin-bottom: 6px; padding: 0 0 4px; border-bottom: 1.5px solid var(--border); color: var(--primary-dark); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
+    .section-title { display: flex; align-items: center; min-height: 22px; margin-bottom: 4px; padding: 0 0 3px; border-bottom: 1.5px solid var(--border); color: var(--primary-dark); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.75px; }
     .section-title::before { content: ""; width: 3px; height: 11px; margin-right: 6px; border-radius: 3px; background: var(--primary); }
     .section-title-inline { font-size: 9px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.45px; }
     
-    .movement-card { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: #f0f7f7; }
+    .movement-card { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #f0f7f7; }
     
     /* Tabelas */
-    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 8px; }
+    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 0px; }
     .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 520px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 8px; }
     
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; font-size: 11px; }
-    .tabela-financeira th { background: #edf6f6; color: #475569; font-size: 9px; font-weight: 800; text-align: left; padding: 8px 6px; border-bottom: 1.5px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; white-space: nowrap; }
-    .tabela-financeira td { padding: 7px 6px; border-bottom: 1px solid #f1f5f9; font-size: 11px; font-weight: 600; color: #1e293b; white-space: nowrap; }
+    .tabela-financeira th { background: #edf6f6; color: #475569; font-size: 9px; font-weight: 800; text-align: left; padding: 7px 6px; border-bottom: 1.5px solid var(--border); text-transform: uppercase; letter-spacing: 0.35px; position: sticky; top: 0; z-index: 2; white-space: nowrap; }
+    .tabela-financeira td { padding: 6px 6px; border-bottom: 1px solid #f1f5f9; font-size: 11px; font-weight: 600; color: #1e293b; white-space: nowrap; }
     .tabela-financeira tbody tr:hover td { background: #f0fdfa; }
     
     .tabela-financeira .linha-total td { background: #e0f2f1; color: var(--primary-dark); font-weight: 800; border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); font-size: 11px; }
@@ -122,7 +122,7 @@ with st.sidebar:
     
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
     st.markdown("### Relatório")
-    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️️")
     
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
@@ -437,12 +437,13 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS E VARIÁVEIS DE DATA
+# 4. GRÁFICOS E VARIÁVEIS DE DATA (AJUSTADOS PARA ALINHAMENTO PERFEITO)
 # ==============================================================================
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
+# Gráfico de Rosca (Altura total alinhada com c2 e c3: ~210px)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -453,11 +454,12 @@ fig_donut = go.Figure(data=[go.Pie(
     hoverinfo='label+percent'
 )])
 fig_donut.update_layout(
-    showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
-    margin=dict(t=10, b=10, l=0, r=0), height=280,
-    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.48, font_size=12, font_color="#004D4E", showarrow=False)]
+    showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5, font=dict(size=10)),
+    margin=dict(t=0, b=0, l=0, r=0), height=205,
+    annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.5, font_size=11, font_color="#004D4E", showarrow=False)]
 )
 
+# Gráfico de Barras Evolução Diária (Altura ajustada para fechar com os 3 cards operacionais)
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
@@ -466,13 +468,13 @@ fig_combinado.add_trace(go.Bar(
     marker_color='#004D4E', 
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Inicial']],
     textposition='outside',
-    textfont=dict(size=11, color="#1a2035", weight="bold"),
+    textfont=dict(size=10, color="#1a2035", weight="bold"),
     opacity=0.9,
     width=0.45
 ))
 
 fig_combinado.update_layout(
-    margin=dict(t=10, b=10, l=5, r=5), height=200,
+    margin=dict(t=15, b=0, l=0, r=0), height=138,
     xaxis=dict(tickfont=dict(size=9), showgrid=False), 
     yaxis=dict(showticklabels=False, showgrid=False),
     barmode='overlay',
@@ -539,13 +541,13 @@ with c2:
     st.markdown(f"<div class='section-title'>MOVIMENTAÇÃO OPERACIONAL <span style='margin-left:auto; font-size:10px; color:var(--muted); font-weight:800;'>REF: {periodo_str}</span></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     
-    m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#10b981;'>ENTRADAS</div><div style='font-size:16px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#ef4444;'>SAÍDAS</div><div style='font-size:16px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m1.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#10b981;'>ENTRADAS</div><div style='font-size:15px; font-weight:800;'>R$ {entradas_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:#ef4444;'>SAÍDAS</div><div style='font-size:15px; font-weight:800;'>R$ {saidas_mes:,.2f}</div></div>", unsafe_allow_html=True)
     
     cor_res = "#10b981" if resultado_liquido_mes >= 0 else "#ef4444"
-    m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:{cor_res};'>RESULTADO LÍQUIDO</div><div style='font-size:16px; font-weight:800; color:{cor_res};'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
+    m3.markdown(f"<div class='movement-card'><div class='section-title-inline' style='color:{cor_res};'>RESULTADO LÍQUIDO</div><div style='font-size:15px; font-weight:800; color:{cor_res};'>R$ {resultado_liquido_mes:,.2f}</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='section-title' style='margin-top:10px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title' style='margin-top:6px;'>EVOLUÇÃO DIÁRIA DO SALDO TOTAL</div>", unsafe_allow_html=True)
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
