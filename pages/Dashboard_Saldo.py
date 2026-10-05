@@ -24,7 +24,7 @@ except Exception as _err:
     _erro_import_db = str(_err)
     def conectar_sheets():
         st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
-        return Nonee
+        return None
 
 # --- CUSTOM CSS (MILIMETRICAMENTE ALINHADO) ---
 css = """
