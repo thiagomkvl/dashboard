@@ -20,10 +20,11 @@ import textwrap
 # BLINDAGEM MÁXIMA DE CONEXÃO
 try:
     from database import conectar_sheets
-except Exception as e:
+except Exception as _err:
+    _erro_import_db = str(_err)
     def conectar_sheets():
-        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
-        return None
+        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
+        return Nonee
 
 # --- CUSTOM CSS (MILIMETRICAMENTE ALINHADO) ---
 css = """
