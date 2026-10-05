@@ -74,7 +74,6 @@ css = """
 
     /* KPIs Topo */
     .kpi-card { position: relative; overflow: hidden; min-height: 92px; padding: 16px 20px; border-radius: var(--radius); box-shadow: var(--shadow); text-align: left; border: none; display: flex; flex-direction: column; justify-content: center; }
-    .kpi-card::after { content: ""; position: absolute; right: -28px; top: -28px; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,0.06); pointer-events: none; }
     .kpi-card.total { background: #003839; }
     .kpi-card.corrente { background: #004D4E; }
     .kpi-card.aplicado { background: #006E6F; }
@@ -96,12 +95,13 @@ css = """
     .movement-card div:last-child { font-variant-numeric: tabular-nums; letter-spacing: -0.2px; white-space: nowrap; }
 
     /* Tabelas */
-    .tabela-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 0px; }
+    .tabela-container { overflow-x: auto; overflow-y: hidden; height: fit-content; align-self: flex-start; scrollbar-width: none; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 0px; }
+    .tabela-container::-webkit-scrollbar { display: none; }
     .tabela-container-scroll { overflow-x: auto; overflow-y: auto; max-height: 520px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); width: 100%; margin-bottom: 8px; }
 
-    .tabela-container::-webkit-scrollbar, .tabela-container-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-    .tabela-container::-webkit-scrollbar-thumb, .tabela-container-scroll::-webkit-scrollbar-thumb { background: #b8d4d5; border-radius: 6px; }
-    .tabela-container::-webkit-scrollbar-track, .tabela-container-scroll::-webkit-scrollbar-track { background: transparent; }
+    .tabela-container-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+    .tabela-container-scroll::-webkit-scrollbar-thumb { background: #b8d4d5; border-radius: 6px; }
+    .tabela-container-scroll::-webkit-scrollbar-track { background: transparent; }
 
     .tabela-financeira { width: 100%; border-collapse: separate; border-spacing: 0; margin: 0; font-size: 11px; }
     .tabela-financeira th { background: #edf6f6; color: #475569; font-size: 9px; font-weight: 800; text-align: left; padding: 9px 10px; border-bottom: 1.5px solid var(--border); text-transform: uppercase; letter-spacing: 0.4px; position: sticky; top: 0; z-index: 2; white-space: nowrap; }
