@@ -1,6 +1,5 @@
 import base64
 import os
-import textwrap
 import streamlit as st
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -305,12 +304,14 @@ header[data-testid="stHeader"] {
 
 
 def render_module_cards() -> None:
-    """Renderiza o hub principal com links para os módulos do portal sem recuo de espaços."""
+    """Renderiza o hub de módulos garantindo string limpa de HTML."""
     cards_html = []
 
     for module in MODULES:
         image_data = get_image_data_url(module["image"])
         bg_style = get_background_style(image_data)
+        
+        # String contínua sem quebras de linha ou espaçamento inicial
         card = (
             f'<a href="{module["href"]}" target="_self" class="hub-card">'
             f'<div class="image-container">'
@@ -335,7 +336,7 @@ def render_module_cards() -> None:
     )
 
     st.markdown(CSS, unsafe_allow_html=True)
-    st.markdown(html_hub, unsafe_allow_html=True)
+    st.markdown(html_hub.replace('\n', ' '), unsafe_allow_html=True)
 
 
 def main() -> None:
