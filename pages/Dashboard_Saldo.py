@@ -122,7 +122,7 @@ with st.sidebar:
     
     st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
     st.markdown("### Relatório")
-    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️️")
+    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ")
     
     components.html("""
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
@@ -735,8 +735,11 @@ with col_diario:
         for _, row_d in df_diario_rev.iterrows():
             d_str = row_d.get('Data_Label', '')
             s_inic = row_d.get('Saldo Inicial', 0)
-            entr = row_d.get('Vl Crédito', 0)
-            said = row_d.get('Vl Débito', 0)
+            
+            # Puxando exclusivamente movimentações operacionais para as colunas
+            entr = row_d.get('Entrada Op', 0) 
+            said = row_d.get('Saída Op', 0)   
+            
             s_fin = row_d.get('Saldo Final', 0)
             delta = row_d.get('Delta R$', 0)
             
