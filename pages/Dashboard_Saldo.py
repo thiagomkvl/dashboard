@@ -663,7 +663,7 @@ with col_bancos:
     df_padrao['Ordem'] = df_padrao['Tipo'].map({'Disponível': 1, 'Aplicação': 2}).fillna(3)
     df_padrao = df_padrao.sort_values(by=['Ordem', 'Saldo Final'], ascending=[True, False]).reset_index(drop=True)
     
-    tb_bancos = f"<div class='tabela-container-scroll'><table class='tabela-financeira'>"
+    tb_bancos = f"<div class='tabela-container'><table class='tabela-financeira'>"
     tb_bancos += f"<thead><tr>"
     tb_bancos += f"<th>#</th>"
     tb_bancos += f"<th>CONTA BANCÁRIA</th>"
