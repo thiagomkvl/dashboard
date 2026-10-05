@@ -184,6 +184,11 @@ def formatar_abreviado(valor):
     except Exception:
         return ""
 
+def normalizar_texto(txt):
+    if pd.isna(txt):
+        return ""
+    return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
+
 # ==============================================================================
 # 2. CARGA DE DADOS
 # ==============================================================================
@@ -229,8 +234,14 @@ def carregar_dados(data_inicio, data_fim):
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
             if not df_ext.empty:
                 while len(df_ext.columns) < 12: df_ext[f"Col_Extra_{len(df_ext.columns)}"] = ""
-                col_banco = df_ext.columns[0]; col_data = df_ext.columns[1]; col_deb = df_ext.columns[4]; col_cred = df_ext.columns[5]
-                col_tipo = df_ext.columns[7]; col_operac = df_ext.columns[10]; col_subgrupo = df_ext.columns[11]
+                
+                col_banco = df_ext.columns[0]
+                col_data = df_ext.columns[1]
+                col_deb = df_ext.columns[4]
+                col_cred = df_ext.columns[5]
+                col_tipo = df_ext.columns[7]
+                col_operac = df_ext.columns[10] # Coluna K (índice 10: "Operacional" / "Não Operacional")
+                col_subgrupo = df_ext.columns[11]
 
                 df_process['Conta Bancária'] = df_ext[col_banco].astype(str).str.strip()
                 df_process['Data'] = pd.to_datetime(df_ext[col_data], dayfirst=True, errors='coerce').dt.normalize()
@@ -240,17 +251,15 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
                 
-                def normalizar_texto(txt): return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower() if pd.notna(txt) else ""
-                
                 serie_tipo = df_ext[col_tipo].apply(normalizar_texto)
                 
                 # --- IDENTIFICAÇÃO DE TRANSFERÊNCIAS E EMPRÉSTIMO ---
                 df_process['É Transf'] = serie_tipo.str.contains('transferencia') & serie_tipo.str.contains('interna')
                 df_process['É Emprestimo'] = serie_tipo.str.contains('liberacao de emprestimo')
                 
-                serie_operac = df_ext[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
-                
-                is_operacional = (serie_operac == 'OPERACIONAL') & (~df_process['É Emprestimo']) & (~df_process['É Transf'])
+                # --- REGRA DA COLUNA K (OPERACIONAL VS NÃO OPERACIONAL) ---
+                serie_operac_k = df_ext[col_operac].apply(normalizar_texto)
+                is_operacional = (serie_operac_k == 'operacional')
 
                 df_process['Cred_Op'] = df_process['Vl Crédito'].where(is_operacional, 0.0)
                 df_process['Deb_Op'] = df_process['Vl Débito'].where(is_operacional, 0.0)
@@ -277,7 +286,7 @@ def carregar_dados(data_inicio, data_fim):
                 df_extratos = df_period 
 
                 def definir_tipo_aux(nome): 
-                    n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                    n_norm = normalizar_texto(nome)
                     if 'getnet' in n_norm: return 'Limite'
                     return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
 
@@ -289,9 +298,9 @@ def carregar_dados(data_inicio, data_fim):
                     }).reset_index()
                     df_fim_mes = df_fim_mes.merge(df_period_grouped, on='Conta Bancária', how='outer').fillna(0)
                     
-                    df_period_caixa = df_period[df_period['Conta Bancária'].apply(definir_tipo_aux).isin(['Disponível', 'Aplicação']) & (~df_period['É Transf']) & (~df_period['É Emprestimo'])]
-                    entradas_periodo = df_period_caixa['Vl Crédito'].sum()
-                    saidas_periodo = df_period_caixa['Vl Débito'].sum()
+                    df_period_caixa = df_period[df_period['Conta Bancária'].apply(definir_tipo_aux).isin(['Disponível', 'Aplicação'])]
+                    entradas_periodo = df_period_caixa['Cred_Op'].sum()
+                    saidas_periodo = df_period_caixa['Deb_Op'].sum()
                 else:
                     for c in ['Cred_Op', 'Deb_Op', 'Cred_Tr', 'Deb_Tr', 'Cred_Emp', 'Deb_Emp']: df_fim_mes[c] = 0.0
                 
@@ -305,7 +314,7 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e: print("Aviso ao ler e processar extratos:", e)
 
         def definir_tipo(nome): 
-            n_norm = unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+            n_norm = normalizar_texto(nome)
             if 'getnet' in n_norm: return 'Limite'
             return 'Aplicação' if ('aplicacao' in n_norm or 'investimento' in n_norm) else 'Disponível'
 
@@ -360,7 +369,7 @@ def carregar_dados(data_inicio, data_fim):
         saldo_aplicado_kpi = 0.0
         try:
             if not df_process.empty:
-                serie_sub = df_process['SubGrupo'].apply(lambda x: unicodedata.normalize('NFKD', str(x)).encode('ASCII', 'ignore').decode('utf-8').lower())
+                serie_sub = df_process['SubGrupo'].apply(normalizar_texto)
                 app_mask = serie_sub == 'aplicacao financeira'
                 imp_mask = serie_sub == 'impostos sobre aplicacoes'
                 rend_mask = serie_sub == 'rendimentos de aplicacoes'
@@ -380,7 +389,8 @@ def carregar_dados(data_inicio, data_fim):
                 df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(df_app_grouped, on='Conta Bancária', how='left').fillna(0)
                 
                 def check_nome_app(nome): 
-                    return 'aplicacao' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower() or 'investimento' in unicodedata.normalize('NFKD', str(nome)).encode('ASCII', 'ignore').decode('utf-8').lower()
+                    n_norm = normalizar_texto(nome)
+                    return 'aplicacao' in n_norm or 'investimento' in n_norm
                 
                 mask_is_app = df_app_full['Conta Bancária'].apply(check_nome_app)
                 
@@ -437,13 +447,13 @@ saidas_mes = saidas_operacionais
 resultado_liquido_mes = entradas_mes - saidas_mes
 
 # ==============================================================================
-# 4. GRÁFICOS E VARIÁVEIS DE DATA (AJUSTADOS PARA ALINHAMENTO PERFEITO)
+# 4. GRÁFICOS E VARIÁVEIS DE DATA
 # ==============================================================================
 periodo_str = f"{data_ini_painel.strftime('%d/%m/%Y')} - {data_fim_painel.strftime('%d/%m/%Y')}"
 dt_ini_short = data_ini_painel.strftime('%d/%m')
 dt_fim_short = data_fim_painel.strftime('%d/%m')
 
-# Gráfico de Rosca (Altura total alinhada com c2 e c3: ~210px)
+# Gráfico de Rosca (Altura total alinhada com c2 e c3: ~205px)
 fig_donut = go.Figure(data=[go.Pie(
     values=[saldo_aplicado, saldo_disponivel], 
     labels=['Saldo Aplicado', 'Conta Corrente'], 
@@ -459,7 +469,7 @@ fig_donut.update_layout(
     annotations=[dict(text=f"<b>R$ {saldo_total/1000000:,.1f}M</b><br>Saldo Total", x=0.5, y=0.5, font_size=11, font_color="#004D4E", showarrow=False)]
 )
 
-# Gráfico de Barras Evolução Diária (Altura ajustada para fechar com os 3 cards operacionais)
+# Gráfico de Barras Evolução Diária
 fig_combinado = go.Figure()
 fig_combinado.add_trace(go.Bar(
     x=df_graficos['Data_Label'],
@@ -484,7 +494,7 @@ fig_combinado.update_layout(
 )
 
 # ==============================================================================
-# 5. MONTAGEM DO PAINEL SUPERIOR (KPIS, GRÁFICOS E APLICAÇÕES)
+# 5. MONTAGEM DO PAINEL SUPERIOR
 # ==============================================================================
 
 header_html = (
@@ -616,11 +626,9 @@ col_bancos, col_diario = st.columns([1.75, 1.0])
 with col_bancos:
     st.markdown("<div class='section-title'>SALDO DE TODOS OS BANCOS</div>", unsafe_allow_html=True)
     
-    # Separa contas de operacao/aplicacao do limite
     df_padrao = df_consolidado[df_consolidado['Tipo'] != 'Limite'].copy()
     df_limite = df_consolidado[df_consolidado['Tipo'] == 'Limite'].copy()
     
-    # Ordena por Disponivel primeiro, depois Aplicacao
     df_padrao['Ordem'] = df_padrao['Tipo'].map({'Disponível': 1, 'Aplicação': 2}).fillna(3)
     df_padrao = df_padrao.sort_values(by=['Ordem', 'Saldo Final'], ascending=[True, False]).reset_index(drop=True)
     
@@ -676,7 +684,6 @@ with col_bancos:
         tb_bancos += f"</tr>"
         idx_count += 1
 
-    # Linha de TOTAL
     tb_bancos += f"<tr class='linha-total'>"
     tb_bancos += f"<td colspan='3'><b>TOTAL</b></td>"
     tb_bancos += f"<td class='valores'>{formatar_moeda(tot_banco_ini)}</td>"
@@ -687,7 +694,6 @@ with col_bancos:
     tb_bancos += f"<td class='valores valor-destaque'>{formatar_moeda(tot_banco_atu)}</td>"
     tb_bancos += f"</tr>"
     
-    # Adiciona a linha de LIMITE (GetNet) se existir no final
     if not df_limite.empty:
         for _, row_lim in df_limite.iterrows():
             nome_lim = str(row_lim['Conta Bancária']).title()
@@ -729,14 +735,13 @@ with col_diario:
     if df_graficos.empty:
         tb_diario += f"<tr><td colspan='6' style='text-align:center;'>Sem movimentações diárias no período</td></tr>"
     else:
-        # Exibe em ordem decrescente de data (mais recente no topo)
         df_diario_rev = df_graficos.sort_values(by='Data', ascending=False)
         
         for _, row_d in df_diario_rev.iterrows():
             d_str = row_d.get('Data_Label', '')
             s_inic = row_d.get('Saldo Inicial', 0)
             
-            # Puxando exclusivamente movimentações operacionais para as colunas
+            # Puxando estritamente movimentações filtradas pela Coluna K ("Operacional")
             entr = row_d.get('Entrada Op', 0) 
             said = row_d.get('Saída Op', 0)   
             
