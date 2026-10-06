@@ -30,7 +30,7 @@ except Exception as _err:
 # ==============================================================================
 # CONFIGURAÇÕES (ajuste aqui se precisar)
 # ==============================================================================
-MARCA_NOME, MARCA_SUB = 
+MARCA_NOME, MARCA_SUB = "AURA TECH", "BUSINESS INTELLIGENCE"
 
 ABA_SITUACAO = "Situação_Contas"                # Situação × Mês
 ABA_SITUACAO_CONV = "Situação_Contas_Convênio"  # Situação > Convênio × Mês
