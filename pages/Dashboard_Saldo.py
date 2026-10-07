@@ -42,7 +42,7 @@ css = """
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
     .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
-    div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    div[data-testid="stVerticalBlock"] { gap: 1.0rem; }
     [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
 
     /* Sidebar */
