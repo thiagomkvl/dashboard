@@ -51,7 +51,7 @@ COR_SIT = {
 ORDEM_SIT = list(COR_SIT)
 
 # Agrupamento das Situações nos KPIs (regra por palavra-chave, veja categoria())
-CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas"]
+CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas e Recursos", "Recursos Negados"]
 
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
          "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
@@ -226,14 +226,16 @@ def div(a, b):
 
 
 def categoria(sit):
-    """Agrupa as Situações em 6 categorias para os KPIs (edite as palavras-chave se precisar)."""
+    """Agrupa as Situações em 7 categorias para os KPIs (edite as palavras-chave se precisar)."""
     n = normalizar_texto(sit)
     if "liquid" in n:
         return "Recebido"
     if "inadimpl" in n:
         return "Inadimplência"
+    if "recursos negados" in n:
+        return "Recursos Negados"
     if "glosa" in n or "recurso" in n:
-        return "Glosas"
+        return "Glosas e Recursos"
     if "producao" in n:
         return "Em Produção"
     if "faturamento" in n:
@@ -489,14 +491,17 @@ st.markdown(
 for e in erros:
     st.warning(e)
 
+# Combina "Em Produção" e "Em Faturamento" em um único KPI card superior
+val_prod_fat = cat["Em Produção"] + cat["Em Faturamento"]
+
 kpis = [
     kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p)),
-    kpi("Em produção", moeda(cat["Em Produção"]), sub_pct(cat["Em Produção"])),
-    kpi("Em faturamento", moeda(cat["Em Faturamento"]), sub_pct(cat["Em Faturamento"])),
+    kpi("Em prod. / Faturamento", moeda(val_prod_fat), sub_pct(val_prod_fat)),
     kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"])),
     kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"])),
     kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"])),
-    kpi("Glosas e recursos", moeda(cat["Glosas"]), sub_pct(cat["Glosas"])),
+    kpi("Glosas e recursos", moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"])),
+    kpi("Recursos negados", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"])),
     kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>"),
 ]
 for col, html in zip(st.columns(8, gap="small"), kpis):
@@ -623,17 +628,17 @@ else:
         rows.append(rot_cols(i, nome, True) + [
             num(r["Faturado"]), num(r["Em Produção"]), num(r["Em Faturamento"]),
             f"<span style='color:{VERDE}'>{num(r['Recebido'])}</span>",
-            num(r["A receber"]), num(r["Glosas"]),
+            num(r["A receber"]), num(r["Glosas e Recursos"]), num(r["Recursos Negados"]),
             f"<span style='color:{VERMELHO}'>{num(r['Inadimplência'])}</span>",
             pct(ti), f"<span style='color:{cor_taxa(tx)};font-weight:700'>{pct(tx)}</span>"])
     ts = pf.sum()
     total = ([] if mes_a_mes else [""]) + [
         "TOTAL GERAL", num(ts["Faturado"]), num(ts["Em Produção"]), num(ts["Em Faturamento"]), num(ts["Recebido"]),
-        num(ts["A receber"]), num(ts["Glosas"]), num(ts["Inadimplência"]),
+        num(ts["A receber"]), num(ts["Glosas e Recursos"]), num(ts["Recursos Negados"]), num(ts["Inadimplência"]),
         pct(div(ts["Inadimplência"], ts["Faturado"]) * 100), pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
     ct.markdown(
         tabela(HEAD_ROT + ["Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
-                           "Glosas e recursos", "Inadimplência", "% Inadimpl.", "% Receb."], rows, total, altura=420),
+                           "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb."], rows, total, altura=420),
         unsafe_allow_html=True)
 
 # ==============================================================================
