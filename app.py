@@ -72,63 +72,37 @@ if not st.session_state["autenticado"]:
 
 
 # ==============================================================================
-# 1. HOME (somente boas-vindas — navegação só no menu lateral)
+# 1. NAVEGAÇÃO — sem Home; primeiro dashboard vira o default
 # ==============================================================================
-def render_home_page() -> None:
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        html, body, [class*="css"] { font-family: "Inter", sans-serif; color: #1e293b; }
-        .stApp { background-color: #f4f6f9; }
-        .main .block-container { max-width: 900px; padding-top: 3rem; padding-bottom: 2rem; }
-        .hub-header { text-align: center; margin-top: 40px; }
-        .hub-header h1 { font-size: 28px; font-weight: 800; color: #1e40af; margin: 0 0 10px 0; }
-        .hub-header p { font-size: 15px; color: #64748b; margin: 0; line-height: 1.5; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"""
-        <div class="hub-header">
-            <h1>{PAGE_TITLE}</h1>
-            <p>Use o menu lateral para acessar os módulos do portal.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ==============================================================================
-# 2. NAVEGAÇÃO (menu lateral)
-# ==============================================================================
-page_home = st.Page(render_home_page, title="Home do Portal", icon=":material/home:", default=True)
-
-
-def _page(path, title, url_path):
+def _page(path, title, url_path, default=False):
     if os.path.exists(path):
-        return st.Page(path, title=title, url_path=url_path)
+        return st.Page(path, title=title, url_path=url_path, default=default)
     return None
 
 
-pages_ops = []
-for path, title, url in [
+# Ordem = ordem do menu. O primeiro que existir vira a página inicial.
+candidatos = [
     ("pages/Dashboard_Saldo.py", "Saldo Caixa", "Dashboard_Saldo"),
     ("pages/painel_fluxo_caixa.py", "Fluxo de Caixa", "painel_fluxo_caixa"),
     ("pages/Acompanhamento_Obra.py", "Despesas C/ Obras", "Acompanhamento_Obra"),
     ("pages/Análise_Faturamento.py", "Análise Faturamento", "Análise_Faturamento"),
     ("pages/painel_pagar.py", "Painel de Pagamentos", "painel_pagar"),
-]:
-    p = _page(path, title, url)
+]
+
+pages = []
+for i, (path, title, url) in enumerate(candidatos):
+    p = _page(path, title, url, default=(i == 0))
     if p is not None:
-        pages_ops.append(p)
+        # Garante default só no primeiro arquivo que realmente existe
+        if not pages:
+            p = st.Page(path, title=title, url_path=url, default=True)
+        pages.append(p)
 
-nav = {"Principal": [page_home]}
-if pages_ops:
-    nav["Módulos Operacionais"] = pages_ops
+if not pages:
+    st.error("Nenhum dashboard encontrado na pasta pages/.")
+    st.stop()
 
-pg = st.navigation(nav)
+pg = st.navigation({"Módulos Operacionais": pages})
 
 with st.sidebar:
     st.markdown("### Minha Sessão")
