@@ -32,7 +32,7 @@ except Exception as _err:
 # ==============================================================================
 # Espaçamento vertical (ajuste aqui)
 ESPACO_ENTRE_BLOCOS = "0.5rem"  # espaço geral entre os elementos da página
-AJUSTE_APOS_KPIS = "0.5rem"    # espaço extra entre os cards do topo e os blocos (negativo aproxima, positivo afasta)
+AJUSTE_APOS_KPIS = "1.0rem"    # espaço extra entre os cards do topo e os blocos (negativo aproxima, positivo afasta)
 
 ABA_SITUACAO = "Situação_Contas"                # Situação × Mês
 ABA_SITUACAO_CONV = "Situação_Contas_Convênio"  # Situação > Convênio × Mês
