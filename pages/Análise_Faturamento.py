@@ -663,5 +663,6 @@ if len(tots) == 3:
 with st.sidebar:
     st.markdown(
         f"<div class='side-card'><small>Período selecionado</small><b>{txt_per}</b></div>"
+        f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>{selo}",
         unsafe_allow_html=True,
     )
