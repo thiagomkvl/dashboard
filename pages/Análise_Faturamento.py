@@ -26,17 +26,17 @@ except Exception as _err:
         st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
         return None
 
-
 # ==============================================================================
 # CONFIGURAÇÕES
 # ==============================================================================
 # Espaçamento vertical
 ESPACO_ENTRE_BLOCOS = "1.0rem"  # espaço geral entre os elementos da página
-AJUSTE_APOS_KPIS = "1.0rem"    # espaço extra entre os cards do topo e os blocos (negativo aproxima, positivo afasta)
+AJUSTE_APOS_KPIS = "1.0rem"    # espaço extra entre os cards do topo e os blocos
 
 ABA_SITUACAO = "Situação_Contas"                # Situação × Mês
 ABA_SITUACAO_CONV = "Situação_Contas_Convênio"  # Situação > Convênio × Mês
 ABA_FAT_CONV = "Faturamento_Convênio"           # Convênio × Mês
+ABA_RECEBIDO_CONV = "Base_Recebido_Convênio"    # NOVA ABA: Recebimentos Parciais
 
 AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
 ROXO, LARANJA, CIANO, ROSA = "#8b5cf6", "#f97316", "#22d3ee", "#fb7185"
@@ -50,7 +50,7 @@ COR_SIT = {
 }
 ORDEM_SIT = list(COR_SIT)
 
-# Agrupamento das Situações nos KPIs (regra por palavra-chave, veja categoria())
+# Agrupamento das Situações nos KPIs (regra por palavra-chave)
 CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas e Recursos", "Recursos Negados"]
 
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
@@ -173,7 +173,6 @@ def limpa_valor(v):
 
 
 def parse_mes(c):
-    """Converte 'janeiro-26', 'jan/26', '01/01/2026' ou datas em Timestamp do 1º dia do mês."""
     if isinstance(c, (pd.Timestamp, datetime)):
         return pd.Timestamp(c.year, c.month, 1)
     if c is None or (isinstance(c, float) and pd.isna(c)):
@@ -226,7 +225,6 @@ def div(a, b):
 
 
 def categoria(sit):
-    """Agrupa as Situações em 7 categorias para os KPIs (edite as palavras-chave se precisar)."""
     n = normalizar_texto(sit)
     if "liquid" in n:
         return "Recebido"
@@ -240,7 +238,7 @@ def categoria(sit):
         return "Em Produção"
     if "faturamento" in n:
         return "Em Faturamento"
-    return "A receber"  # Recebimentos Futuros (e qualquer situação nova)
+    return "A receber"  
 
 
 def cor_sit(sit):
@@ -257,10 +255,9 @@ def cor_taxa(p):
 
 
 # ==============================================================================
-# 2. LEITURA DAS TABELAS DINÂMICAS
+# 2. LEITURA DAS TABELAS DINÂMICAS E AJUSTE DE RECEBIMENTOS
 # ==============================================================================
 def parse_pivot(df):
-    """Transforma uma tabela dinâmica (rótulos + colunas de mês) em formato longo: R1, R2, Ref, Valor."""
     vazio = pd.DataFrame(columns=["R1", "R2", "Ref", "Valor"])
     if df is None or df.empty:
         return vazio
@@ -281,7 +278,7 @@ def parse_pivot(df):
             if not r1 or normalizar_texto(r1).startswith("total"):
                 continue
         else:
-            if not rot[1]:  # subtotais e "Total geral" não têm o 2º rótulo
+            if not rot[1]:  
                 continue
             if rot[0]:
                 ultimo = rot[0]
@@ -293,12 +290,17 @@ def parse_pivot(df):
     return pd.DataFrame(reg, columns=["R1", "R2", "Ref", "Valor"]) if reg else vazio
 
 
-@st.cache_data(ttl=60, show_spinner="Carregando dados…")
+@st.cache_data(ttl=60, show_spinner="Carregando e cruzando dados…")
 def carregar_bases():
     vazio = pd.DataFrame(columns=["R1", "R2", "Ref", "Valor"])
     conn = conectar_sheets()
     if conn is None:
-        return vazio, vazio, vazio, ["Conexão com o Google Sheets indisponível."]
+        # Retornos de fallback para evitar erros em cascata
+        s_v = pd.DataFrame(columns=["Situação", "Ref", "Valor"])
+        sc_v = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
+        f_v = pd.DataFrame(columns=["Convênio", "Ref", "Valor"])
+        return s_v, sc_v, f_v, ["Conexão com o Google Sheets indisponível."]
+    
     erros, saida = [], []
     for aba in (ABA_SITUACAO, ABA_SITUACAO_CONV, ABA_FAT_CONV):
         try:
@@ -309,13 +311,99 @@ def carregar_bases():
             d = vazio
             erros.append(f"Aba '{aba}': {e}")
         saida.append(d)
-    return saida[0], saida[1], saida[2], erros
+        
+    s = saida[0].rename(columns={"R1": "Situação"})
+    if "R2" in s.columns: s = s.drop(columns=["R2"])
+    
+    sc = saida[1].rename(columns={"R1": "Situação", "R2": "Convênio"})
+    
+    f = saida[2].rename(columns={"R1": "Convênio"})
+    if "R2" in f.columns: f = f.drop(columns=["R2"])
 
+    # ---------------------------------------------------------
+    # LEITURA E PROCESSAMENTO DA ABA DE RECEBIDOS PARCIAIS
+    # ---------------------------------------------------------
+    rec = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
+    try:
+        raw_rec = conn.read(worksheet=ABA_RECEBIDO_CONV, ttl=0)
+        if not raw_rec.empty:
+            cols = [str(c).lower().strip() for c in raw_rec.columns]
+            
+            # Detecta se é uma tabela plana com colunas, ou uma tabela dinâmica
+            is_flat = any(x in c for c in cols for x in ["valor", "receb"]) and any(x in c for c in cols for x in ["mês", "mes", "ref", "data"])
+            
+            if is_flat:
+                col_sit = next((c for c in raw_rec.columns if "situa" in str(c).lower()), None)
+                col_conv = next((c for c in raw_rec.columns if "conv" in str(c).lower()), None)
+                col_mes = next((c for c in raw_rec.columns if "mês" in str(c).lower() or "mes" in str(c).lower() or "ref" in str(c).lower() or "data" in str(c).lower()), None)
+                col_val = next((c for c in raw_rec.columns if "valor" in str(c).lower() or "receb" in str(c).lower()), None)
+                
+                df_rec = raw_rec.copy()
+                df_rec["Situação"] = df_rec[col_sit] if col_sit else ""
+                df_rec["Convênio"] = df_rec[col_conv] if col_conv else ""
+                df_rec["Ref"] = df_rec[col_mes].apply(parse_mes) if col_mes else None
+                df_rec["Valor"] = df_rec[col_val].apply(limpa_valor) if col_val else 0.0
+                rec = df_rec[["Situação", "Convênio", "Ref", "Valor"]].dropna(subset=["Ref"])
+            else:
+                p = parse_pivot(raw_rec)
+                rec = p.rename(columns={"R1": "Situação", "R2": "Convênio"})
+    except Exception as e:
+        erros.append(f"Aba '{ABA_RECEBIDO_CONV}': Erro ao processar - {e}")
+
+    # ---------------------------------------------------------
+    # AJUSTE MATEMÁTICO NOS STATUS AFETADOS
+    # ---------------------------------------------------------
+    STATUS_AJUSTE = ["glosas nao analisadas", "inadimplencias", "recursos enviados", "recursos negados"]
+    
+    if not rec.empty:
+        rec["sit_norm"] = rec["Situação"].apply(normalizar_texto)
+        rec_adj = rec[rec["sit_norm"].isin(STATUS_AJUSTE)].copy()
+        
+        if not rec_adj.empty:
+            # 1. Ajuste na Tabela SC (Situação x Convênio)
+            if not sc.empty and "Convênio" in rec_adj.columns:
+                rec_sc = rec_adj.groupby(["sit_norm", "Convênio", "Ref"], as_index=False)["Valor"].sum()
+                sc["sit_norm"] = sc["Situação"].apply(normalizar_texto)
+                
+                sc = pd.merge(sc, rec_sc, on=["sit_norm", "Convênio", "Ref"], how="left", suffixes=("", "_rec"))
+                sc["Valor_rec"] = sc["Valor_rec"].fillna(0.0)
+                
+                # Subtrai o recebido do status atual
+                sc["Valor"] = (sc["Valor"] - sc["Valor_rec"]).apply(lambda x: max(0.0, x))
+                
+                # Transfere o valor recebido para a situação "Liquidada" para manter o Total Faturamento correto
+                linhas_liq = sc[sc["Valor_rec"] > 0].copy()
+                if not linhas_liq.empty:
+                    linhas_liq["Situação"] = "Liquidada"
+                    linhas_liq["Valor"] = linhas_liq["Valor_rec"]
+                    sc = pd.concat([sc, linhas_liq], ignore_index=True)
+                    
+                sc = sc.drop(columns=["sit_norm", "Valor_rec"])
+                # Reagrupa para somar com outras "Liquidadas" que já existiam no mesmo mês/convênio
+                sc = sc.groupby(["Situação", "Convênio", "Ref"], as_index=False)["Valor"].sum()
+
+            # 2. Ajuste na Tabela S (Apenas Situação consolidada)
+            if not s.empty:
+                rec_s = rec_adj.groupby(["sit_norm", "Ref"], as_index=False)["Valor"].sum()
+                s["sit_norm"] = s["Situação"].apply(normalizar_texto)
+                
+                s = pd.merge(s, rec_s, on=["sit_norm", "Ref"], how="left", suffixes=("", "_rec"))
+                s["Valor_rec"] = s["Valor_rec"].fillna(0.0)
+                
+                s["Valor"] = (s["Valor"] - s["Valor_rec"]).apply(lambda x: max(0.0, x))
+                
+                linhas_liq_s = s[s["Valor_rec"] > 0].copy()
+                if not linhas_liq_s.empty:
+                    linhas_liq_s["Situação"] = "Liquidada"
+                    linhas_liq_s["Valor"] = linhas_liq_s["Valor_rec"]
+                    s = pd.concat([s, linhas_liq_s], ignore_index=True)
+                    
+                s = s.drop(columns=["sit_norm", "Valor_rec"])
+                s = s.groupby(["Situação", "Ref"], as_index=False)["Valor"].sum()
+
+    return s, sc, f, erros
 
 s, sc, f, erros = carregar_bases()
-s = s.rename(columns={"R1": "Situação"})
-sc = sc.rename(columns={"R1": "Situação", "R2": "Convênio"})
-f = f.rename(columns={"R1": "Convênio"})
 
 meses_all = sorted(set(s["Ref"]) | set(sc["Ref"]) | set(f["Ref"]))
 if not meses_all:
@@ -356,7 +444,7 @@ if conv_sel:
 if sit_sel:
     base_sc = base_sc[base_sc["Situação"].isin(sit_sel)]
 
-# Sem filtros usa as abas "Situação_Contas" e "Faturamento_Convênio"; com filtro, a aba cruzada
+# Sem filtros usa as abas consolidadas; com filtro, a aba cruzada
 if bool(conv_sel or sit_sel) or s.empty or f.empty:
     d_sit = base_sc.groupby(["Situação", "Ref"], as_index=False)["Valor"].sum()
     d_conv = base_sc.groupby(["Convênio", "Ref"], as_index=False)["Valor"].sum()
@@ -655,7 +743,3 @@ else:
             + [num(mat.loc[sit, m]) for m in refs_sel] + [f"<b>{num(mat.loc[sit].sum())}</b>"] for sit in mat.index]
     total = ["TOTAL GERAL"] + [num(mat[m].sum()) for m in refs_sel] + [num(mat.values.sum())]
     ct.markdown(tabela(["Situação"] + x_lab + ["Total"], rows, total), unsafe_allow_html=True)
-
-# ==============================================================================
-# 11. RODAPÉ DA SIDEBAR (informações e conciliação das abas)
-# ==============================================================================
