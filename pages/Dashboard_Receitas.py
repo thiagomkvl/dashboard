@@ -47,7 +47,7 @@ COR_SIT = {
 ORDEM_SIT = list(COR_SIT)
 
 # Agrupamento das Situações nos KPIs (regra por palavra-chave, veja categoria())
-CATS = ["Recebido", "A receber", "Inadimplência", "Glosas"]
+CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas"]
 
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
          "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
@@ -99,10 +99,10 @@ css = """
     .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
 
     /* KPIs */
-    .kpi { padding: 13px 14px; border-radius: 12px; min-height: 104px; }
-    .kpi-top { display: flex; align-items: center; gap: 8px; }
-    .kpi-t { font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; line-height: 1.15; }
-    .kpi-v { font-size: clamp(14px, 1.25vw, 20px); font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap; margin: 8px 0 3px; font-variant-numeric: tabular-nums; }
+    .kpi { padding: 12px; border-radius: 12px; height: 108px; container-type: inline-size; overflow: hidden; }
+    .kpi-top { display: flex; align-items: flex-start; gap: 8px; }
+    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; line-height: 1.2; min-height: 24px; }
+    .kpi-v { font-size: clamp(11px, 1vw, 18px); font-size: clamp(11px, 11cqw, 20px); font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap; margin: 8px 0 3px; font-variant-numeric: tabular-nums; }
     .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
     .kpi-sub.up { color: #34d399; }
     .kpi-sub.down { color: #f87171; }
@@ -220,7 +220,7 @@ def div(a, b):
 
 
 def categoria(sit):
-    """Agrupa as Situações em 4 categorias para os KPIs (edite as palavras-chave se precisar)."""
+    """Agrupa as Situações em 6 categorias para os KPIs (edite as palavras-chave se precisar)."""
     n = normalizar_texto(sit)
     if "liquid" in n:
         return "Recebido"
@@ -228,7 +228,11 @@ def categoria(sit):
         return "Inadimplência"
     if "glosa" in n or "recurso" in n:
         return "Glosas"
-    return "A receber"  # Em Faturamento, Em Produção, Recebimentos Futuros
+    if "producao" in n:
+        return "Em Produção"
+    if "faturamento" in n:
+        return "Em Faturamento"
+    return "A receber"  # Recebimentos Futuros (e qualquer situação nova)
 
 
 def cor_sit(sit):
@@ -407,8 +411,14 @@ def vazio_html(msg):
     return f"<div class='vazio'>{msg}</div>"
 
 
-def card(coluna, titulo, dica=""):
-    ct = coluna.container(border=True)
+ALT_CARD = 430  # altura fixa dos blocos das linhas 1 e 2 (mantém tudo alinhado)
+
+
+def card(coluna, titulo, dica="", fixo=True):
+    try:
+        ct = coluna.container(border=True, height=ALT_CARD) if fixo else coluna.container(border=True)
+    except TypeError:  # versões antigas do Streamlit sem o parâmetro height
+        ct = coluna.container(border=True)
     ct.markdown(f"<div class='card-title'>{titulo}<span>{dica}</span></div>", unsafe_allow_html=True)
     return ct
 
@@ -476,13 +486,15 @@ for e in erros:
 
 kpis = [
     kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p), AZUL),
+    kpi("Em produção", moeda(cat["Em Produção"]), sub_pct(cat["Em Produção"], CIANO), CIANO),
+    kpi("Em faturamento", moeda(cat["Em Faturamento"]), sub_pct(cat["Em Faturamento"], AZUL), AZUL),
     kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]), VERDE),
     kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"], AMBAR), AMBAR),
     kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"], VERMELHO), VERMELHO),
     kpi("Glosas e recursos", moeda(cat["Glosas"]), sub_pct(cat["Glosas"], ROXO), ROXO),
-    kpi("Taxa de liquidação", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", CIANO),
+    kpi("Taxa de liquidação", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", LARANJA),
 ]
-for col, html in zip(st.columns(6, gap="small"), kpis):
+for col, html in zip(st.columns(8, gap="small"), kpis):
     col.markdown(html, unsafe_allow_html=True)
 
 # ==============================================================================
@@ -519,7 +531,7 @@ with b2:
             marker=dict(colors=[cor_sit(x) for x in sits], line=dict(color="#0f1a2e", width=2)),
             hovertemplate="%{label}<br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
         ))
-        layout(fig_do, 165, False)
+        layout(fig_do, 150, False)
         fig_do.update_layout(annotations=[dict(
             text=f"<b>{abrev(g_sit.sum())}</b><br><span style='font-size:10px'>Total faturado</span>",
             showarrow=False, font=dict(size=14, color="#fff"))])
@@ -580,7 +592,10 @@ with c3:
     if perf.empty:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
-        rec = perf if mes_a_mes else perf.sort_values("Faturado", ascending=False)
+        rec = perf.copy()
+        rec["_tx"] = [div(a, b) for a, b in zip(rec["Recebido"], rec["Faturado"])]
+        if not mes_a_mes:
+            rec = rec.sort_values(["_tx", "Faturado"], ascending=False)
         rows = []
         for i, (nome, r) in enumerate(rec.iterrows(), 1):
             tx = div(r["Recebido"], r["Faturado"]) * 100
@@ -592,7 +607,7 @@ with c3:
 # 9. DESEMPENHO POR CONVÊNIO
 # ==============================================================================
 dica_desemp = "valores em R$ · " + ("convênio(s) selecionado(s)" if mes_a_mes else "período selecionado")
-ct = card(st.container(), "Desempenho mês a mês" if mes_a_mes else "Desempenho por convênio", dica_desemp)
+ct = card(st.container(), "Desempenho mês a mês" if mes_a_mes else "Desempenho por convênio", dica_desemp, fixo=False)
 if perf.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
@@ -601,24 +616,25 @@ else:
     for i, (nome, r) in enumerate(pf.iterrows(), 1):
         tx, ti = div(r["Recebido"], r["Faturado"]) * 100, div(r["Inadimplência"], r["Faturado"]) * 100
         rows.append(rot_cols(i, nome, True) + [
-            num(r["Faturado"]), f"<span style='color:{VERDE}'>{num(r['Recebido'])}</span>",
+            num(r["Faturado"]), num(r["Em Produção"]), num(r["Em Faturamento"]),
+            f"<span style='color:{VERDE}'>{num(r['Recebido'])}</span>",
             num(r["A receber"]), num(r["Glosas"]),
             f"<span style='color:{VERMELHO}'>{num(r['Inadimplência'])}</span>",
             pct(ti), f"<span style='color:{cor_taxa(tx)};font-weight:700'>{pct(tx)}</span>"])
     ts = pf.sum()
     total = ([] if mes_a_mes else [""]) + [
-        "TOTAL GERAL", num(ts["Faturado"]), num(ts["Recebido"]), num(ts["A receber"]), num(ts["Glosas"]),
-        num(ts["Inadimplência"]), pct(div(ts["Inadimplência"], ts["Faturado"]) * 100),
-        pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
+        "TOTAL GERAL", num(ts["Faturado"]), num(ts["Em Produção"]), num(ts["Em Faturamento"]), num(ts["Recebido"]),
+        num(ts["A receber"]), num(ts["Glosas"]), num(ts["Inadimplência"]),
+        pct(div(ts["Inadimplência"], ts["Faturado"]) * 100), pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
     ct.markdown(
-        tabela(HEAD_ROT + ["Faturado", "Recebido", "A receber", "Glosas e recursos", "Inadimplência",
-                           "% Inadimpl.", "% Receb."], rows, total, altura=420),
+        tabela(HEAD_ROT + ["Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
+                           "Glosas e recursos", "Inadimplência", "% Inadimpl.", "% Receb."], rows, total, altura=420),
         unsafe_allow_html=True)
 
 # ==============================================================================
 # 10. MATRIZ SITUAÇÃO × MÊS
 # ==============================================================================
-ct = card(st.container(), "Situação das contas × mês de faturamento", "valores em R$")
+ct = card(st.container(), "Situação das contas × mês de faturamento", "valores em R$", fixo=False)
 if sit_df.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
