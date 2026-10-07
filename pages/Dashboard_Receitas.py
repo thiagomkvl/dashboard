@@ -557,7 +557,7 @@ with b3:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
         mx, tt = fat["Faturado"].max(), fat["Faturado"].sum()
-        rows = [rot_cols(i, nome) + [abrev(r["Faturado"]), barra(div(r["Faturado"], mx) * 100),
+        rows = [rot_cols(i, nome) + [abrev(r["Faturado"]), barra(div(r["Faturado"], mx) * 100, AZUL),
                                      pct(div(r["Faturado"], tt) * 100)]
                 for i, (nome, r) in enumerate(fat.iterrows(), 1)]
         ct.markdown(tabela(HEAD_ROT + ["Faturamento", "", "%"], rows), unsafe_allow_html=True)
@@ -587,7 +587,7 @@ with c2:
         ct.markdown(vazio_html("Sem inadimplência no período"), unsafe_allow_html=True)
     else:
         mx = inad["Inadimplência"].max()
-        rows = [rot_cols(i, nome) + [abrev(r["Inadimplência"]), barra(div(r["Inadimplência"], mx) * 100),
+        rows = [rot_cols(i, nome) + [abrev(r["Inadimplência"]), barra(div(r["Inadimplência"], mx) * 100, VERMELHO),
                                      pct(div(r["Inadimplência"], r["Faturado"]) * 100)]
                 for i, (nome, r) in enumerate(inad.iterrows(), 1)]
         ct.markdown(tabela(HEAD_ROT + ["Inadimplência", "", "% fat."], rows), unsafe_allow_html=True)
