@@ -34,6 +34,15 @@ AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
 ROXO, CIANO = "#8b5cf6", "#22d3ee"
 TXT, MUTED, BORDA = "#e6ecf5", "#8fa3c4", "#1c2a47"
 
+# ==============================================================================
+# COMPARATIVO COM O MÊS ANTERIOR (aba FCx_Extrato) - ajuste aqui se precisar
+# ==============================================================================
+ABA_FCX = "FCx_Extrato"
+FCX_COL_DATA =  "c"           # coluna da data: letra (ex.: "B") ou cabeçalho; None = detecta sozinho
+FCX_ACAO_ENTRADA = "d"         # coluna L (Ação): D = entradas
+FCX_ACAO_SAIDA = "c"           # coluna L (Ação): C = saídas
+FCX_IDX_USADOS = {3, 7, 8, 10, 11, 15}  # H, I, K, L, P (não entram na busca pela coluna de data)
+
 css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -44,10 +53,12 @@ css = """
     .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
     div[data-testid="stVerticalBlock"] { gap: 1.0rem; }
     [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
+    [data-testid="stCaptionContainer"] { color: #8fa3c4 !important; }
 
     /* Sidebar */
     [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
     [data-testid="stWidgetLabel"] p { color: #8fa3c4 !important; font-size: 12px; font-weight: 600; }
+    div[role="radiogroup"] label p { color: #e6ecf5 !important; font-size: 12px; }
     .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #8fa3c4; text-transform: uppercase; margin: 6px 0 -2px; }
     .side-card { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
     .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
@@ -161,6 +172,8 @@ with st.sidebar:
         max_value=hoje,
         format="DD/MM/YYYY",
     )
+    st.markdown("<div class='side-sec' style='margin-top:14px'>Comparativo</div>", unsafe_allow_html=True)
+    modo_comp = st.radio("Linhas do gráfico:", ["Acumulado", "Diário"], horizontal=True)
     st.markdown("<div class='side-sec' style='margin-top:14px'>Relatório</div>", unsafe_allow_html=True)
     st.caption("Para PDF de qualidade: orientação Paisagem e sem cabeçalhos/rodapés.")
     components.html(
@@ -247,6 +260,127 @@ def layout_fig(fig, h=220, legenda=True):
     fig.update_xaxes(showgrid=False, linecolor=BORDA, tickfont=dict(size=10, color=MUTED))
     fig.update_yaxes(gridcolor="rgba(148,163,184,0.12)", zeroline=False, tickfont=dict(size=10, color=MUTED))
     return fig
+
+
+# --- INÍCIO: COMPARATIVO COM O MÊS ANTERIOR ----------------------------------
+def rgba(hex_cor, a):
+    h = hex_cor.lstrip("#")
+    return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a})"
+
+
+def indice_coluna(letra):
+    n = 0
+    for ch in letra.strip().upper():
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def achar_coluna_data(df):
+    """Coluna de data da FCx_Extrato: FCX_COL_DATA (letra/cabeçalho) > cabeçalho 'Data...' > conteúdo."""
+    if FCX_COL_DATA:
+        ref = str(FCX_COL_DATA).strip()
+        for c in df.columns:
+            if normalizar_texto(c) == normalizar_texto(ref):
+                return c
+        if re.fullmatch(r"[A-Za-z]{1,2}", ref) and indice_coluna(ref) < len(df.columns):
+            return df.columns[indice_coluna(ref)]
+    for c in df.columns:
+        if normalizar_texto(c).startswith("data"):
+            return c
+    melhor, melhor_pct = None, 0.6
+    for i, c in enumerate(df.columns):
+        if i in FCX_IDX_USADOS:
+            continue
+        serie = df[c]
+        if not (pd.api.types.is_datetime64_any_dtype(serie) or serie.dtype == object):
+            continue
+        dt = pd.to_datetime(serie.head(300), dayfirst=True, errors="coerce")
+        pct_ok = (dt.notna() & dt.dt.year.between(2000, 2100)).mean()
+        if pct_ok > melhor_pct:
+            melhor, melhor_pct = c, pct_ok
+    return melhor
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_fcx(ini, fim):
+    """Entradas (Ação D) e saídas (Ação C) operacionais por dia na aba FCx_Extrato."""
+    vazio = pd.DataFrame(columns=["Data", "Entrada Op", "Saída Op"])
+    conn = conectar_sheets()
+    if conn is None:
+        return vazio, "Conexão indisponível."
+    try:
+        df = conn.read(worksheet=ABA_FCX, ttl=0)
+    except Exception as e:
+        return vazio, f"Não foi possível ler a aba '{ABA_FCX}': {e}"
+    if df is None or df.empty or len(df.columns) < 12:
+        return vazio, f"A aba '{ABA_FCX}' está vazia ou tem menos de 12 colunas."
+
+    col_data = achar_coluna_data(df)
+    if col_data is None:
+        return vazio, f"Coluna de data não identificada na aba '{ABA_FCX}' (defina FCX_COL_DATA)."
+
+    datas = pd.to_datetime(df[col_data], dayfirst=True, errors="coerce").dt.normalize()
+    operacional = df.iloc[:, 8].apply(normalizar_texto) == "operacional"  # coluna I (Classificação)
+    if not operacional.any():
+        return vazio, "A coluna I (Classificação) não tem nenhum valor 'Operacional'."
+
+    base = pd.DataFrame({
+        "Data": datas,
+        "Valor": df.iloc[:, 10].apply(limpa_valor_bruto).abs(),  # coluna K (Valor)
+        "Acao": df.iloc[:, 11].apply(normalizar_texto),          # coluna L (Ação)
+    })
+    base = base[operacional & datas.between(pd.Timestamp(ini), pd.Timestamp(fim))]
+    ent = base[base["Acao"] == FCX_ACAO_ENTRADA].groupby("Data")["Valor"].sum()
+    sai = base[base["Acao"] == FCX_ACAO_SAIDA].groupby("Data")["Valor"].sum()
+    out = pd.DataFrame({"Entrada Op": ent, "Saída Op": sai}).fillna(0.0)
+    out.index.name = "Data"
+    return out.reset_index(), ""
+
+
+def serie_diaria(df, col, idx):
+    if df is None or df.empty:
+        return pd.Series(0.0, index=idx)
+    return df.groupby("Data")[col].sum().reindex(idx, fill_value=0.0)
+
+
+def fig_comparativo(atual, anterior, cor, acumulado):
+    x = [d.strftime("%d/%m") for d in atual.index]
+    fig = go.Figure()
+    if anterior is not None:
+        yp = anterior.cumsum() if acumulado else anterior
+        n = min(len(yp), len(x))
+        fig.add_trace(go.Scatter(
+            x=x[:n], y=yp.values[:n], name="Mês anterior", mode="lines",
+            line=dict(color=MUTED, width=2, dash="dash"),
+            customdata=[d.strftime("%d/%m/%Y") for d in yp.index[:n]],
+            hovertemplate="Mês anterior (%{customdata}): R$ %{y:,.2f}<extra></extra>",
+        ))
+    ya = atual.cumsum() if acumulado else atual
+    fig.add_trace(go.Scatter(
+        x=x, y=ya.values, name="Mês atual", mode="lines+markers",
+        line=dict(color=cor, width=2.8), marker=dict(size=5),
+        fill="tozeroy", fillcolor=rgba(cor, 0.10),
+        hovertemplate="Mês atual: R$ %{y:,.2f}<extra></extra>",
+    ))
+    layout_fig(fig, 240)
+    fig.update_layout(hovermode="x unified", separators=",.")
+    fig.update_yaxes(tickprefix="R$ ", tickformat=".2s")
+    return fig
+
+
+def resumo_comp(atual, anterior, bom_se_subir):
+    ta = float(atual.sum())
+    if anterior is None:
+        return f"Atual {formatar_abreviado(ta)}"
+    tp = float(anterior.sum())
+    base = f"Atual {formatar_abreviado(ta)} · Anterior {formatar_abreviado(tp)}"
+    if tp == 0:
+        return base
+    v = (ta / tp - 1) * 100
+    cor = VERDE if (v >= 0) == bom_se_subir else VERMELHO
+    seta = "↗" if v >= 0 else "↘"
+    return f"{base} · <b style='color:{cor}'>{seta} {abs(v):.1f}%</b>"
+# --- FIM: COMPARATIVO COM O MÊS ANTERIOR -------------------------------------
 
 
 # ==============================================================================
@@ -653,6 +787,49 @@ with c3:
         )
     tabela_app += "</tbody></table></div>"
     st.markdown(tabela_app, unsafe_allow_html=True)
+
+# ==============================================================================
+# COMPARATIVO OPERACIONAL: MÊS ATUAL × MÊS ANTERIOR
+# (atual = Extratos_Bancos, coluna K "Operacional" | anterior = aba FCx_Extrato)
+# ==============================================================================
+ini_atual, fim_atual = pd.Timestamp(data_ini_painel), pd.Timestamp(data_fim_painel)
+ini_ant = ini_atual - pd.DateOffset(months=1)
+fim_ant = fim_atual - pd.DateOffset(months=1)
+idx_atual = pd.date_range(ini_atual, fim_atual)
+idx_ant = pd.date_range(ini_ant, fim_ant)
+
+df_fcx, erro_fcx = carregar_fcx(ini_ant.date(), fim_ant.date())
+ent_atual = serie_diaria(df_graficos, "Entrada Op", idx_atual)
+sai_atual = serie_diaria(df_graficos, "Saída Op", idx_atual)
+if erro_fcx:
+    ent_ant = sai_ant = None
+else:
+    ent_ant = serie_diaria(df_fcx, "Entrada Op", idx_ant)
+    sai_ant = serie_diaria(df_fcx, "Saída Op", idx_ant)
+acumulado = (modo_comp == "Acumulado")
+
+cmp1, cmp2 = st.columns(2, gap="small")
+with cmp1:
+    st.markdown(
+        f"<div class='section-title'>Entradas operacionais · mês atual × anterior "
+        f"<span>{resumo_comp(ent_atual, ent_ant, True)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(fig_comparativo(ent_atual, ent_ant, VERDE, acumulado),
+                    use_container_width=True, config={'displayModeBar': False})
+with cmp2:
+    st.markdown(
+        f"<div class='section-title'>Saídas operacionais · mês atual × anterior "
+        f"<span>{resumo_comp(sai_atual, sai_ant, False)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(fig_comparativo(sai_atual, sai_ant, VERMELHO, acumulado),
+                    use_container_width=True, config={'displayModeBar': False})
+
+if erro_fcx:
+    st.caption(f"⚠️ Comparativo com o mês anterior indisponível: {erro_fcx}")
+else:
+    st.caption(f"Mês anterior: {ini_ant:%d/%m/%Y} – {fim_ant:%d/%m/%Y} · fonte: aba {ABA_FCX} (Classificação = Operacional)")
 
 # ==============================================================================
 # TABELAS INFERIORES
