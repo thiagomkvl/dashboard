@@ -227,10 +227,11 @@ page_home = st.Page(
 
 # Páginas dos Dashboards (Mapeando explicitamente para os arquivos na pasta pages)
 # Nota: O url_path DEVE ser idêntico ao href lá do MODULES para os cards continuarem funcionando.
-page_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldos Bancários", url_path="Dashboard_Saldo")
-page_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa", url_path="painel_fluxo_caixa")
-page_obra = st.Page("pages/Acompanhamento_Obra.py", title="Gestão Orçamentária Obras", url_path="Acompanhamento_Obra")
 page_faturamento = st.Page("pages/Análise_Faturamento.py", title="Análise Faturamento", url_path="Análise_Faturamento")
+page_obra = st.Page("pages/Acompanhamento_Obra.py", title="Despesas C/ Obras", url_path="Acompanhamento_Obra")
+page_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldo Caixa", url_path="Dashboard_Saldo")
+page_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa", url_path="painel_fluxo_caixa")
+
 
 
 
