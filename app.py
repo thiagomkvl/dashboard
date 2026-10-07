@@ -6,6 +6,7 @@ import streamlit as st
 PAGE_TITLE = "Portal Financeiro Executivo"
 PAGE_ICON = "🏢"
 
+# O st.set_page_config SEMPRE deve ser o primeiro comando Streamlit
 st.set_page_config(
     page_title=PAGE_TITLE,
     layout="wide",
@@ -88,29 +89,7 @@ if not st.session_state.autenticado:
 
 
 # ==============================================================================
-# 1. MENU CUSTOMIZADO E BOTÃO DE LOGOUT NA SIDEBAR
-# ==============================================================================
-with st.sidebar:
-    st.markdown("### 📌 Menu Principal")
-    
-    # Aqui você define EXATAMENTE o que vai aparecer no menu.
-    # O primeiro parâmetro é o caminho real do arquivo, o label é o texto visível.
-    st.page_link("app.py", label="🏠 Hub Inicial")
-    st.page_link("pages/Dashboard_Saldo.py", label="💰 Dashboard de Saldos")
-    st.page_link("pages/painel_fluxo_caixa.py", label="📊 Fluxo de Caixa")
-    st.page_link("pages/painel_pagar.py", label="💸 Painel de Pagamentos")
-    
-    st.markdown("---")
-    
-    st.markdown("### 👤 Minha Sessão")
-    if st.button("🔒 Sair do Sistema", use_container_width=True):
-        st.session_state.autenticado = False
-        st.rerun()
-    st.markdown("---")
-
-
-# ==============================================================================
-# 2. MÓDULOS E CARDS DO PORTAL
+# 1. FUNÇÕES DO HUB / HOME PORTAL
 # ==============================================================================
 CARD_PREVIEW_PATHS = {
     "saldos": "assets/preview_saldos.png",
@@ -121,63 +100,46 @@ CARD_PREVIEW_PATHS = {
 MODULES = [
     {
         "title": "Dashboard de Saldos",
-        "description": (
-            "Visão consolidada de todas as contas bancárias, aplicações e limites de "
-            "crédito em tempo real."
-        ),
+        "description": "Visão consolidada de todas as contas bancárias, aplicações e limites de crédito em tempo real.",
         "href": "Dashboard_Saldo",
         "image": CARD_PREVIEW_PATHS["saldos"],
     },
     {
         "title": "Fluxo de Caixa Analítico",
-        "description": (
-            "Mapeamento da origem e destino do dinheiro, geração líquida e taxa de "
-            "consumo sob a ótica de caixa."
-        ),
+        "description": "Mapeamento da origem e destino do dinheiro, geração líquida e taxa de consumo sob a ótica de caixa.",
         "href": "painel_fluxo_caixa",
         "image": CARD_PREVIEW_PATHS["fluxo"],
     },
     {
         "title": "Painel de Pagamentos",
-        "description": (
-            "Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e "
-            "controle de saídas."
-        ),
+        "description": "Gestão de passivos, curva ABC de fornecedores, aging de vencimentos e controle de saídas.",
         "href": "painel_pagar",
         "image": CARD_PREVIEW_PATHS["pagar"],
     },
 ]
 
-
 def get_image_data_url(file_path: str) -> str:
     """Converte uma imagem local em um data URL válido para uso em HTML/CSS."""
     fallback = "linear-gradient(135deg, #eff6ff, #bfdbfe)"
-
     if not file_path or not os.path.exists(file_path):
         return fallback
-
     try:
         with open(file_path, "rb") as image_file:
             image_bytes = image_file.read()
     except OSError:
         return fallback
-
     extension = os.path.splitext(file_path)[1].lower().lstrip(".")
     encoded = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/{extension};base64,{encoded}"
 
-
 def get_background_style(image_data: str) -> str:
     """Retorna uma propriedade de background para uso em elementos HTML."""
     if image_data.startswith("linear-gradient"):
-        return f"background: {image_data};"
-    return fPara fazer isso, vamos utilizar o sistema nativo de navegação introduzido nas versões mais recentes do Streamlit (`st.navigation` e `st.Page`). 
+        return f"background: {image_data};"Houve um erro de formatação na minha resposta anterior. O texto da explicação acabou se misturando com a última linha da função `get_background_style` dentro do código Python, gerando esse erro de sintaxe.
 
-Com essa estrutura, **o Streamlit ignora a leitura automática da pasta `pages/`** e passa a renderizar no menu lateral **apenas** as páginas que você definir explicitamente no código, na ordem e categoria que você quiser. 
+A linha correta era para ser o retorno da imagem no CSS: `return f"background-image: url('{image_data}');"`.
 
-Outra vantagem é que transformamos a sua tela inicial (os cards) em uma página raiz oficial (`default=True`), o que evita conflitos e redirecionamentos estranhos.
-
-Aqui está o código do seu `app.py` ajustado e otimizado:
+Aqui está o código completo e corrigido para você copiar e substituir integralmente no seu `app.py`:
 
 ```python
 import base64
