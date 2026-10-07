@@ -497,7 +497,7 @@ kpis = [
     kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"])),
     kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"])),
     kpi("Glosas e recursos", moeda(cat["Glosas"]), sub_pct(cat["Glosas"])),
-    kpi("Taxa de liquidação", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>"),
+    kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>"),
 ]
 for col, html in zip(st.columns(8, gap="small"), kpis):
     col.markdown(html, unsafe_allow_html=True)
