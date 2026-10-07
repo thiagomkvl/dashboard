@@ -30,8 +30,6 @@ except Exception as _err:
 # ==============================================================================
 # CONFIGURAÇÕES (ajuste aqui se precisar)
 # ==============================================================================
-MARCA_NOME, MARCA_SUB = "AURA TECH", "BUSINESS INTELLIGENCE"
-
 ABA_SITUACAO = "Situação_Contas"                # Situação × Mês
 ABA_SITUACAO_CONV = "Situação_Contas_Convênio"  # Situação > Convênio × Mês
 ABA_FAT_CONV = "Faturamento_Convênio"           # Convênio × Mês
@@ -49,7 +47,7 @@ COR_SIT = {
 ORDEM_SIT = list(COR_SIT)
 
 # Agrupamento das Situações nos KPIs (regra por palavra-chave, veja categoria())
-CATS = ["Liquidado", "A receber", "Inadimplência", "Glosas"]
+CATS = ["Recebido", "A receber", "Inadimplência", "Glosas"]
 
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
          "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
@@ -72,10 +70,6 @@ css = """
     /* Sidebar */
     [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
     [data-testid="stWidgetLabel"] p { color: #8fa3c4 !important; font-size: 12px; font-weight: 600; }
-    .brand { display: flex; align-items: center; gap: 10px; padding: 2px 0 14px; margin-bottom: 8px; border-bottom: 1px solid #1a2744; }
-    .logo { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg, #f97316, #ea580c); display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; font-size: 18px; }
-    .brand-n { font-size: 17px; font-weight: 800; letter-spacing: 0.6px; color: #fff; line-height: 1.1; }
-    .brand-s { font-size: 9px; font-weight: 700; letter-spacing: 1.1px; color: #f97316; }
     .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #8fa3c4; text-transform: uppercase; margin: 6px 0 -2px; }
     .side-card { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
     .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
@@ -107,7 +101,6 @@ css = """
     /* KPIs */
     .kpi { padding: 13px 14px; border-radius: 12px; min-height: 104px; }
     .kpi-top { display: flex; align-items: center; gap: 8px; }
-    .kpi-ico { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
     .kpi-t { font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; line-height: 1.15; }
     .kpi-v { font-size: clamp(14px, 1.25vw, 20px); font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap; margin: 8px 0 3px; font-variant-numeric: tabular-nums; }
     .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
@@ -230,7 +223,7 @@ def categoria(sit):
     """Agrupa as Situações em 4 categorias para os KPIs (edite as palavras-chave se precisar)."""
     n = normalizar_texto(sit)
     if "liquid" in n:
-        return "Liquidado"
+        return "Recebido"
     if "inadimpl" in n:
         return "Inadimplência"
     if "glosa" in n or "recurso" in n:
@@ -324,12 +317,7 @@ rot = {m: rot_mes(m) for m in meses_all}
 # 3. SIDEBAR (FILTROS)
 # ==============================================================================
 with st.sidebar:
-    st.markdown(
-        f"<div class='brand'><div class='logo'>{MARCA_NOME[0]}</div><div>"
-        f"<div class='brand-n'>{MARCA_NOME}</div><div class='brand-s'>{MARCA_SUB}</div></div></div>"
-        f"<div class='side-sec'>Filtros</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
     c_a, c_b = st.columns(2)
     ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
     fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
@@ -379,16 +367,23 @@ def totais(d):
 tot, cat = totais(sit_df)
 tot_p, cat_p = totais(sit_prev)
 
+mes_a_mes = bool(conv_sel)  # com convênio filtrado, os blocos passam a mostrar mês a mês
+
 if cruz.empty:
     perf = pd.DataFrame()
 else:
-    perf = cruz.pivot_table(index="Convênio", columns="Cat", values="Valor", aggfunc="sum", fill_value=0.0)
+    perf = cruz.pivot_table(index="Ref" if mes_a_mes else "Convênio", columns="Cat", values="Valor",
+                            aggfunc="sum", fill_value=0.0)
     for c in CATS:
         if c not in perf.columns:
             perf[c] = 0.0
     perf = perf[CATS]
     perf["Faturado"] = perf.sum(axis=1)
-    perf = perf[perf["Faturado"].abs() > 0.005]
+    if mes_a_mes:
+        perf = perf.reindex(refs_sel, fill_value=0.0)
+        perf.index = [rot[m] for m in refs_sel]
+    else:
+        perf = perf[perf["Faturado"].abs() > 0.005]
 
 x_lab = [rot[m] for m in refs_sel]
 
@@ -418,13 +413,12 @@ def card(coluna, titulo, dica=""):
     return ct
 
 
-def top_outros(df, ordem, n=9):
-    df = df.sort_values(ordem, ascending=False)
-    if len(df) <= n + 1:
-        return df
-    out = df.iloc[n:].sum(numeric_only=True)
-    out.name = "Outros Convênios"
-    return pd.concat([df.head(n), out.to_frame().T.astype(float)])
+HEAD_ROT = ["Mês"] if mes_a_mes else ["#", "Convênio"]
+
+
+def rot_cols(i, nome, negrito=False):
+    nome = f"<b>{nome}</b>" if negrito else nome
+    return [nome] if mes_a_mes else [f"<span class='mut'>{i}</span>", nome]
 
 
 def layout(fig, h=330, legenda=True):
@@ -441,10 +435,10 @@ def layout(fig, h=330, legenda=True):
     return fig
 
 
-def kpi(icone, titulo, valor, sub, cor):
+def kpi(titulo, valor, sub, cor):
     return (
         f"<div class='kpi' style='background:linear-gradient(135deg,{cor}26,#0f1a2e 65%);border:1px solid {cor}55'>"
-        f"<div class='kpi-top'><div class='kpi-ico' style='background:{cor}33;color:{cor}'>{icone}</div>"
+        f"<div class='kpi-top'>"
         f"<div class='kpi-t' style='color:{cor}'>{titulo}</div></div>"
         f"<div class='kpi-v'>{valor}</div>{sub}</div>"
     )
@@ -481,12 +475,12 @@ for e in erros:
     st.warning(e)
 
 kpis = [
-    kpi("🧾", "Faturamento total", moeda(tot), sub_delta(tot, tot_p), AZUL),
-    kpi("💰", "Liquidado", moeda(cat["Liquidado"]), sub_delta(cat["Liquidado"], cat_p["Liquidado"]), VERDE),
-    kpi("⏳", "A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"], AMBAR), AMBAR),
-    kpi("⚠️", "Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"], VERMELHO), VERMELHO),
-    kpi("📑", "Glosas e recursos", moeda(cat["Glosas"]), sub_pct(cat["Glosas"], ROXO), ROXO),
-    kpi("📈", "Taxa de liquidação", pct(div(cat["Liquidado"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", CIANO),
+    kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p), AZUL),
+    kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]), VERDE),
+    kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"], AMBAR), AMBAR),
+    kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"], VERMELHO), VERMELHO),
+    kpi("Glosas e recursos", moeda(cat["Glosas"]), sub_pct(cat["Glosas"], ROXO), ROXO),
+    kpi("Taxa de liquidação", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", CIANO),
 ]
 for col, html in zip(st.columns(6, gap="small"), kpis):
     col.markdown(html, unsafe_allow_html=True)
@@ -497,13 +491,13 @@ for col, html in zip(st.columns(6, gap="small"), kpis):
 b1, b2, b3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
 with b1:
-    ct = card(b1, "Faturamento × Liquidado (R$)", "por mês de faturamento")
+    ct = card(b1, "Faturamento × Recebido (R$)", "por mês de faturamento")
     tot_m = sit_df.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
-    liq_m = sit_df[sit_df["Cat"] == "Liquidado"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+    liq_m = sit_df[sit_df["Cat"] == "Recebido"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
     fig_ev = go.Figure()
     for nome, serie, cor, fill in (
         ("Faturamento total", tot_m, AZUL, "rgba(59,130,246,0.14)"),
-        ("Liquidado", liq_m, VERDE, "rgba(16,185,129,0.18)"),
+        ("Recebido", liq_m, VERDE, "rgba(16,185,129,0.18)"),
     ):
         fig_ev.add_trace(go.Scatter(
             x=x_lab, y=serie.values, name=nome, mode="lines+markers", line=dict(color=cor, width=2.5),
@@ -536,17 +530,20 @@ with b2:
         ct.markdown(f"<div>{leg}</div>", unsafe_allow_html=True)
 
 with b3:
-    ct = card(b3, "Top 10 convênios por faturamento")
-    fat = conv_df.groupby("Convênio")["Valor"].sum().to_frame("Faturado")
-    fat = fat[fat["Faturado"] > 0]
+    ct = card(b3, "Faturamento mês a mês" if mes_a_mes else "Convênios por faturamento")
+    if mes_a_mes and not perf.empty:
+        fat = perf[["Faturado"]]
+    else:
+        fat = conv_df.groupby("Convênio")["Valor"].sum().to_frame("Faturado")
+        fat = fat[fat["Faturado"] > 0].sort_values("Faturado", ascending=False)
     if fat.empty:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
-        fat = top_outros(fat, "Faturado")
         mx, tt = fat["Faturado"].max(), fat["Faturado"].sum()
-        rows = [[f"<span class='mut'>{i}</span>", nome, abrev(r["Faturado"]), barra(r["Faturado"] / mx * 100, AZUL),
-                 pct(r["Faturado"] / tt * 100)] for i, (nome, r) in enumerate(fat.iterrows(), 1)]
-        ct.markdown(tabela(["#", "Convênio", "Faturamento", "", "%"], rows), unsafe_allow_html=True)
+        rows = [rot_cols(i, nome) + [abrev(r["Faturado"]), barra(div(r["Faturado"], mx) * 100, AZUL),
+                                     pct(div(r["Faturado"], tt) * 100)]
+                for i, (nome, r) in enumerate(fat.iterrows(), 1)]
+        ct.markdown(tabela(HEAD_ROT + ["Faturamento", "", "%"], rows), unsafe_allow_html=True)
 
 # ==============================================================================
 # 8. LINHA 2: SITUAÇÃO POR MÊS | TOP 10 INADIMPLÊNCIA | TAXA DE RECEBIMENTO
@@ -561,59 +558,61 @@ with c1:
         fig_st.add_trace(go.Bar(
             x=x_lab, y=y.values, name=sit, marker_color=cor_sit(sit),
             hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + sit + "</extra>"))
-    fig_st.update_layout(barmode="stack", bargap=0.35)
+    fig_st.update_layout(barmode="stack", bargap=0.35, legend=dict(font=dict(color="#ffffff")))
     ct.plotly_chart(layout(fig_st), use_container_width=True, config={"displayModeBar": False})
 
 with c2:
-    ct = card(c2, "Top 10 convênios por inadimplência")
+    ct = card(c2, "Inadimplência mês a mês" if mes_a_mes else "Convênios por inadimplência")
     inad = perf[["Inadimplência", "Faturado"]] if not perf.empty else pd.DataFrame()
-    inad = inad[inad["Inadimplência"] > 0] if not inad.empty else inad
+    if not mes_a_mes and not inad.empty:
+        inad = inad[inad["Inadimplência"] > 0].sort_values("Inadimplência", ascending=False)
     if inad.empty:
         ct.markdown(vazio_html("Sem inadimplência no período"), unsafe_allow_html=True)
     else:
-        inad = top_outros(inad, "Inadimplência")
         mx = inad["Inadimplência"].max()
-        rows = [[f"<span class='mut'>{i}</span>", nome, abrev(r["Inadimplência"]),
-                 barra(r["Inadimplência"] / mx * 100, VERMELHO), pct(div(r["Inadimplência"], r["Faturado"]) * 100)]
+        rows = [rot_cols(i, nome) + [abrev(r["Inadimplência"]), barra(div(r["Inadimplência"], mx) * 100, VERMELHO),
+                                     pct(div(r["Inadimplência"], r["Faturado"]) * 100)]
                 for i, (nome, r) in enumerate(inad.iterrows(), 1)]
-        ct.markdown(tabela(["#", "Convênio", "Inadimplência", "", "% conv."], rows), unsafe_allow_html=True)
+        ct.markdown(tabela(HEAD_ROT + ["Inadimplência", "", "% fat."], rows), unsafe_allow_html=True)
 
 with c3:
-    ct = card(c3, "Taxa de recebimento por convênio")
+    ct = card(c3, "Taxa de recebimento mês a mês" if mes_a_mes else "Taxa de recebimento por convênio")
     if perf.empty:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
-        rec = perf.sort_values("Faturado", ascending=False).head(10)
+        rec = perf if mes_a_mes else perf.sort_values("Faturado", ascending=False)
         rows = []
         for i, (nome, r) in enumerate(rec.iterrows(), 1):
-            tx = div(r["Liquidado"], r["Faturado"]) * 100
-            rows.append([f"<span class='mut'>{i}</span>", nome, abrev(r["Faturado"]), abrev(r["Liquidado"]),
-                         barra(tx, cor_taxa(tx)), pct(tx)])
-        ct.markdown(tabela(["#", "Convênio", "Faturado", "Liquidado", "", "% Receb."], rows), unsafe_allow_html=True)
+            tx = div(r["Recebido"], r["Faturado"]) * 100
+            rows.append(rot_cols(i, nome) + [abrev(r["Faturado"]), abrev(r["Recebido"]),
+                                             barra(tx, cor_taxa(tx)), pct(tx)])
+        ct.markdown(tabela(HEAD_ROT + ["Faturado", "Recebido", "", "% Receb."], rows), unsafe_allow_html=True)
 
 # ==============================================================================
 # 9. DESEMPENHO POR CONVÊNIO
 # ==============================================================================
-ct = card(st.container(), "Desempenho por convênio", "valores em R$ · período selecionado")
+dica_desemp = "valores em R$ · " + ("convênio(s) selecionado(s)" if mes_a_mes else "período selecionado")
+ct = card(st.container(), "Desempenho mês a mês" if mes_a_mes else "Desempenho por convênio", dica_desemp)
 if perf.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
-    pf = perf.sort_values("Faturado", ascending=False)
+    pf = perf if mes_a_mes else perf.sort_values("Faturado", ascending=False)
     rows = []
     for i, (nome, r) in enumerate(pf.iterrows(), 1):
-        tx, ti = div(r["Liquidado"], r["Faturado"]) * 100, div(r["Inadimplência"], r["Faturado"]) * 100
-        rows.append([
-            f"<span class='mut'>{i}</span>", f"<b>{nome}</b>", num(r["Faturado"]),
-            f"<span style='color:{VERDE}'>{num(r['Liquidado'])}</span>", num(r["A receber"]), num(r["Glosas"]),
+        tx, ti = div(r["Recebido"], r["Faturado"]) * 100, div(r["Inadimplência"], r["Faturado"]) * 100
+        rows.append(rot_cols(i, nome, True) + [
+            num(r["Faturado"]), f"<span style='color:{VERDE}'>{num(r['Recebido'])}</span>",
+            num(r["A receber"]), num(r["Glosas"]),
             f"<span style='color:{VERMELHO}'>{num(r['Inadimplência'])}</span>",
             pct(ti), f"<span style='color:{cor_taxa(tx)};font-weight:700'>{pct(tx)}</span>"])
     ts = pf.sum()
-    total = ["", "TOTAL GERAL", num(ts["Faturado"]), num(ts["Liquidado"]), num(ts["A receber"]), num(ts["Glosas"]),
-             num(ts["Inadimplência"]), pct(div(ts["Inadimplência"], ts["Faturado"]) * 100),
-             pct(div(ts["Liquidado"], ts["Faturado"]) * 100)]
+    total = ([] if mes_a_mes else [""]) + [
+        "TOTAL GERAL", num(ts["Faturado"]), num(ts["Recebido"]), num(ts["A receber"]), num(ts["Glosas"]),
+        num(ts["Inadimplência"]), pct(div(ts["Inadimplência"], ts["Faturado"]) * 100),
+        pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
     ct.markdown(
-        tabela(["#", "Convênio", "Faturado", "Liquidado", "A receber", "Glosas e recursos", "Inadimplência",
-                "% Inadimpl.", "% Receb."], rows, total, altura=420),
+        tabela(HEAD_ROT + ["Faturado", "Recebido", "A receber", "Glosas e recursos", "Inadimplência",
+                           "% Inadimpl.", "% Receb."], rows, total, altura=420),
         unsafe_allow_html=True)
 
 # ==============================================================================
