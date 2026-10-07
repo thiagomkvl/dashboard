@@ -1,4 +1,3 @@
-import base64
 import os
 import streamlit as st
 
@@ -73,49 +72,8 @@ if not st.session_state["autenticado"]:
 
 
 # ==============================================================================
-# 1. HOME
+# 1. HOME (somente boas-vindas — navegação só no menu lateral)
 # ==============================================================================
-CARD_PREVIEW_PATHS = {
-    "saldos": "assets/preview_saldos.png",
-    "fluxo": "assets/preview_fluxo.png",
-    "pagar": "assets/preview_pagar.png",
-}
-
-MODULES = [
-    {
-        "title": "Dashboard de Saldos",
-        "description": "Visão consolidada de contas bancárias, aplicações e limites de crédito.",
-        "href": "Dashboard_Saldo",
-        "image": CARD_PREVIEW_PATHS["saldos"],
-    },
-    {
-        "title": "Fluxo de Caixa Analítico",
-        "description": "Origem e destino do dinheiro, geração líquida e taxa de consumo.",
-        "href": "painel_fluxo_caixa",
-        "image": CARD_PREVIEW_PATHS["fluxo"],
-    },
-    {
-        "title": "Painel de Pagamentos",
-        "description": "Passivos, curva ABC de fornecedores e aging de vencimentos.",
-        "href": "painel_pagar",
-        "image": CARD_PREVIEW_PATHS["pagar"],
-    },
-]
-
-
-def get_image_data_url(file_path: str) -> str:
-    fallback = "linear-gradient(135deg, #eff6ff, #bfdbfe)"
-    if not file_path or not os.path.exists(file_path):
-        return fallback
-    try:
-        with open(file_path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("utf-8")
-        ext = os.path.splitext(file_path)[1].lower().lstrip(".") or "png"
-        return f"data:image/{ext};base64,{encoded}"
-    except OSError:
-        return fallback
-
-
 def render_home_page() -> None:
     st.markdown(
         """
@@ -123,61 +81,36 @@ def render_home_page() -> None:
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         html, body, [class*="css"] { font-family: "Inter", sans-serif; color: #1e293b; }
         .stApp { background-color: #f4f6f9; }
-        .main .block-container { max-width: 1100px; padding-top: 2rem; padding-bottom: 2rem; }
-        .hub-header { text-align: center; margin-bottom: 32px; }
-        .hub-header h1 { font-size: 28px; font-weight: 800; color: #1e40af; margin: 0 0 8px 0; }
-        .hub-header p { font-size: 14px; color: #64748b; margin: 0; }
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
-        .hub-card {
-            background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-            text-decoration: none; color: inherit; display: block; overflow: hidden;
-            box-shadow: 0 4px 10px rgba(30, 64, 175, 0.05);
-        }
-        .hub-card:hover { border-color: #bfdbfe; box-shadow: 0 10px 20px rgba(30, 64, 175, 0.12); }
-        .card-image { width: 100%; height: 140px; background-size: cover; background-position: center; }
-        .card-content { padding: 16px 18px 18px; }
-        .card-title { font-size: 15px; font-weight: 800; color: #1e40af; margin-bottom: 6px; }
-        .card-desc { font-size: 12px; color: #64748b; line-height: 1.45; }
+        .main .block-container { max-width: 900px; padding-top: 3rem; padding-bottom: 2rem; }
+        .hub-header { text-align: center; margin-top: 40px; }
+        .hub-header h1 { font-size: 28px; font-weight: 800; color: #1e40af; margin: 0 0 10px 0; }
+        .hub-header p { font-size: 15px; color: #64748b; margin: 0; line-height: 1.5; }
         </style>
         """,
         unsafe_allow_html=True,
     )
-
     st.markdown(
         f"""
         <div class="hub-header">
             <h1>{PAGE_TITLE}</h1>
-            <p>Selecione um módulo no menu lateral ou nos cards abaixo.</p>
+            <p>Use o menu lateral para acessar os módulos do portal.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    cards = []
-    for m in MODULES:
-        img = get_image_data_url(m["image"])
-        bg = f"background-image:url('{img}');" if img.startswith("data:") else f"background:{img};"
-        cards.append(
-            f'<a class="hub-card" href="{m["href"]}" target="_self">'
-            f'<div class="card-image" style="{bg}"></div>'
-            f'<div class="card-content">'
-            f'<div class="card-title">{m["title"]}</div>'
-            f'<div class="card-desc">{m["description"]}</div>'
-            f"</div></a>"
-        )
-    st.markdown(f'<div class="card-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
-
 
 # ==============================================================================
-# 2. NAVEGAÇÃO
+# 2. NAVEGAÇÃO (menu lateral)
 # ==============================================================================
 page_home = st.Page(render_home_page, title="Home do Portal", icon=":material/home:", default=True)
 
-# Só registra páginas cujo arquivo existe (evita tela branca se faltar algum .py)
+
 def _page(path, title, url_path):
     if os.path.exists(path):
         return st.Page(path, title=title, url_path=url_path)
     return None
+
 
 pages_ops = []
 for path, title, url in [
