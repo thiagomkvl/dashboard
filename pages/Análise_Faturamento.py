@@ -654,10 +654,3 @@ else:
 # ==============================================================================
 # 11. RODAPÉ DA SIDEBAR (informações e conciliação das abas)
 # ==============================================================================
-tots = [d["Valor"].sum() for d in (s, sc, f) if not d.empty]
-selo = ""
-if len(tots) == 3:
-    dif = max(tots) - min(tots)
-    selo = ("<div class='selo ok'>✓ Abas conciliadas</div>" if dif < 1
-            else f"<div class='selo warn'>⚠ Divergência de {moeda(dif, 2)} entre as abas</div>")
-    )
