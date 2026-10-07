@@ -83,8 +83,8 @@ def _page(path, title, url_path, default=False):
 # Ordem = ordem do menu. O primeiro que existir vira a página inicial.
 candidatos = [
     ("pages/Análise_Faturamento.py", "Análise Faturamento", "Análise_Faturamento"),
-    ("pages/Dashboard_Saldo.py", "Saldo Caixa", "Dashboard_Saldo"),
-    ("pages/Acompanhamento_Obra.py", "Despesas C/ Obras", "Acompanhamento_Obra"),
+    ("pages/Dashboard_Saldo.py", "Saldo Contas Bancárias", "Dashboard_Saldo"),
+    ("pages/Acompanhamento_Obra.py", "Despesas Com Obras", "Acompanhamento_Obra"),
 ]
 
 pages = []
