@@ -32,8 +32,8 @@ ROXO, LARANJA, CIANO, ROSA = "#8b5cf6", "#f97316", "#22d3ee", "#fb7185"
 TXT, MUTED, BORDA = "#e6ecf5", "#8fa3c4", "#1c2a47"
 BG_APP, BG_CARD, BG_SIDE = "#0a1020", "#0f1a2e", "#0b1326"
 
-ESPACO_ENTRE_BLOCOS = "0.5rem"
-AJUSTE_APOS_KPIS = "-0.5rem"
+ESPACO_ENTRE_BLOCOS = "1.0rem"
+AJUSTE_APOS_KPIS = "1.0rem"
 
 # ==============================================================================
 # 1. CUSTOM CSS (IDENTIDADE VISUAL ESCURA)
