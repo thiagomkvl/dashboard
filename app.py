@@ -229,12 +229,16 @@ page_home = st.Page(
 # Nota: O url_path DEVE ser idêntico ao href lá do MODULES para os cards continuarem funcionando.
 page_saldos = st.Page("pages/Dashboard_Saldo.py", title="Saldos Bancários", icon="💰", url_path="Dashboard_Saldo")
 page_fluxo = st.Page("pages/painel_fluxo_caixa.py", title="Fluxo de Caixa", icon="📉", url_path="painel_fluxo_caixa")
-page_pagar = st.Page("pages/painel_pagar.py", title="Contas a Pagar", icon="💸", url_path="painel_pagar")
+page_obra = st.Page("pages/Acompanhamento_Obra.py", title="Gestão Orçamentária Obras", icon="📉", url_path="Acompanhamento_Obra")
+page_faturamento = st.Page("pages/Análise_Faturamento.py", title="Análise Faturamento", icon="📉", url_path="Análise_Faturamento")
+
+
+
 
 # Define a estrutura exata do menu lateral que será exibido
 nav_structure = {
     "Principal": [page_home],
-    "Módulos Operacionais": [page_saldos, page_fluxo, page_pagar]
+    "Módulos Operacionais": [page_saldos, page_fluxo, page_obra, page_faturamento]
 }
 
 # Inicia a navegação com base na estrutura acima (qualquer outro arquivo na pasta pages será IGNORADO)
