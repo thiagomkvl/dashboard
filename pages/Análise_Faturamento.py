@@ -33,10 +33,7 @@ except Exception as _err:
 ESPACO_ENTRE_BLOCOS = "1.0rem"  # espaço geral entre os elementos da página
 AJUSTE_APOS_KPIS = "1.0rem"    # espaço extra entre os cards do topo e os blocos
 
-ABA_SITUACAO = "Situação_Contas"                # Situação × Mês
-ABA_SITUACAO_CONV = "Situação_Contas_Convênio"  # Situação > Convênio × Mês
-ABA_FAT_CONV = "Faturamento_Convênio"           # Convênio × Mês
-ABA_RECEBIDO_CONV = "Base_Recebido_Convênio"    # NOVA ABA: Recebimentos Parciais
+ABA_BASE = "Base_Contas"  # uma linha por conta (substitui as 3 abas dinâmicas)
 
 AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
 ROXO, LARANJA, CIANO, ROSA = "#8b5cf6", "#f97316", "#22d3ee", "#fb7185"
@@ -47,6 +44,7 @@ COR_SIT = {
     "liquidada": VERDE, "em faturamento": AZUL, "em producao": CIANO,
     "recebimentos futuros": ROXO, "inadimplencias": VERMELHO,
     "glosas nao analisadas": AMBAR, "recursos enviados": LARANJA, "recursos negados": ROSA,
+    "glosa acatada": "#94a3b8",
 }
 ORDEM_SIT = list(COR_SIT)
 
@@ -70,6 +68,7 @@ css = """
     .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
     div[data-testid="stVerticalBlock"] { gap: __GAP__; }
     [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
+    [data-testid="stCaptionContainer"] { color: #8fa3c4 !important; }
 
     /* Sidebar */
     [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
@@ -78,9 +77,6 @@ css = """
     .side-card { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
     .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
     .side-card b { color: #e6ecf5; font-size: 13px; }
-    .selo { margin-top: 8px; font-size: 11px; font-weight: 700; padding: 7px 10px; border-radius: 8px; }
-    .selo.ok { color: #34d399; background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); }
-    .selo.warn { color: #fbbf24; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35); }
 
     /* Widgets escuros */
     [data-baseweb="select"] > div { background: #101b32 !important; border-color: #1e2d4d !important; color: #e6ecf5 !important; }
@@ -101,6 +97,11 @@ css = """
     .pill { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 6px 14px; min-width: 120px; }
     .pill small { display: block; font-size: 10px; color: #8fa3c4; }
     .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
+
+    /* Filtro por clique */
+    .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+    .chips-t { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #8fa3c4; }
+    .chip { background: rgba(249,115,22,0.14); border: 1px solid rgba(249,115,22,0.4); color: #fdba74; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
 
     /* KPIs */
     .kpi { padding: 12px; border-radius: 12px; height: 100px; container-type: inline-size; overflow: hidden; margin-bottom: __KPI_GAP__; background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%); border: 1px solid rgba(59,130,246,0.22); }
@@ -172,20 +173,42 @@ def limpa_valor(v):
         return 0.0
 
 
+def _serial_para_mes(n):
+    if 20000 < n < 80000:  # data serial do Sheets/Excel
+        d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
+        return pd.Timestamp(d.year, d.month, 1)
+    return None
+
+
 def parse_mes(c):
-    if isinstance(c, (pd.Timestamp, datetime)):
-        return pd.Timestamp(c.year, c.month, 1)
-    if c is None or (isinstance(c, float) and pd.isna(c)):
+    """Converte 'janeiro-26', 'jan/26', '2026-01-15', '01/01/2026', data ou serial no 1º dia do mês."""
+    if c is None:
         return None
+    if isinstance(c, (pd.Timestamp, datetime)):
+        return None if pd.isna(c) else pd.Timestamp(c.year, c.month, 1)
+    if isinstance(c, float) and pd.isna(c):
+        return None
+    if isinstance(c, (int, float)) and not isinstance(c, bool):
+        return _serial_para_mes(float(c))
     t = normalizar_texto(c)
+    if not t or t in ("nan", "none", "nat"):
+        return None
     m = re.match(r"^([a-z]{3,9})[\s\-/\.]*(\d{2}|\d{4})$", t)
     if m and m.group(1)[:3] in MESES:
         ano = int(m.group(2))
         ano += 2000 if ano < 100 else 0
         return pd.Timestamp(ano, MESES[m.group(1)[:3]], 1)
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", t)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", t)
     if m:
         return pd.Timestamp(int(m.group(3)), int(m.group(2)), 1)
+    m = re.match(r"^(\d{4})-(\d{1,2})(?:-\d{1,2})?(?:[ t].*)?$", t)
+    if m:
+        return pd.Timestamp(int(m.group(1)), int(m.group(2)), 1)
+    m = re.match(r"^(\d{1,2})/(\d{4})$", t)
+    if m:
+        return pd.Timestamp(int(m.group(2)), int(m.group(1)), 1)
+    if re.fullmatch(r"\d{5}(\.\d+)?", t):
+        return _serial_para_mes(float(t))
     return None
 
 
@@ -238,7 +261,7 @@ def categoria(sit):
         return "Em Produção"
     if "faturamento" in n:
         return "Em Faturamento"
-    return "A receber"  
+    return "A receber"
 
 
 def cor_sit(sit):
@@ -255,163 +278,115 @@ def cor_taxa(p):
 
 
 # ==============================================================================
-# 2. LEITURA DAS TABELAS DINÂMICAS E AJUSTE DE RECEBIMENTOS
+# 2. LEITURA DIRETO DA BASE_CONTAS
 # ==============================================================================
-def parse_pivot(df):
-    vazio = pd.DataFrame(columns=["R1", "R2", "Ref", "Valor"])
-    if df is None or df.empty:
-        return vazio
-    grade = [list(df.columns)] + df.values.tolist()
-    h = next((i for i, lin in enumerate(grade[:20]) if sum(parse_mes(c) is not None for c in lin) >= 2), None)
-    if h is None:
-        return vazio
-    meses = {j: parse_mes(c) for j, c in enumerate(grade[h]) if parse_mes(c) is not None}
-    n_lab = min(meses)
-    if n_lab == 0:
-        return vazio
-
-    reg, ultimo = [], ""
-    for lin in grade[h + 1:]:
-        rot = ["" if (x is None or (isinstance(x, float) and pd.isna(x))) else str(x).strip() for x in lin[:n_lab]]
-        if n_lab == 1:
-            r1, r2 = rot[0], ""
-            if not r1 or normalizar_texto(r1).startswith("total"):
-                continue
-        else:
-            if not rot[1]:  
-                continue
-            if rot[0]:
-                ultimo = rot[0]
-            r1, r2 = ultimo, rot[1]
-        for j, ref in meses.items():
-            v = limpa_valor(lin[j]) if j < len(lin) else 0.0
-            if v:
-                reg.append((r1, r2, ref, v))
-    return pd.DataFrame(reg, columns=["R1", "R2", "Ref", "Valor"]) if reg else vazio
+# >>> BASE_INICIO
+OBRIG = {"mes": "mes faturamento", "conv": "convenio conta", "sit": "situacao conta",
+         "val": "valor conta", "rec": "valor recebido"}
+NOME_COL = {"mes": "Mês Faturamento", "conv": "Convênio Conta", "sit": "Situação Conta",
+            "val": "Valor Conta", "rec": "Valor Recebido"}
+COL_ACAT, COL_SALDO = "glosa acatada", "saldo total"
 
 
-@st.cache_data(ttl=60, show_spinner="Carregando e cruzando dados…")
-def carregar_bases():
-    vazio = pd.DataFrame(columns=["R1", "R2", "Ref", "Valor"])
+def mapa_colunas(cols):
+    return {normalizar_texto(c): c for c in cols}
+
+
+def localizar_colunas(raw):
+    """Acha as colunas pelo cabeçalho (ignora acento/caixa); procura o cabeçalho nas 20 primeiras linhas."""
+    df = raw.copy()
+    if not all(v in mapa_colunas(df.columns) for v in OBRIG.values()):
+        for i in range(min(20, len(df))):
+            if all(v in mapa_colunas(df.iloc[i].tolist()) for v in OBRIG.values()):
+                df.columns = list(df.iloc[i])
+                df = df.iloc[i + 1:].reset_index(drop=True)
+                break
+    df = df.loc[:, ~pd.Index(df.columns).duplicated()]
+    return df, mapa_colunas(df.columns)
+
+
+def texto_limpo(serie, padrao):
+    t = serie.fillna("").astype(str).str.strip()
+    return t.where(~t.isin(["", "nan", "None", "NaT"]), padrao)
+
+
+@st.cache_data(ttl=60, show_spinner="Carregando Base_Contas…")
+def carregar_base():
+    """
+    Cada conta vira até 3 partes (a soma sempre fecha com o Valor Conta):
+      1) Valor Recebido  -> situação 'Liquidada' (vale para qualquer situação da conta, inclusive glosas)
+      2) Glosa Acatada   -> situação 'Glosa Acatada' (em contas liquidadas, a diferença também entra aqui)
+      3) Restante        -> permanece na Situação Conta original
+    """
+    vazio = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
     conn = conectar_sheets()
     if conn is None:
-        # Retornos de fallback para evitar erros em cascata
-        s_v = pd.DataFrame(columns=["Situação", "Ref", "Valor"])
-        sc_v = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
-        f_v = pd.DataFrame(columns=["Convênio", "Ref", "Valor"])
-        return s_v, sc_v, f_v, ["Conexão com o Google Sheets indisponível."]
-    
-    erros, saida = [], []
-    for aba in (ABA_SITUACAO, ABA_SITUACAO_CONV, ABA_FAT_CONV):
-        try:
-            d = parse_pivot(conn.read(worksheet=aba, ttl=0))
-            if d.empty:
-                erros.append(f"Aba '{aba}' sem dados reconhecidos (cabeçalho de meses não encontrado).")
-        except Exception as e:
-            d = vazio
-            erros.append(f"Aba '{aba}': {e}")
-        saida.append(d)
-        
-    s = saida[0].rename(columns={"R1": "Situação"})
-    if "R2" in s.columns: s = s.drop(columns=["R2"])
-    
-    sc = saida[1].rename(columns={"R1": "Situação", "R2": "Convênio"})
-    
-    f = saida[2].rename(columns={"R1": "Convênio"})
-    if "R2" in f.columns: f = f.drop(columns=["R2"])
-
-    # ---------------------------------------------------------
-    # LEITURA E PROCESSAMENTO DA ABA DE RECEBIDOS PARCIAIS
-    # ---------------------------------------------------------
-    rec = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
+        return vazio, ["Conexão com o Google Sheets indisponível."], []
     try:
-        raw_rec = conn.read(worksheet=ABA_RECEBIDO_CONV, ttl=0)
-        if not raw_rec.empty:
-            cols = [str(c).lower().strip() for c in raw_rec.columns]
-            
-            # Detecta se é uma tabela plana com colunas, ou uma tabela dinâmica
-            is_flat = any(x in c for c in cols for x in ["valor", "receb"]) and any(x in c for c in cols for x in ["mês", "mes", "ref", "data"])
-            
-            if is_flat:
-                col_sit = next((c for c in raw_rec.columns if "situa" in str(c).lower()), None)
-                col_conv = next((c for c in raw_rec.columns if "conv" in str(c).lower()), None)
-                col_mes = next((c for c in raw_rec.columns if "mês" in str(c).lower() or "mes" in str(c).lower() or "ref" in str(c).lower() or "data" in str(c).lower()), None)
-                col_val = next((c for c in raw_rec.columns if "valor" in str(c).lower() or "receb" in str(c).lower()), None)
-                
-                df_rec = raw_rec.copy()
-                df_rec["Situação"] = df_rec[col_sit] if col_sit else ""
-                df_rec["Convênio"] = df_rec[col_conv] if col_conv else ""
-                df_rec["Ref"] = df_rec[col_mes].apply(parse_mes) if col_mes else None
-                df_rec["Valor"] = df_rec[col_val].apply(limpa_valor) if col_val else 0.0
-                rec = df_rec[["Situação", "Convênio", "Ref", "Valor"]].dropna(subset=["Ref"])
-            else:
-                p = parse_pivot(raw_rec)
-                rec = p.rename(columns={"R1": "Situação", "R2": "Convênio"})
+        raw = conn.read(worksheet=ABA_BASE, ttl=0)
     except Exception as e:
-        erros.append(f"Aba '{ABA_RECEBIDO_CONV}': Erro ao processar - {e}")
+        return vazio, [f"Aba '{ABA_BASE}': {e}"], []
+    if raw is None or raw.empty:
+        return vazio, [f"A aba '{ABA_BASE}' está vazia."], []
 
-    # ---------------------------------------------------------
-    # AJUSTE MATEMÁTICO NOS STATUS AFETADOS
-    # ---------------------------------------------------------
-    STATUS_AJUSTE = ["glosas nao analisadas", "inadimplencias", "recursos enviados", "recursos negados"]
-    
-    if not rec.empty:
-        rec["sit_norm"] = rec["Situação"].apply(normalizar_texto)
-        rec_adj = rec[rec["sit_norm"].isin(STATUS_AJUSTE)].copy()
-        
-        if not rec_adj.empty:
-            # 1. Ajuste na Tabela SC (Situação x Convênio)
-            if not sc.empty and "Convênio" in rec_adj.columns:
-                rec_sc = rec_adj.groupby(["sit_norm", "Convênio", "Ref"], as_index=False)["Valor"].sum()
-                sc["sit_norm"] = sc["Situação"].apply(normalizar_texto)
-                
-                sc = pd.merge(sc, rec_sc, on=["sit_norm", "Convênio", "Ref"], how="left", suffixes=("", "_rec"))
-                sc["Valor_rec"] = sc["Valor_rec"].fillna(0.0)
-                
-                # Subtrai o recebido do status atual
-                sc["Valor"] = (sc["Valor"] - sc["Valor_rec"]).apply(lambda x: max(0.0, x))
-                
-                # Transfere o valor recebido para a situação "Liquidada" para manter o Total Faturamento correto
-                linhas_liq = sc[sc["Valor_rec"] > 0].copy()
-                if not linhas_liq.empty:
-                    linhas_liq["Situação"] = "Liquidada"
-                    linhas_liq["Valor"] = linhas_liq["Valor_rec"]
-                    sc = pd.concat([sc, linhas_liq], ignore_index=True)
-                    
-                sc = sc.drop(columns=["sit_norm", "Valor_rec"])
-                # Reagrupa para somar com outras "Liquidadas" que já existiam no mesmo mês/convênio
-                sc = sc.groupby(["Situação", "Convênio", "Ref"], as_index=False)["Valor"].sum()
+    df, m = localizar_colunas(raw)
+    faltando = [NOME_COL[k] for k, v in OBRIG.items() if v not in m]
+    if faltando:
+        return vazio, [f"Aba '{ABA_BASE}': colunas não encontradas: {', '.join(faltando)}."], []
 
-            # 2. Ajuste na Tabela S (Apenas Situação consolidada)
-            if not s.empty:
-                rec_s = rec_adj.groupby(["sit_norm", "Ref"], as_index=False)["Valor"].sum()
-                s["sit_norm"] = s["Situação"].apply(normalizar_texto)
-                
-                s = pd.merge(s, rec_s, on=["sit_norm", "Ref"], how="left", suffixes=("", "_rec"))
-                s["Valor_rec"] = s["Valor_rec"].fillna(0.0)
-                
-                s["Valor"] = (s["Valor"] - s["Valor_rec"]).apply(lambda x: max(0.0, x))
-                
-                linhas_liq_s = s[s["Valor_rec"] > 0].copy()
-                if not linhas_liq_s.empty:
-                    linhas_liq_s["Situação"] = "Liquidada"
-                    linhas_liq_s["Valor"] = linhas_liq_s["Valor_rec"]
-                    s = pd.concat([s, linhas_liq_s], ignore_index=True)
-                    
-                s = s.drop(columns=["sit_norm", "Valor_rec"])
-                s = s.groupby(["Situação", "Ref"], as_index=False)["Valor"].sum()
+    notas = []
+    val = df[m[OBRIG["val"]]].apply(limpa_valor)
+    rec = df[m[OBRIG["rec"]]].apply(limpa_valor)
+    if COL_ACAT in m:
+        acat = df[m[COL_ACAT]].apply(limpa_valor)
+    else:
+        acat = pd.Series(0.0, index=df.index)
+        notas.append("Coluna 'Glosa Acatada' não encontrada; considerada como zero.")
+    conv = texto_limpo(df[m[OBRIG["conv"]]], "(Sem convênio)")
+    sit = texto_limpo(df[m[OBRIG["sit"]]], "(Sem situação)")
 
-    return s, sc, f, erros
+    col_mes = df[m[OBRIG["mes"]]].astype(str)
+    mapa_mes = {u: parse_mes(u) for u in col_mes.unique()}
+    ref = col_mes.map(mapa_mes)
+    sem_mes = ref.isna()
+    if sem_mes.any() and val[sem_mes].abs().sum() > 0.005:
+        notas.append(f"{int(sem_mes.sum())} contas (R$ {_br(float(val[sem_mes].sum()), 2)}) sem 'Mês Faturamento' "
+                     "válido ficaram fora do painel.")
 
-s, sc, f, erros = carregar_bases()
+    liquidada = sit.apply(normalizar_texto).str.contains("liquid")
+    resto = val - rec - acat
+    partes = pd.concat([
+        pd.DataFrame({"Situação": "Liquidada", "Convênio": conv, "Ref": ref, "Valor": rec}),
+        pd.DataFrame({"Situação": "Glosa Acatada", "Convênio": conv, "Ref": ref,
+                      "Valor": acat + resto.where(liquidada, 0.0)}),
+        pd.DataFrame({"Situação": sit, "Convênio": conv, "Ref": ref, "Valor": resto.where(~liquidada, 0.0)}),
+    ], ignore_index=True)
+    partes = partes[partes["Ref"].notna() & (partes["Valor"].abs() > 0.005)].copy()
+    if partes.empty:
+        return vazio, [f"Aba '{ABA_BASE}' sem contas com 'Mês Faturamento' reconhecido."], notas
+    partes["Ref"] = pd.to_datetime(partes["Ref"])
+    base = partes.groupby(["Situação", "Convênio", "Ref"], as_index=False)["Valor"].sum()
 
-meses_all = sorted(set(s["Ref"]) | set(sc["Ref"]) | set(f["Ref"]))
+    if COL_SALDO in m:
+        saldo = df[m[COL_SALDO]].apply(limpa_valor)
+        dif = float((val - rec - acat - saldo).abs().sum())
+        if dif > 1:
+            notas.append("Conferência: o 'Saldo Total' da planilha difere de (Valor Conta − Valor Recebido − "
+                         f"Glosa Acatada) em R$ {_br(dif, 2)} (soma das diferenças por conta).")
+    return base, [], notas
+# >>> BASE_FIM
+
+
+sc, erros, notas = carregar_base()
+
+meses_all = sorted(set(sc["Ref"]))
 if not meses_all:
     for e in erros:
         st.warning(e)
-    st.warning("⚠️ Nenhum dado encontrado nas abas de faturamento.")
+    st.warning("⚠️ Nenhum dado encontrado na base de contas.")
     st.stop()
 rot = {m: rot_mes(m) for m in meses_all}
+rot_inv = {v: k for k, v in rot.items()}
 
 # ==============================================================================
 # 3. SIDEBAR (FILTROS)
@@ -421,10 +396,8 @@ with st.sidebar:
     c_a, c_b = st.columns(2)
     ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
     fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
-    conv_sel = st.multiselect("Convênio", sorted(set(sc["Convênio"]) | set(f["Convênio"])), placeholder="Todos")
-    sit_sel = st.multiselect(
-        "Situação", sorted(set(s["Situação"]) | set(sc["Situação"]), key=ordem_sit), placeholder="Todas"
-    )
+    conv_sel = st.multiselect("Convênio", sorted(set(sc["Convênio"])), placeholder="Todos")
+    sit_sel = st.multiselect("Situação", sorted(set(sc["Situação"]), key=ordem_sit), placeholder="Todas")
     if st.button("↻ Atualizar dados", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -438,25 +411,64 @@ refs_prev = meses_all[i0 - n_ref:i0] if i0 - n_ref >= 0 else []
 # ==============================================================================
 # 4. PREPARAÇÃO DOS DADOS
 # ==============================================================================
-base_sc = sc
+base_f = sc
 if conv_sel:
-    base_sc = base_sc[base_sc["Convênio"].isin(conv_sel)]
+    base_f = base_f[base_f["Convênio"].isin(conv_sel)]
 if sit_sel:
-    base_sc = base_sc[base_sc["Situação"].isin(sit_sel)]
+    base_f = base_f[base_f["Situação"].isin(sit_sel)]
+base_f = base_f.assign(Cat=base_f["Situação"].map(categoria))
 
-# Sem filtros usa as abas consolidadas; com filtro, a aba cruzada
-if bool(conv_sel or sit_sel) or s.empty or f.empty:
-    d_sit = base_sc.groupby(["Situação", "Ref"], as_index=False)["Valor"].sum()
-    d_conv = base_sc.groupby(["Convênio", "Ref"], as_index=False)["Valor"].sum()
-else:
-    d_sit, d_conv = s, f
-d_sit = d_sit.assign(Cat=d_sit["Situação"].map(categoria))
+# Dados dos gráficos "condutores" (clicáveis): só respeitam os filtros da barra lateral
+drv = base_f[base_f["Ref"].isin(refs_sel)]
+sits_stack = sorted(drv["Situação"].unique(), key=ordem_sit)  # ordem das séries do gráfico empilhado
 
-sit_df = d_sit[d_sit["Ref"].isin(refs_sel)]
-sit_prev = d_sit[d_sit["Ref"].isin(refs_prev)]
-conv_df = d_conv[d_conv["Ref"].isin(refs_sel)]
-cruz = base_sc[base_sc["Ref"].isin(refs_sel)]
-cruz = cruz.assign(Cat=cruz["Situação"].map(categoria))
+# ---- Filtro por clique nos gráficos (estilo cross-filter) --------------------
+VER = st.session_state.setdefault("ver_sel", 0)
+K_EV, K_ST = f"sel_ev_{VER}", f"sel_st_{VER}"
+
+
+def pontos_sel(chave):
+    try:
+        return list(st.session_state[chave]["selection"]["points"])
+    except Exception:
+        return []
+
+
+def sit_do_ponto(p):
+    for k in ("customdata", "legendgroup"):
+        v = p.get(k)
+        if isinstance(v, (list, tuple)) and v:
+            v = v[0]
+        if isinstance(v, str) and v in sits_stack:
+            return v
+    cn = p.get("curve_number")
+    return sits_stack[cn] if isinstance(cn, int) and 0 <= cn < len(sits_stack) else None
+
+
+meses_click, sits_click = set(), set()
+for p in pontos_sel(K_EV):
+    if rot_inv.get(p.get("x")) is not None:
+        meses_click.add(rot_inv[p.get("x")])
+for p in pontos_sel(K_ST):
+    if rot_inv.get(p.get("x")) is not None:
+        meses_click.add(rot_inv[p.get("x")])
+    nome_sit = sit_do_ponto(p)
+    if nome_sit:
+        sits_click.add(nome_sit)
+meses_click &= set(refs_sel)
+filtro_click = bool(meses_click or sits_click)
+
+# Meses efetivos para os blocos filtrados (sem clique = todos do período)
+refs_c = [m for m in refs_sel if m in meses_click] or refs_sel
+x_lab_c = [rot[m] for m in refs_c]
+
+cons = base_f[base_f["Ref"].isin(refs_c)]
+if sits_click:
+    cons = cons[cons["Situação"].isin(sits_click)]
+sit_df = cons  # Situação, Convênio, Ref, Valor, Cat
+conv_df = cons.groupby(["Convênio", "Ref"], as_index=False)["Valor"].sum()
+cruz = cons
+prev_df = base_f[base_f["Ref"].isin([] if filtro_click else refs_prev)]
 
 
 def totais(d):
@@ -464,8 +476,8 @@ def totais(d):
     return float(g.sum()), {c: float(g.get(c, 0.0)) for c in CATS}
 
 
-tot, cat = totais(sit_df)
-tot_p, cat_p = totais(sit_prev)
+tot, cat = totais(cons)
+tot_p, cat_p = totais(prev_df)
 
 mes_a_mes = bool(conv_sel)  # com convênio filtrado, os blocos passam a mostrar mês a mês
 
@@ -480,8 +492,8 @@ else:
     perf = perf[CATS]
     perf["Faturado"] = perf.sum(axis=1)
     if mes_a_mes:
-        perf = perf.reindex(refs_sel, fill_value=0.0)
-        perf.index = [rot[m] for m in refs_sel]
+        perf = perf.reindex(refs_c, fill_value=0.0)
+        perf.index = [rot[m] for m in refs_c]
     else:
         perf = perf[perf["Faturado"].abs() > 0.005]
 
@@ -541,10 +553,21 @@ def layout(fig, h=330, legenda=True):
     return fig
 
 
-def kpi(titulo, valor, sub):
+def grafico_click(ct, fig, chave):
+    """Gráfico clicável: o clique vira filtro do painel (precisa de Streamlit com on_select)."""
+    cfg = {"displayModeBar": False}
+    try:
+        ct.plotly_chart(fig, use_container_width=True, config=cfg, key=chave,
+                        on_select="rerun", selection_mode="points")
+    except TypeError:  # Streamlit antigo, sem seleção em gráficos
+        ct.plotly_chart(fig, use_container_width=True, config=cfg)
+
+
+def kpi(titulo, valor, sub, cor=None):
+    estilo = f" style='color:{cor}'" if cor else ""
     return (
         "<div class='kpi'>"
-        f"<div class='kpi-top'><div class='kpi-t'>{titulo}</div></div>"
+        f"<div class='kpi-top'><div class='kpi-t'{estilo}>{titulo}</div></div>"
         f"<div class='kpi-v'>{valor}</div>{sub}</div>"
     )
 
@@ -578,32 +601,50 @@ st.markdown(
 )
 for e in erros:
     st.warning(e)
+for n in notas:
+    st.caption(f"ℹ️ {n}")
+
+if filtro_click:
+    chips = []
+    if meses_click:
+        chips.append("Mês: " + ", ".join(rot[m] for m in sorted(meses_click)))
+    if sits_click:
+        chips.append("Situação: " + ", ".join(sorted(sits_click, key=ordem_sit)))
+    cc1, cc2 = st.columns([7, 1.2])
+    cc1.markdown("<div class='chips'><span class='chips-t'>Filtro por clique</span>"
+                 + "".join(f"<span class='chip'>{x}</span>" for x in chips) + "</div>", unsafe_allow_html=True)
+    if cc2.button("✕ Limpar", use_container_width=True):
+        st.session_state["ver_sel"] = VER + 1
+        st.rerun()
 
 # Combina "Em Produção" e "Em Faturamento" em um único KPI card superior
 val_prod_fat = cat["Em Produção"] + cat["Em Faturamento"]
 
+# Cores dos títulos = cores da Composição por situação
 kpis = [
     kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p)),
-    kpi("Em prod. / Faturamento", moeda(val_prod_fat), sub_pct(val_prod_fat)),
-    kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"])),
-    kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"])),
-    kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"])),
-    kpi("Glosas e recursos", moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"])),
-    kpi("Recursos negados", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"])),
-    kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>"),
+    kpi(f"<span style='color:{CIANO}'>Em prod.</span> / <span style='color:{AZUL}'>Faturamento</span>",
+        moeda(val_prod_fat), sub_pct(val_prod_fat)),
+    kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]), VERDE),
+    kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"]), ROXO),
+    kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"]), VERMELHO),
+    kpi(f"<span style='color:{AMBAR}'>Glosas</span> e <span style='color:{LARANJA}'>recursos</span>",
+        moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"])),
+    kpi("Recursos negados", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"]), ROSA),
+    kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", VERDE),
 ]
 for col, html in zip(st.columns(8, gap="small"), kpis):
     col.markdown(html, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. LINHA 1: EVOLUÇÃO | COMPOSIÇÃO POR SITUAÇÃO | TOP 10 FATURAMENTO
+# 7. LINHA 1: EVOLUÇÃO | COMPOSIÇÃO POR SITUAÇÃO | FATURAMENTO POR CONVÊNIO
 # ==============================================================================
 b1, b2, b3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
 with b1:
-    ct = card(b1, "Faturamento × Recebido (R$)", "por mês de faturamento")
-    tot_m = sit_df.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
-    liq_m = sit_df[sit_df["Cat"] == "Recebido"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+    ct = card(b1, "Faturamento × Recebido (R$)", "por mês · clique para filtrar")
+    tot_m = drv.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+    liq_m = drv[drv["Cat"] == "Recebido"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
     fig_ev = go.Figure()
     for nome, serie, cor, fill in (
         ("Faturamento total", tot_m, AZUL, "rgba(59,130,246,0.14)"),
@@ -611,10 +652,11 @@ with b1:
     ):
         fig_ev.add_trace(go.Scatter(
             x=x_lab, y=serie.values, name=nome, mode="lines+markers", line=dict(color=cor, width=2.5),
-            marker=dict(size=7), fill="tozeroy", fillcolor=fill,
+            marker=dict(size=8), fill="tozeroy", fillcolor=fill,
+            selected=dict(marker=dict(size=12, opacity=1)), unselected=dict(marker=dict(opacity=0.55)),
             hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + nome + "</extra>",
         ))
-    ct.plotly_chart(layout(fig_ev), use_container_width=True, config={"displayModeBar": False})
+    grafico_click(ct, layout(fig_ev), K_EV)
 
 with b2:
     ct = card(b2, "Composição por situação")
@@ -656,20 +698,22 @@ with b3:
         ct.markdown(tabela(HEAD_ROT + ["Faturamento", "", "%"], rows), unsafe_allow_html=True)
 
 # ==============================================================================
-# 8. LINHA 2: SITUAÇÃO POR MÊS | TOP 10 INADIMPLÊNCIA | TAXA DE RECEBIMENTO
+# 8. LINHA 2: SITUAÇÃO POR MÊS | INADIMPLÊNCIA | TAXA DE RECEBIMENTO
 # ==============================================================================
 c1, c2, c3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
 with c1:
-    ct = card(c1, "Situação das contas por mês (R$)", "empilhado")
+    ct = card(c1, "Situação das contas por mês (R$)", "empilhado · clique para filtrar")
     fig_st = go.Figure()
-    for sit in sorted(sit_df["Situação"].unique(), key=ordem_sit):
-        y = sit_df[sit_df["Situação"] == sit].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+    for sit in sits_stack:
+        y = drv[drv["Situação"] == sit].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
         fig_st.add_trace(go.Bar(
             x=x_lab, y=y.values, name=sit, marker_color=cor_sit(sit),
+            customdata=[sit] * len(x_lab), legendgroup=sit,
+            selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=0.4)),
             hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + sit + "</extra>"))
     fig_st.update_layout(barmode="stack", bargap=0.35, legend=dict(font=dict(color="#ffffff")))
-    ct.plotly_chart(layout(fig_st), use_container_width=True, config={"displayModeBar": False})
+    grafico_click(ct, layout(fig_st), K_ST)
 
 with c2:
     ct = card(c2, "Inadimplência mês a mês" if mes_a_mes else "Convênios por inadimplência")
@@ -726,7 +770,8 @@ else:
         pct(div(ts["Inadimplência"], ts["Faturado"]) * 100), pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
     ct.markdown(
         tabela(HEAD_ROT + ["Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
-                           "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb."], rows, total, altura=420),
+                           "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb."],
+               rows, total, altura=420),
         unsafe_allow_html=True)
 
 # ==============================================================================
@@ -737,9 +782,9 @@ if sit_df.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
     mat = sit_df.pivot_table(index="Situação", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
-    mat = mat.reindex(columns=refs_sel, fill_value=0.0)
+    mat = mat.reindex(columns=refs_c, fill_value=0.0)
     mat = mat.loc[sorted(mat.index, key=ordem_sit)]
     rows = [[f"<span class='dot' style='background:{cor_sit(sit)}'></span>{sit}"]
-            + [num(mat.loc[sit, m]) for m in refs_sel] + [f"<b>{num(mat.loc[sit].sum())}</b>"] for sit in mat.index]
-    total = ["TOTAL GERAL"] + [num(mat[m].sum()) for m in refs_sel] + [num(mat.values.sum())]
-    ct.markdown(tabela(["Situação"] + x_lab + ["Total"], rows, total), unsafe_allow_html=True)
+            + [num(mat.loc[sit, m]) for m in refs_c] + [f"<b>{num(mat.loc[sit].sum())}</b>"] for sit in mat.index]
+    total = ["TOTAL GERAL"] + [num(mat[m].sum()) for m in refs_c] + [num(mat.values.sum())]
+    ct.markdown(tabela(["Situação"] + x_lab_c + ["Total"], rows, total), unsafe_allow_html=True)
