@@ -371,8 +371,8 @@ def carregar_base():
         saldo = df[m[COL_SALDO]].apply(limpa_valor)
         dif = float((val - rec - acat - saldo).abs().sum())
         if dif > 1:
-            notas.append("Conferência: o 'Saldo Total' da planilha difere de (Valor Conta − Valor Recebido − "
-                         f"Glosa Acatada) em R$ {_br(dif, 2)} (soma das diferenças por conta).")
+            notas.append("Conferência: o '"
+                         f"Glosa Acatada) em R$ {_br(dif, 2)} ().")
     return base, [], notas
 # >>> BASE_FIM
 
