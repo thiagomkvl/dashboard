@@ -29,17 +29,15 @@ except Exception as _err:
 # ==============================================================================
 # CONFIGURAÇÕES
 # ==============================================================================
-# Espaçamento vertical
-ESPACO_ENTRE_BLOCOS = "1.0rem"  # espaço geral entre os elementos da página
-AJUSTE_APOS_KPIS = "1.0rem"    # espaço extra entre os cards do topo e os blocos
+ESPACO_ENTRE_BLOCOS = "1.0rem"
+AJUSTE_APOS_KPIS = "1.0rem"
 
-ABA_BASE = "Base_Contas"  # uma linha por conta (substitui as 3 abas dinâmicas)
+ABA_BASE = "Base_Contas"
 
 AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
 ROXO, LARANJA, CIANO, ROSA = "#8b5cf6", "#f97316", "#22d3ee", "#fb7185"
 TXT, MUTED, BORDA = "#e6ecf5", "#8fa3c4", "#1c2a47"
 
-# Cor de cada Situação (chave normalizada: minúsculo e sem acento)
 COR_SIT = {
     "liquidada": VERDE, "em faturamento": AZUL, "em producao": CIANO,
     "recebimentos futuros": ROXO, "inadimplencias": VERMELHO,
@@ -48,7 +46,6 @@ COR_SIT = {
 }
 ORDEM_SIT = list(COR_SIT)
 
-# Agrupamento das Situações nos KPIs (regra por palavra-chave)
 CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas e Recursos", "Recursos Negados"]
 
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
@@ -103,16 +100,32 @@ css = """
     .chips-t { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #8fa3c4; }
     .chip { background: rgba(249,115,22,0.14); border: 1px solid rgba(249,115,22,0.4); color: #fdba74; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
 
-    /* KPIs */
-    .kpi { padding: 12px; border-radius: 12px; height: 100px; container-type: inline-size; overflow: hidden; margin-bottom: __KPI_GAP__; background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%); border: 1px solid rgba(59,130,246,0.22); }
-    .kpi-top { display: flex; align-items: flex-start; gap: 8px; }
-    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; line-height: 1.2; min-height: 24px; color: #9db2d3; }
-    .kpi-v { font-size: clamp(11px, 1vw, 18px); font-size: clamp(11px, 11cqw, 20px); font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap; margin: 8px 0 3px; font-variant-numeric: tabular-nums; }
-    .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
-    .kpi-sub.up { color: #34d399; }
-    .kpi-sub.down { color: #f87171; }
-    .kpi-sub span { color: #8fa3c4; font-weight: 500; }
-    .kpi-sub b { color: #dbe6f7; }
+    /* KPIs clicáveis (botões) */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button {
+        width: 100%;
+        min-height: 100px;
+        padding: 12px;
+        margin-bottom: __KPI_GAP__;
+        border-radius: 12px !important;
+        background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%) !important;
+        border: 1px solid rgba(59,130,246,0.22) !important;
+        color: #e6ecf5 !important;
+        text-align: left !important;
+        white-space: pre-line !important;
+        line-height: 1.3 !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+        font-size: 11px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button:hover {
+        filter: brightness(1.12);
+        border-color: rgba(59,130,246,0.55) !important;
+        color: #fff !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button:focus {
+        box-shadow: 0 0 0 1px rgba(249,115,22,0.55) !important;
+        border-color: #f97316 !important;
+    }
 
     /* Cards */
     [data-testid="stVerticalBlockBorderWrapper"] { background: #0f1a2e; border: 1px solid #1c2a47 !important; border-radius: 12px; }
@@ -139,8 +152,10 @@ css = """
     .tbl-wrap::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 6px; }
 </style>
 """
-st.markdown(textwrap.dedent(css).replace("__GAP__", ESPACO_ENTRE_BLOCOS).replace("__KPI_GAP__", AJUSTE_APOS_KPIS),
-            unsafe_allow_html=True)
+st.markdown(
+    textwrap.dedent(css).replace("__GAP__", ESPACO_ENTRE_BLOCOS).replace("__KPI_GAP__", AJUSTE_APOS_KPIS),
+    unsafe_allow_html=True,
+)
 
 
 # ==============================================================================
@@ -174,14 +189,13 @@ def limpa_valor(v):
 
 
 def _serial_para_mes(n):
-    if 20000 < n < 80000:  # data serial do Sheets/Excel
+    if 20000 < n < 80000:
         d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
         return pd.Timestamp(d.year, d.month, 1)
     return None
 
 
 def parse_mes(c):
-    """Converte 'janeiro-26', 'jan/26', '2026-01-15', '01/01/2026', data ou serial no 1º dia do mês."""
     if c is None:
         return None
     if isinstance(c, (pd.Timestamp, datetime)):
@@ -280,12 +294,11 @@ def cor_taxa(p):
 # ==============================================================================
 # 2. LEITURA DIRETO DA BASE_CONTAS
 # ==============================================================================
-# >>> BASE_INICIO
 OBRIG = {"mes": "mes faturamento", "conv": "convenio conta", "sit": "situacao conta",
          "val": "valor conta", "rec": "valor recebido"}
 NOME_COL = {"mes": "Mês Faturamento", "conv": "Convênio Conta", "sit": "Situação Conta",
             "val": "Valor Conta", "rec": "Valor Recebido"}
-COL_ACAT, COL_SALDO = "glosa acatada", "saldo total"
+COL_ACAT = "glosa acatada"
 
 
 def mapa_colunas(cols):
@@ -293,7 +306,6 @@ def mapa_colunas(cols):
 
 
 def localizar_colunas(raw):
-    """Acha as colunas pelo cabeçalho (ignora acento/caixa); procura o cabeçalho nas 20 primeiras linhas."""
     df = raw.copy()
     if not all(v in mapa_colunas(df.columns) for v in OBRIG.values()):
         for i in range(min(20, len(df))):
@@ -314,44 +326,38 @@ def texto_limpo(serie, padrao):
 def carregar_base():
     """
     Cada conta vira até 3 partes (a soma sempre fecha com o Valor Conta):
-      1) Valor Recebido  -> situação 'Liquidada' (vale para qualquer situação da conta, inclusive glosas)
-      2) Glosa Acatada   -> situação 'Glosa Acatada' (em contas liquidadas, a diferença também entra aqui)
-      3) Restante        -> permanece na Situação Conta original
+      1) Valor Recebido  -> situação 'Liquidada'
+      2) Glosa Acatada   -> situação 'Glosa Acatada'
+      3) Restante        -> Situação Conta original
     """
     vazio = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
     conn = conectar_sheets()
     if conn is None:
-        return vazio, ["Conexão com o Google Sheets indisponível."], []
+        return vazio, ["Conexão com o Google Sheets indisponível."]
     try:
         raw = conn.read(worksheet=ABA_BASE, ttl=0)
     except Exception as e:
-        return vazio, [f"Aba '{ABA_BASE}': {e}"], []
+        return vazio, [f"Aba '{ABA_BASE}': {e}"]
     if raw is None or raw.empty:
-        return vazio, [f"A aba '{ABA_BASE}' está vazia."], []
+        return vazio, [f"A aba '{ABA_BASE}' está vazia."]
 
     df, m = localizar_colunas(raw)
     faltando = [NOME_COL[k] for k, v in OBRIG.items() if v not in m]
     if faltando:
-        return vazio, [f"Aba '{ABA_BASE}': colunas não encontradas: {', '.join(faltando)}."], []
+        return vazio, [f"Aba '{ABA_BASE}': colunas não encontradas: {', '.join(faltando)}."]
 
-    notas = []
     val = df[m[OBRIG["val"]]].apply(limpa_valor)
     rec = df[m[OBRIG["rec"]]].apply(limpa_valor)
     if COL_ACAT in m:
         acat = df[m[COL_ACAT]].apply(limpa_valor)
     else:
         acat = pd.Series(0.0, index=df.index)
-        notas.append("Coluna 'Glosa Acatada' não encontrada; considerada como zero.")
     conv = texto_limpo(df[m[OBRIG["conv"]]], "(Sem convênio)")
     sit = texto_limpo(df[m[OBRIG["sit"]]], "(Sem situação)")
 
     col_mes = df[m[OBRIG["mes"]]].astype(str)
     mapa_mes = {u: parse_mes(u) for u in col_mes.unique()}
     ref = col_mes.map(mapa_mes)
-    sem_mes = ref.isna()
-    if sem_mes.any() and val[sem_mes].abs().sum() > 0.005:
-        notas.append(f"{int(sem_mes.sum())} contas (R$ {_br(float(val[sem_mes].sum()), 2)}) sem 'Mês Faturamento' "
-                     "válido ficaram fora do painel.")
 
     liquidada = sit.apply(normalizar_texto).str.contains("liquid")
     resto = val - rec - acat
@@ -363,21 +369,13 @@ def carregar_base():
     ], ignore_index=True)
     partes = partes[partes["Ref"].notna() & (partes["Valor"].abs() > 0.005)].copy()
     if partes.empty:
-        return vazio, [f"Aba '{ABA_BASE}' sem contas com 'Mês Faturamento' reconhecido."], notas
+        return vazio, [f"Aba '{ABA_BASE}' sem contas com 'Mês Faturamento' reconhecido."]
     partes["Ref"] = pd.to_datetime(partes["Ref"])
     base = partes.groupby(["Situação", "Convênio", "Ref"], as_index=False)["Valor"].sum()
-
-    if COL_SALDO in m:
-        saldo = df[m[COL_SALDO]].apply(limpa_valor)
-        dif = float((val - rec - acat - saldo).abs().sum())
-        if dif > 1:
-            notas.append("Conferência: o '"
-                         f"Glosa Acatada) em R$ {_br(dif, 2)} ().")
-    return base, [], notas
-# >>> BASE_FIM
+    return base, []
 
 
-sc, erros, notas = carregar_base()
+sc, erros = carregar_base()
 
 meses_all = sorted(set(sc["Ref"]))
 if not meses_all:
@@ -418,13 +416,18 @@ if sit_sel:
     base_f = base_f[base_f["Situação"].isin(sit_sel)]
 base_f = base_f.assign(Cat=base_f["Situação"].map(categoria))
 
-# Dados dos gráficos "condutores" (clicáveis): só respeitam os filtros da barra lateral
 drv = base_f[base_f["Ref"].isin(refs_sel)]
-sits_stack = sorted(drv["Situação"].unique(), key=ordem_sit)  # ordem das séries do gráfico empilhado
+sits_stack = sorted(drv["Situação"].unique(), key=ordem_sit)
 
-# ---- Filtro por clique nos gráficos (estilo cross-filter) --------------------
+# ---- Filtro por clique nos gráficos ----
 VER = st.session_state.setdefault("ver_sel", 0)
 K_EV, K_ST = f"sel_ev_{VER}", f"sel_st_{VER}"
+
+# ---- Filtro por clique nos KPIs ----
+if "kpi_key" not in st.session_state:
+    st.session_state["kpi_key"] = None
+if "kpi_cats" not in st.session_state:
+    st.session_state["kpi_cats"] = None
 
 
 def pontos_sel(chave):
@@ -457,18 +460,26 @@ for p in pontos_sel(K_ST):
         sits_click.add(nome_sit)
 meses_click &= set(refs_sel)
 filtro_click = bool(meses_click or sits_click)
+filtro_kpi = bool(st.session_state.get("kpi_cats"))
 
-# Meses efetivos para os blocos filtrados (sem clique = todos do período)
 refs_c = [m for m in refs_sel if m in meses_click] or refs_sel
 x_lab_c = [rot[m] for m in refs_c]
 
-cons = base_f[base_f["Ref"].isin(refs_c)]
+# Base do período (+ clique em gráfico) — usada nos KPIs do topo
+cons_periodo = base_f[base_f["Ref"].isin(refs_c)]
 if sits_click:
-    cons = cons[cons["Situação"].isin(sits_click)]
-sit_df = cons  # Situação, Convênio, Ref, Valor, Cat
+    cons_periodo = cons_periodo[cons_periodo["Situação"].isin(sits_click)]
+
+# Dados do restante do painel (+ filtro do card KPI)
+cons = cons_periodo
+kpi_cats = st.session_state.get("kpi_cats")
+if kpi_cats:
+    cons = cons[cons["Cat"].isin(kpi_cats)]
+
+sit_df = cons
 conv_df = cons.groupby(["Convênio", "Ref"], as_index=False)["Valor"].sum()
 cruz = cons
-prev_df = base_f[base_f["Ref"].isin([] if filtro_click else refs_prev)]
+prev_df = base_f[base_f["Ref"].isin([] if (filtro_click or filtro_kpi) else refs_prev)]
 
 
 def totais(d):
@@ -476,16 +487,19 @@ def totais(d):
     return float(g.sum()), {c: float(g.get(c, 0.0)) for c in CATS}
 
 
-tot, cat = totais(cons)
+# Totais dos cards = período sem filtro de categoria do KPI
+tot, cat = totais(cons_periodo)
 tot_p, cat_p = totais(prev_df)
 
-mes_a_mes = bool(conv_sel)  # com convênio filtrado, os blocos passam a mostrar mês a mês
+mes_a_mes = bool(conv_sel)
 
 if cruz.empty:
     perf = pd.DataFrame()
 else:
-    perf = cruz.pivot_table(index="Ref" if mes_a_mes else "Convênio", columns="Cat", values="Valor",
-                            aggfunc="sum", fill_value=0.0)
+    perf = cruz.pivot_table(
+        index="Ref" if mes_a_mes else "Convênio", columns="Cat", values="Valor",
+        aggfunc="sum", fill_value=0.0,
+    )
     for c in CATS:
         if c not in perf.columns:
             perf[c] = 0.0
@@ -512,20 +526,23 @@ def tabela(heads, rows, total=None, altura=330):
     tb = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     if total:
         tb += "<tr class='tot'>" + "".join(f"<td>{c}</td>" for c in total) + "</tr>"
-    return f"<div class='tbl-wrap' style='max-height:{altura}px'><table class='tbl'><thead><tr>{th}</tr></thead><tbody>{tb}</tbody></table></div>"
+    return (
+        f"<div class='tbl-wrap' style='max-height:{altura}px'>"
+        f"<table class='tbl'><thead><tr>{th}</tr></thead><tbody>{tb}</tbody></table></div>"
+    )
 
 
 def vazio_html(msg):
     return f"<div class='vazio'>{msg}</div>"
 
 
-ALT_CARD = 430  # altura fixa dos blocos das linhas 1 e 2 (mantém tudo alinhado)
+ALT_CARD = 430
 
 
 def card(coluna, titulo, dica="", fixo=True):
     try:
         ct = coluna.container(border=True, height=ALT_CARD) if fixo else coluna.container(border=True)
-    except TypeError:  # versões antigas do Streamlit sem o parâmetro height
+    except TypeError:
         ct = coluna.container(border=True)
     ct.markdown(f"<div class='card-title'>{titulo}<span>{dica}</span></div>", unsafe_allow_html=True)
     return ct
@@ -554,34 +571,26 @@ def layout(fig, h=330, legenda=True):
 
 
 def grafico_click(ct, fig, chave):
-    """Gráfico clicável: o clique vira filtro do painel (precisa de Streamlit com on_select)."""
     cfg = {"displayModeBar": False}
     try:
-        ct.plotly_chart(fig, use_container_width=True, config=cfg, key=chave,
-                        on_select="rerun", selection_mode="points")
-    except TypeError:  # Streamlit antigo, sem seleção em gráficos
+        ct.plotly_chart(
+            fig, use_container_width=True, config=cfg, key=chave,
+            on_select="rerun", selection_mode="points",
+        )
+    except TypeError:
         ct.plotly_chart(fig, use_container_width=True, config=cfg)
-
-
-def kpi(titulo, valor, sub, cor=None):
-    estilo = f" style='color:{cor}'" if cor else ""
-    return (
-        "<div class='kpi'>"
-        f"<div class='kpi-top'><div class='kpi-t'{estilo}>{titulo}</div></div>"
-        f"<div class='kpi-v'>{valor}</div>{sub}</div>"
-    )
 
 
 def sub_delta(atual, ant):
     if not ant:
-        return "<div class='kpi-sub'><span>sem período anterior</span></div>"
+        return "sem período anterior"
     v = (atual / ant - 1) * 100
-    cls, seta = ("up", "↑") if v >= 0 else ("down", "↓")
-    return f"<div class='kpi-sub {cls}'>{seta} {pct(abs(v))} <span>vs. período anterior</span></div>"
+    seta = "↑" if v >= 0 else "↓"
+    return f"{seta} {pct(abs(v))} vs. período anterior"
 
 
 def sub_pct(v):
-    return f"<div class='kpi-sub'><b>{pct(div(v, tot) * 100)}</b> do faturado</div>"
+    return f"{pct(div(v, tot) * 100)} do faturado"
 
 
 # ==============================================================================
@@ -601,43 +610,65 @@ st.markdown(
 )
 for e in erros:
     st.warning(e)
-for n in notas:
-    st.caption(f"ℹ️ {n}")
 
-if filtro_click:
+# Chips de filtro ativo (gráfico e/ou KPI)
+if filtro_click or filtro_kpi:
     chips = []
     if meses_click:
         chips.append("Mês: " + ", ".join(rot[m] for m in sorted(meses_click)))
     if sits_click:
         chips.append("Situação: " + ", ".join(sorted(sits_click, key=ordem_sit)))
+    if st.session_state.get("kpi_cats"):
+        chips.append("Categoria: " + ", ".join(st.session_state["kpi_cats"]))
     cc1, cc2 = st.columns([7, 1.2])
-    cc1.markdown("<div class='chips'><span class='chips-t'>Filtro por clique</span>"
-                 + "".join(f"<span class='chip'>{x}</span>" for x in chips) + "</div>", unsafe_allow_html=True)
+    cc1.markdown(
+        "<div class='chips'><span class='chips-t'>Filtro ativo</span>"
+        + "".join(f"<span class='chip'>{x}</span>" for x in chips) + "</div>",
+        unsafe_allow_html=True,
+    )
     if cc2.button("✕ Limpar", use_container_width=True):
         st.session_state["ver_sel"] = VER + 1
+        st.session_state["kpi_key"] = None
+        st.session_state["kpi_cats"] = None
         st.rerun()
 
-# Combina "Em Produção" e "Em Faturamento" em um único KPI card superior
 val_prod_fat = cat["Em Produção"] + cat["Em Faturamento"]
 
-# Cores dos títulos = cores da Composição por situação
-kpis = [
-    kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p)),
-    kpi(f"<span style='color:{CIANO}'>Em prod.</span> / <span style='color:{AZUL}'>Faturamento</span>",
-        moeda(val_prod_fat), sub_pct(val_prod_fat)),
-    kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]), VERDE),
-    kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"]), ROXO),
-    kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"]), VERMELHO),
-    kpi(f"<span style='color:{AMBAR}'>Glosas</span> e <span style='color:{LARANJA}'>recursos</span>",
-        moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"])),
-    kpi("Recursos negados", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"]), ROSA),
-    kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100), "<div class='kpi-sub'>do faturado</div>", VERDE),
+# (id, título, valor, subtítulo, lista de Cat ou None = limpa filtro)
+kpi_defs = [
+    ("total", "FATURAMENTO TOTAL", moeda(tot), sub_delta(tot, tot_p), None),
+    ("prod_fat", "EM PROD. / FATURAMENTO", moeda(val_prod_fat), sub_pct(val_prod_fat),
+     ["Em Produção", "Em Faturamento"]),
+    ("recebido", "RECEBIDO", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]),
+     ["Recebido"]),
+    ("areceber", "A RECEBER", moeda(cat["A receber"]), sub_pct(cat["A receber"]),
+     ["A receber"]),
+    ("inad", "INADIMPLÊNCIA", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"]),
+     ["Inadimplência"]),
+    ("glosas", "GLOSAS E RECURSOS", moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"]),
+     ["Glosas e Recursos"]),
+    ("negados", "RECURSOS NEGADOS", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"]),
+     ["Recursos Negados"]),
+    ("taxa", "TAXA DE RECEBIMENTO", pct(div(cat["Recebido"], tot) * 100), "do faturado", None),
 ]
-for col, html in zip(st.columns(8, gap="small"), kpis):
-    col.markdown(html, unsafe_allow_html=True)
+
+cols_kpi = st.columns(8, gap="small")
+for col, (kid, titulo, valor, sub, cats) in zip(cols_kpi, kpi_defs):
+    ativo = st.session_state.get("kpi_key") == kid
+    marca = "● " if ativo else ""
+    rotulo = f"{marca}{titulo}\n{valor}\n{sub}"
+    with col:
+        if st.button(rotulo, key=f"kpi_btn_{kid}_{VER}", use_container_width=True):
+            if st.session_state.get("kpi_key") == kid:
+                st.session_state["kpi_key"] = None
+                st.session_state["kpi_cats"] = None
+            else:
+                st.session_state["kpi_key"] = kid
+                st.session_state["kpi_cats"] = cats
+            st.rerun()
 
 # ==============================================================================
-# 7. LINHA 1: EVOLUÇÃO | COMPOSIÇÃO POR SITUAÇÃO | FATURAMENTO POR CONVÊNIO
+# 7. LINHA 1: EVOLUÇÃO | COMPOSIÇÃO | FATURAMENTO
 # ==============================================================================
 b1, b2, b3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
@@ -651,9 +682,11 @@ with b1:
         ("Recebido", liq_m, VERDE, "rgba(16,185,129,0.18)"),
     ):
         fig_ev.add_trace(go.Scatter(
-            x=x_lab, y=serie.values, name=nome, mode="lines+markers", line=dict(color=cor, width=2.5),
-            marker=dict(size=8), fill="tozeroy", fillcolor=fill,
-            selected=dict(marker=dict(size=12, opacity=1)), unselected=dict(marker=dict(opacity=0.55)),
+            x=x_lab, y=serie.values, name=nome, mode="lines+markers",
+            line=dict(color=cor, width=2.5), marker=dict(size=8),
+            fill="tozeroy", fillcolor=fill,
+            selected=dict(marker=dict(size=12, opacity=1)),
+            unselected=dict(marker=dict(opacity=0.55)),
             hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + nome + "</extra>",
         ))
     grafico_click(ct, layout(fig_ev), K_EV)
@@ -674,11 +707,14 @@ with b2:
         layout(fig_do, 150, False)
         fig_do.update_layout(annotations=[dict(
             text=f"<b>{abrev(g_sit.sum())}</b><br><span style='font-size:10px'>Total faturado</span>",
-            showarrow=False, font=dict(size=14, color="#fff"))])
+            showarrow=False, font=dict(size=14, color="#fff"),
+        )])
         ct.plotly_chart(fig_do, use_container_width=True, config={"displayModeBar": False})
         leg = "".join(
             f"<div class='leg'><i style='background:{cor_sit(x)}'></i><span>{x}</span>"
-            f"<em>{pct(div(g_sit[x], g_sit.sum()) * 100)}</em><b>{abrev(g_sit[x])}</b></div>" for x in sits)
+            f"<em>{pct(div(g_sit[x], g_sit.sum()) * 100)}</em><b>{abrev(g_sit[x])}</b></div>"
+            for x in sits
+        )
         ct.markdown(f"<div>{leg}</div>", unsafe_allow_html=True)
 
 with b3:
@@ -692,13 +728,18 @@ with b3:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
         mx, tt = fat["Faturado"].max(), fat["Faturado"].sum()
-        rows = [rot_cols(i, nome) + [abrev(r["Faturado"]), barra(div(r["Faturado"], mx) * 100, AZUL),
-                                     pct(div(r["Faturado"], tt) * 100)]
-                for i, (nome, r) in enumerate(fat.iterrows(), 1)]
+        rows = [
+            rot_cols(i, nome) + [
+                abrev(r["Faturado"]),
+                barra(div(r["Faturado"], mx) * 100, AZUL),
+                pct(div(r["Faturado"], tt) * 100),
+            ]
+            for i, (nome, r) in enumerate(fat.iterrows(), 1)
+        ]
         ct.markdown(tabela(HEAD_ROT + ["Faturamento", "", "%"], rows), unsafe_allow_html=True)
 
 # ==============================================================================
-# 8. LINHA 2: SITUAÇÃO POR MÊS | INADIMPLÊNCIA | TAXA DE RECEBIMENTO
+# 8. LINHA 2
 # ==============================================================================
 c1, c2, c3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
@@ -710,8 +751,10 @@ with c1:
         fig_st.add_trace(go.Bar(
             x=x_lab, y=y.values, name=sit, marker_color=cor_sit(sit),
             customdata=[sit] * len(x_lab), legendgroup=sit,
-            selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=0.4)),
-            hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + sit + "</extra>"))
+            selected=dict(marker=dict(opacity=1)),
+            unselected=dict(marker=dict(opacity=0.4)),
+            hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>" + sit + "</extra>",
+        ))
     fig_st.update_layout(barmode="stack", bargap=0.35, legend=dict(font=dict(color="#ffffff")))
     grafico_click(ct, layout(fig_st), K_ST)
 
@@ -724,9 +767,14 @@ with c2:
         ct.markdown(vazio_html("Sem inadimplência no período"), unsafe_allow_html=True)
     else:
         mx = inad["Inadimplência"].max()
-        rows = [rot_cols(i, nome) + [abrev(r["Inadimplência"]), barra(div(r["Inadimplência"], mx) * 100, VERMELHO),
-                                     pct(div(r["Inadimplência"], r["Faturado"]) * 100)]
-                for i, (nome, r) in enumerate(inad.iterrows(), 1)]
+        rows = [
+            rot_cols(i, nome) + [
+                abrev(r["Inadimplência"]),
+                barra(div(r["Inadimplência"], mx) * 100, VERMELHO),
+                pct(div(r["Inadimplência"], r["Faturado"]) * 100),
+            ]
+            for i, (nome, r) in enumerate(inad.iterrows(), 1)
+        ]
         ct.markdown(tabela(HEAD_ROT + ["Inadimplência", "", "% fat."], rows), unsafe_allow_html=True)
 
 with c3:
@@ -741,8 +789,10 @@ with c3:
         rows = []
         for i, (nome, r) in enumerate(rec.iterrows(), 1):
             tx = div(r["Recebido"], r["Faturado"]) * 100
-            rows.append(rot_cols(i, nome) + [abrev(r["Faturado"]), abrev(r["Recebido"]),
-                                             barra(tx, cor_taxa(tx)), pct(tx)])
+            rows.append(rot_cols(i, nome) + [
+                abrev(r["Faturado"]), abrev(r["Recebido"]),
+                barra(tx, cor_taxa(tx)), pct(tx),
+            ])
         ct.markdown(tabela(HEAD_ROT + ["Faturado", "Recebido", "", "% Receb."], rows), unsafe_allow_html=True)
 
 # ==============================================================================
@@ -756,23 +806,34 @@ else:
     pf = perf if mes_a_mes else perf.sort_values("Faturado", ascending=False)
     rows = []
     for i, (nome, r) in enumerate(pf.iterrows(), 1):
-        tx, ti = div(r["Recebido"], r["Faturado"]) * 100, div(r["Inadimplência"], r["Faturado"]) * 100
+        tx = div(r["Recebido"], r["Faturado"]) * 100
+        ti = div(r["Inadimplência"], r["Faturado"]) * 100
         rows.append(rot_cols(i, nome, True) + [
             num(r["Faturado"]), num(r["Em Produção"]), num(r["Em Faturamento"]),
             f"<span style='color:{VERDE}'>{num(r['Recebido'])}</span>",
             num(r["A receber"]), num(r["Glosas e Recursos"]), num(r["Recursos Negados"]),
             f"<span style='color:{VERMELHO}'>{num(r['Inadimplência'])}</span>",
-            pct(ti), f"<span style='color:{cor_taxa(tx)};font-weight:700'>{pct(tx)}</span>"])
+            pct(ti),
+            f"<span style='color:{cor_taxa(tx)};font-weight:700'>{pct(tx)}</span>",
+        ])
     ts = pf.sum()
     total = ([] if mes_a_mes else [""]) + [
-        "TOTAL GERAL", num(ts["Faturado"]), num(ts["Em Produção"]), num(ts["Em Faturamento"]), num(ts["Recebido"]),
-        num(ts["A receber"]), num(ts["Glosas e Recursos"]), num(ts["Recursos Negados"]), num(ts["Inadimplência"]),
-        pct(div(ts["Inadimplência"], ts["Faturado"]) * 100), pct(div(ts["Recebido"], ts["Faturado"]) * 100)]
+        "TOTAL GERAL", num(ts["Faturado"]), num(ts["Em Produção"]), num(ts["Em Faturamento"]),
+        num(ts["Recebido"]), num(ts["A receber"]), num(ts["Glosas e Recursos"]),
+        num(ts["Recursos Negados"]), num(ts["Inadimplência"]),
+        pct(div(ts["Inadimplência"], ts["Faturado"]) * 100),
+        pct(div(ts["Recebido"], ts["Faturado"]) * 100),
+    ]
     ct.markdown(
-        tabela(HEAD_ROT + ["Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
-                           "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb."],
-               rows, total, altura=420),
-        unsafe_allow_html=True)
+        tabela(
+            HEAD_ROT + [
+                "Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
+                "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb.",
+            ],
+            rows, total, altura=420,
+        ),
+        unsafe_allow_html=True,
+    )
 
 # ==============================================================================
 # 10. MATRIZ SITUAÇÃO × MÊS
@@ -784,7 +845,11 @@ else:
     mat = sit_df.pivot_table(index="Situação", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
     mat = mat.reindex(columns=refs_c, fill_value=0.0)
     mat = mat.loc[sorted(mat.index, key=ordem_sit)]
-    rows = [[f"<span class='dot' style='background:{cor_sit(sit)}'></span>{sit}"]
-            + [num(mat.loc[sit, m]) for m in refs_c] + [f"<b>{num(mat.loc[sit].sum())}</b>"] for sit in mat.index]
+    rows = [
+        [f"<span class='dot' style='background:{cor_sit(sit)}'></span>{sit}"]
+        + [num(mat.loc[sit, m]) for m in refs_c]
+        + [f"<b>{num(mat.loc[sit].sum())}</b>"]
+        for sit in mat.index
+    ]
     total = ["TOTAL GERAL"] + [num(mat[m].sum()) for m in refs_c] + [num(mat.values.sum())]
     ct.markdown(tabela(["Situação"] + x_lab_c + ["Total"], rows, total), unsafe_allow_html=True)
