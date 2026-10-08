@@ -730,7 +730,7 @@ with c2:
         ct.markdown(tabela(HEAD_ROT + ["Inadimplência", "", "% fat."], rows), unsafe_allow_html=True)
 
 with c3:
-    ct = card(c3, "Taxa de recebimento mês a mês" if mes_a_mes else "Taxa de recebimento por convênio")
+    ct = card(c3, "Recebimento mês a mês" if mes_a_mes else "Recebimento por convênio")
     if perf.empty:
         ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
     else:
