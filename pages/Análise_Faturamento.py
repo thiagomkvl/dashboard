@@ -70,7 +70,6 @@ css = """
     [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
     [data-testid="stCaptionContainer"] { color: #8fa3c4 !important; }
 
-    /* Sidebar */
     [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
     [data-testid="stWidgetLabel"] p { color: #8fa3c4 !important; font-size: 12px; font-weight: 600; }
     .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #8fa3c4; text-transform: uppercase; margin: 6px 0 -2px; }
@@ -78,7 +77,6 @@ css = """
     .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
     .side-card b { color: #e6ecf5; font-size: 13px; }
 
-    /* Widgets escuros */
     [data-baseweb="select"] > div { background: #101b32 !important; border-color: #1e2d4d !important; color: #e6ecf5 !important; }
     [data-baseweb="select"] span, [data-baseweb="select"] input { color: #e6ecf5 !important; }
     [data-baseweb="select"] svg { fill: #8fa3c4; }
@@ -87,7 +85,6 @@ css = """
     li[role="option"]:hover, li[aria-selected="true"] { background: #1a2a4a !important; }
     span[data-baseweb="tag"] { background: #f97316 !important; color: #fff !important; }
 
-    /* Botão laranja só na sidebar e no Limpar (não nos KPIs) */
     [data-testid="stSidebar"] .stButton > button,
     .btn-limpar .stButton > button {
         background: linear-gradient(135deg, #f97316, #ea580c) !important;
@@ -97,7 +94,6 @@ css = """
     [data-testid="stSidebar"] .stButton > button:hover,
     .btn-limpar .stButton > button:hover { filter: brightness(1.1); color: #fff !important; }
 
-    /* Cabeçalho */
     .top {
         display: flex; justify-content: space-between; align-items: center; gap: 16px;
         padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #1a2744;
@@ -112,7 +108,6 @@ css = """
     .pill small { display: block; font-size: 10px; color: #8fa3c4; }
     .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
 
-    /* Filtro ativo */
     .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
     .chips-t { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #8fa3c4; }
     .chip {
@@ -120,12 +115,13 @@ css = """
         color: #fdba74; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600;
     }
 
-    /* KPIs — EXATAMENTE o visual anterior */
+    /* KPIs — visual original */
     .kpi {
         padding: 12px; border-radius: 12px; height: 100px;
         container-type: inline-size; overflow: hidden; margin-bottom: __KPI_GAP__;
         background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%);
         border: 1px solid rgba(59,130,246,0.22);
+        cursor: pointer;
     }
     .kpi.active {
         border-color: #f97316;
@@ -147,34 +143,54 @@ css = """
     .kpi-sub span { color: #8fa3c4; font-weight: 500; }
     .kpi-sub b { color: #dbe6f7; }
 
-    /* Botão invisível só na linha dos KPIs (não pinta de laranja) */
-    .kpi-row div[data-testid="column"] .stButton {
-        margin-top: -108px !important;
-        margin-bottom: 8px !important;
-        position: relative;
-        z-index: 5;
+    /* Clique NO card: botão absoluto sobre o .kpi (sem bloco cinza abaixo) */
+    div[data-testid="stVerticalBlock"]:has(.kpi) {
+        position: relative !important;
+        min-height: 100px;
     }
-    .kpi-row div[data-testid="column"] .stButton > button {
-        background: transparent !important;
-        border: 2px solid transparent !important;
-        min-height: 100px !important;
+    div[data-testid="stVerticalBlock"]:has(.kpi) .stButton {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
         height: 100px !important;
-        color: transparent !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        z-index: 20 !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(.kpi) .stButton > button {
+        width: 100% !important;
+        height: 100px !important;
+        min-height: 100px !important;
+        max-height: 100px !important;
+        opacity: 0 !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
+        margin: 0 !important;
         border-radius: 12px !important;
-    }
-    .kpi-row div[data-testid="column"] .stButton > button:hover {
-        border-color: rgba(249,115,22,0.45) !important;
-        background: rgba(249,115,22,0.06) !important;
+        cursor: pointer !important;
         color: transparent !important;
     }
-    .kpi-row div[data-testid="column"] .stButton > button:focus {
+    div[data-testid="stVerticalBlock"]:has(.kpi) .stButton > button:hover {
+        opacity: 0.12 !important;
+        background: rgba(249,115,22,0.18) !important;
+        background-color: rgba(249,115,22,0.18) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(.kpi) .stButton > button:focus,
+    div[data-testid="stVerticalBlock"]:has(.kpi) .stButton > button:focus-visible {
+        outline: none !important;
         box-shadow: none !important;
-        color: transparent !important;
+        opacity: 0 !important;
+    }
+    /* remove espaço residual do wrapper do botão */
+    div[data-testid="stVerticalBlock"]:has(.kpi) [data-testid="stMarkdownContainer"] {
+        margin-bottom: 0 !important;
     }
 
-    /* Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #0f1a2e; border: 1px solid #1c2a47 !important; border-radius: 12px;
     }
@@ -196,7 +212,6 @@ css = """
     .leg em { font-style: normal; color: #8fa3c4; }
     .leg b { color: #fff; font-weight: 700; }
 
-    /* Tabelas */
     .tbl-wrap { overflow: auto; max-height: 330px; border-radius: 8px; }
     .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #dbe6f7; }
     .tbl th {
@@ -681,7 +696,7 @@ def sub_pct(v):
 
 
 # ==============================================================================
-# 6. CABEÇALHO + KPIs (visual original + filtro)
+# 6. CABEÇALHO + KPIs
 # ==============================================================================
 txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}"
 txt_conv = (
@@ -730,7 +745,6 @@ if filtro_click or filtro_kpi:
 val_prod_fat = cat["Em Produção"] + cat["Em Faturamento"]
 k_ativo = st.session_state.get("kpi_key")
 
-# Mesmos cards de antes — só Glosas em uma cor + filtro no clique
 kpi_defs = [
     ("total", kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p), ativo=(k_ativo == "total")), None),
     (
@@ -763,7 +777,6 @@ kpi_defs = [
     ),
     (
         "glosas",
-        # ÚNICA mudança visual: título em uma cor só
         kpi("Glosas e recursos", moeda(cat["Glosas e Recursos"]),
             sub_pct(cat["Glosas e Recursos"]), AMBAR, ativo=(k_ativo == "glosas")),
         ["Glosas e Recursos"],
@@ -782,12 +795,12 @@ kpi_defs = [
     ),
 ]
 
-st.markdown('<div class="kpi-row">', unsafe_allow_html=True)
 cols_kpi = st.columns(8, gap="small")
 for col, (kid, html, cats) in zip(cols_kpi, kpi_defs):
     with col:
         st.markdown(html, unsafe_allow_html=True)
-        if st.button(" ", key=f"kpi_btn_{kid}_{VER}", use_container_width=True):
+        # botão invisível ABSOLUTO sobre o card (clique = no card)
+        if st.button("\u200b", key=f"kpi_btn_{kid}_{VER}", use_container_width=True):
             if st.session_state.get("kpi_key") == kid:
                 st.session_state["kpi_key"] = None
                 st.session_state["kpi_cats"] = None
@@ -795,7 +808,6 @@ for col, (kid, html, cats) in zip(cols_kpi, kpi_defs):
                 st.session_state["kpi_key"] = kid
                 st.session_state["kpi_cats"] = cats
             st.rerun()
-st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 7. LINHA 1
