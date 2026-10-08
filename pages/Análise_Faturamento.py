@@ -1,6 +1,5 @@
 import streamlit as st
 
-# O set_page_config OBRIGATORIAMENTE tem que ser a primeira chamada do Streamlit
 st.set_page_config(
     page_title="Faturamento & Situação das Contas",
     layout="wide",
@@ -16,7 +15,6 @@ from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
 
-# BLINDAGEM DE CONEXÃO (mesmo padrão do painel financeiro)
 try:
     from database import conectar_sheets
 except Exception as _err:
@@ -46,10 +44,15 @@ COR_SIT = {
 }
 ORDEM_SIT = list(COR_SIT)
 
-CATS = ["Em Produção", "Em Faturamento", "Recebido", "A receber", "Inadimplência", "Glosas e Recursos", "Recursos Negados"]
+CATS = [
+    "Em Produção", "Em Faturamento", "Recebido", "A receber",
+    "Inadimplência", "Glosas e Recursos", "Recursos Negados",
+]
 
-MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
-         "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
+MESES = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+}
 ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 # ==============================================================================
@@ -83,56 +86,112 @@ css = """
     li[role="option"] { color: #e6ecf5 !important; }
     li[role="option"]:hover, li[aria-selected="true"] { background: #1a2a4a !important; }
     span[data-baseweb="tag"] { background: #f97316 !important; color: #fff !important; }
-    .stButton > button { background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; border-radius: 10px; font-weight: 700; padding: 0.55rem 1rem; }
-    .stButton > button:hover { filter: brightness(1.1); color: #fff; border: none; }
+
+    /* Botão laranja só na sidebar e no Limpar (não nos KPIs) */
+    [data-testid="stSidebar"] .stButton > button,
+    .btn-limpar .stButton > button {
+        background: linear-gradient(135deg, #f97316, #ea580c) !important;
+        color: #fff !important; border: none !important; border-radius: 10px !important;
+        font-weight: 700 !important; padding: 0.55rem 1rem !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover,
+    .btn-limpar .stButton > button:hover { filter: brightness(1.1); color: #fff !important; }
 
     /* Cabeçalho */
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #1a2744; }
+    .top {
+        display: flex; justify-content: space-between; align-items: center; gap: 16px;
+        padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #1a2744;
+    }
     .top h1 { margin: 0; padding: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.3px; color: #fff; }
     .top p { margin: 2px 0 0; font-size: 13px; color: #8fa3c4; }
     .pills { display: flex; gap: 10px; }
-    .pill { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 6px 14px; min-width: 120px; }
+    .pill {
+        background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px;
+        padding: 6px 14px; min-width: 120px;
+    }
     .pill small { display: block; font-size: 10px; color: #8fa3c4; }
     .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
 
-    /* Filtro por clique */
+    /* Filtro ativo */
     .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
     .chips-t { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #8fa3c4; }
-    .chip { background: rgba(249,115,22,0.14); border: 1px solid rgba(249,115,22,0.4); color: #fdba74; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+    .chip {
+        background: rgba(249,115,22,0.14); border: 1px solid rgba(249,115,22,0.4);
+        color: #fdba74; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600;
+    }
 
-    /* KPIs clicáveis (botões) */
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button {
-        width: 100%;
-        min-height: 100px;
-        padding: 12px;
-        margin-bottom: __KPI_GAP__;
-        border-radius: 12px !important;
-        background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%) !important;
-        border: 1px solid rgba(59,130,246,0.22) !important;
-        color: #e6ecf5 !important;
-        text-align: left !important;
-        white-space: pre-line !important;
-        line-height: 1.3 !important;
-        font-weight: 600 !important;
+    /* KPIs — EXATAMENTE o visual anterior */
+    .kpi {
+        padding: 12px; border-radius: 12px; height: 100px;
+        container-type: inline-size; overflow: hidden; margin-bottom: __KPI_GAP__;
+        background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%);
+        border: 1px solid rgba(59,130,246,0.22);
+    }
+    .kpi.active {
+        border-color: #f97316;
+        box-shadow: 0 0 0 1px rgba(249,115,22,0.45);
+    }
+    .kpi-top { display: flex; align-items: flex-start; gap: 8px; }
+    .kpi-t {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
+        line-height: 1.2; min-height: 24px; color: #9db2d3;
+    }
+    .kpi-v {
+        font-size: clamp(11px, 1vw, 18px); font-size: clamp(11px, 11cqw, 20px);
+        font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap;
+        margin: 8px 0 3px; font-variant-numeric: tabular-nums;
+    }
+    .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
+    .kpi-sub.up { color: #34d399; }
+    .kpi-sub.down { color: #f87171; }
+    .kpi-sub span { color: #8fa3c4; font-weight: 500; }
+    .kpi-sub b { color: #dbe6f7; }
+
+    /* Botão invisível só na linha dos KPIs (não pinta de laranja) */
+    .kpi-row div[data-testid="column"] .stButton {
+        margin-top: -108px !important;
+        margin-bottom: 8px !important;
+        position: relative;
+        z-index: 5;
+    }
+    .kpi-row div[data-testid="column"] .stButton > button {
+        background: transparent !important;
+        border: 2px solid transparent !important;
+        min-height: 100px !important;
+        height: 100px !important;
+        color: transparent !important;
         box-shadow: none !important;
-        font-size: 11px !important;
+        padding: 0 !important;
+        border-radius: 12px !important;
     }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button:hover {
-        filter: brightness(1.12);
-        border-color: rgba(59,130,246,0.55) !important;
-        color: #fff !important;
+    .kpi-row div[data-testid="column"] .stButton > button:hover {
+        border-color: rgba(249,115,22,0.45) !important;
+        background: rgba(249,115,22,0.06) !important;
+        color: transparent !important;
     }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] .stButton > button:focus {
-        box-shadow: 0 0 0 1px rgba(249,115,22,0.55) !important;
-        border-color: #f97316 !important;
+    .kpi-row div[data-testid="column"] .stButton > button:focus {
+        box-shadow: none !important;
+        color: transparent !important;
     }
 
     /* Cards */
-    [data-testid="stVerticalBlockBorderWrapper"] { background: #0f1a2e; border: 1px solid #1c2a47 !important; border-radius: 12px; }
-    .card-title { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #fff; margin: 2px 0 4px; }
-    .card-title span { font-size: 10px; font-weight: 600; letter-spacing: 0.2px; text-transform: none; color: #8fa3c4; }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #0f1a2e; border: 1px solid #1c2a47 !important; border-radius: 12px;
+    }
+    .card-title {
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+        color: #fff; margin: 2px 0 4px;
+    }
+    .card-title span {
+        font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
+        text-transform: none; color: #8fa3c4;
+    }
     .vazio { color: #8fa3c4; font-size: 12px; padding: 24px 6px; text-align: center; }
-    .leg { display: grid; grid-template-columns: 12px 1fr 52px 78px; gap: 8px; align-items: center; font-size: 11.5px; padding: 3px 0; color: #c6d3ea; }
+    .leg {
+        display: grid; grid-template-columns: 12px 1fr 52px 78px; gap: 8px;
+        align-items: center; font-size: 11.5px; padding: 3px 0; color: #c6d3ea;
+    }
     .leg i { width: 9px; height: 9px; border-radius: 50%; display: block; }
     .leg em { font-style: normal; color: #8fa3c4; }
     .leg b { color: #fff; font-weight: 700; }
@@ -140,12 +199,23 @@ css = """
     /* Tabelas */
     .tbl-wrap { overflow: auto; max-height: 330px; border-radius: 8px; }
     .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #dbe6f7; }
-    .tbl th { position: sticky; top: 0; z-index: 2; background: #0f1a2e; color: #8fa3c4; font-weight: 600; font-size: 11px; text-align: left; padding: 7px 8px; border-bottom: 1px solid #1c2a47; white-space: nowrap; }
-    .tbl td { padding: 7px 8px; border-bottom: 1px solid #16213a; white-space: nowrap; text-align: left; font-variant-numeric: tabular-nums; }
+    .tbl th {
+        position: sticky; top: 0; z-index: 2; background: #0f1a2e; color: #8fa3c4;
+        font-weight: 600; font-size: 11px; text-align: left; padding: 7px 8px;
+        border-bottom: 1px solid #1c2a47; white-space: nowrap;
+    }
+    .tbl td {
+        padding: 7px 8px; border-bottom: 1px solid #16213a; white-space: nowrap;
+        text-align: left; font-variant-numeric: tabular-nums;
+    }
     .tbl tbody tr:hover td { background: #13203a; }
-    .tbl tr.tot td { font-weight: 800; color: #fff; background: #0d1730; border-top: 1px solid #2a3a5c; }
+    .tbl tr.tot td {
+        font-weight: 800; color: #fff; background: #0d1730; border-top: 1px solid #2a3a5c;
+    }
     .tbl .mut { color: #6b7fa3; }
-    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px;
+    }
     .bar { height: 8px; min-width: 90px; background: #16213a; border-radius: 4px; overflow: hidden; }
     .bar span { display: block; height: 100%; border-radius: 4px; }
     .tbl-wrap::-webkit-scrollbar { height: 6px; width: 6px; }
@@ -292,12 +362,16 @@ def cor_taxa(p):
 
 
 # ==============================================================================
-# 2. LEITURA DIRETO DA BASE_CONTAS
+# 2. LEITURA BASE_CONTAS
 # ==============================================================================
-OBRIG = {"mes": "mes faturamento", "conv": "convenio conta", "sit": "situacao conta",
-         "val": "valor conta", "rec": "valor recebido"}
-NOME_COL = {"mes": "Mês Faturamento", "conv": "Convênio Conta", "sit": "Situação Conta",
-            "val": "Valor Conta", "rec": "Valor Recebido"}
+OBRIG = {
+    "mes": "mes faturamento", "conv": "convenio conta", "sit": "situacao conta",
+    "val": "valor conta", "rec": "valor recebido",
+}
+NOME_COL = {
+    "mes": "Mês Faturamento", "conv": "Convênio Conta", "sit": "Situação Conta",
+    "val": "Valor Conta", "rec": "Valor Recebido",
+}
 COL_ACAT = "glosa acatada"
 
 
@@ -324,12 +398,6 @@ def texto_limpo(serie, padrao):
 
 @st.cache_data(ttl=60, show_spinner="Carregando Base_Contas…")
 def carregar_base():
-    """
-    Cada conta vira até 3 partes (a soma sempre fecha com o Valor Conta):
-      1) Valor Recebido  -> situação 'Liquidada'
-      2) Glosa Acatada   -> situação 'Glosa Acatada'
-      3) Restante        -> Situação Conta original
-    """
     vazio = pd.DataFrame(columns=["Situação", "Convênio", "Ref", "Valor"])
     conn = conectar_sheets()
     if conn is None:
@@ -348,10 +416,7 @@ def carregar_base():
 
     val = df[m[OBRIG["val"]]].apply(limpa_valor)
     rec = df[m[OBRIG["rec"]]].apply(limpa_valor)
-    if COL_ACAT in m:
-        acat = df[m[COL_ACAT]].apply(limpa_valor)
-    else:
-        acat = pd.Series(0.0, index=df.index)
+    acat = df[m[COL_ACAT]].apply(limpa_valor) if COL_ACAT in m else pd.Series(0.0, index=df.index)
     conv = texto_limpo(df[m[OBRIG["conv"]]], "(Sem convênio)")
     sit = texto_limpo(df[m[OBRIG["sit"]]], "(Sem situação)")
 
@@ -363,9 +428,14 @@ def carregar_base():
     resto = val - rec - acat
     partes = pd.concat([
         pd.DataFrame({"Situação": "Liquidada", "Convênio": conv, "Ref": ref, "Valor": rec}),
-        pd.DataFrame({"Situação": "Glosa Acatada", "Convênio": conv, "Ref": ref,
-                      "Valor": acat + resto.where(liquidada, 0.0)}),
-        pd.DataFrame({"Situação": sit, "Convênio": conv, "Ref": ref, "Valor": resto.where(~liquidada, 0.0)}),
+        pd.DataFrame({
+            "Situação": "Glosa Acatada", "Convênio": conv, "Ref": ref,
+            "Valor": acat + resto.where(liquidada, 0.0),
+        }),
+        pd.DataFrame({
+            "Situação": sit, "Convênio": conv, "Ref": ref,
+            "Valor": resto.where(~liquidada, 0.0),
+        }),
     ], ignore_index=True)
     partes = partes[partes["Ref"].notna() & (partes["Valor"].abs() > 0.005)].copy()
     if partes.empty:
@@ -387,7 +457,7 @@ rot = {m: rot_mes(m) for m in meses_all}
 rot_inv = {v: k for k, v in rot.items()}
 
 # ==============================================================================
-# 3. SIDEBAR (FILTROS)
+# 3. SIDEBAR
 # ==============================================================================
 with st.sidebar:
     st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
@@ -395,7 +465,9 @@ with st.sidebar:
     ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
     fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
     conv_sel = st.multiselect("Convênio", sorted(set(sc["Convênio"])), placeholder="Todos")
-    sit_sel = st.multiselect("Situação", sorted(set(sc["Situação"]), key=ordem_sit), placeholder="Todas")
+    sit_sel = st.multiselect(
+        "Situação", sorted(set(sc["Situação"]), key=ordem_sit), placeholder="Todas",
+    )
     if st.button("↻ Atualizar dados", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -407,7 +479,7 @@ n_ref, i0 = len(refs_sel), meses_all.index(refs_sel[0])
 refs_prev = meses_all[i0 - n_ref:i0] if i0 - n_ref >= 0 else []
 
 # ==============================================================================
-# 4. PREPARAÇÃO DOS DADOS
+# 4. DADOS
 # ==============================================================================
 base_f = sc
 if conv_sel:
@@ -419,11 +491,9 @@ base_f = base_f.assign(Cat=base_f["Situação"].map(categoria))
 drv = base_f[base_f["Ref"].isin(refs_sel)]
 sits_stack = sorted(drv["Situação"].unique(), key=ordem_sit)
 
-# ---- Filtro por clique nos gráficos ----
 VER = st.session_state.setdefault("ver_sel", 0)
 K_EV, K_ST = f"sel_ev_{VER}", f"sel_st_{VER}"
 
-# ---- Filtro por clique nos KPIs ----
 if "kpi_key" not in st.session_state:
     st.session_state["kpi_key"] = None
 if "kpi_cats" not in st.session_state:
@@ -465,16 +535,13 @@ filtro_kpi = bool(st.session_state.get("kpi_cats"))
 refs_c = [m for m in refs_sel if m in meses_click] or refs_sel
 x_lab_c = [rot[m] for m in refs_c]
 
-# Base do período (+ clique em gráfico) — usada nos KPIs do topo
 cons_periodo = base_f[base_f["Ref"].isin(refs_c)]
 if sits_click:
     cons_periodo = cons_periodo[cons_periodo["Situação"].isin(sits_click)]
 
-# Dados do restante do painel (+ filtro do card KPI)
 cons = cons_periodo
-kpi_cats = st.session_state.get("kpi_cats")
-if kpi_cats:
-    cons = cons[cons["Cat"].isin(kpi_cats)]
+if st.session_state.get("kpi_cats"):
+    cons = cons[cons["Cat"].isin(st.session_state["kpi_cats"])]
 
 sit_df = cons
 conv_df = cons.groupby(["Convênio", "Ref"], as_index=False)["Valor"].sum()
@@ -487,18 +554,16 @@ def totais(d):
     return float(g.sum()), {c: float(g.get(c, 0.0)) for c in CATS}
 
 
-# Totais dos cards = período sem filtro de categoria do KPI
 tot, cat = totais(cons_periodo)
 tot_p, cat_p = totais(prev_df)
-
 mes_a_mes = bool(conv_sel)
 
 if cruz.empty:
     perf = pd.DataFrame()
 else:
     perf = cruz.pivot_table(
-        index="Ref" if mes_a_mes else "Convênio", columns="Cat", values="Valor",
-        aggfunc="sum", fill_value=0.0,
+        index="Ref" if mes_a_mes else "Convênio",
+        columns="Cat", values="Valor", aggfunc="sum", fill_value=0.0,
     )
     for c in CATS:
         if c not in perf.columns:
@@ -515,10 +580,13 @@ x_lab = [rot[m] for m in refs_sel]
 
 
 # ==============================================================================
-# 5. COMPONENTES VISUAIS
+# 5. COMPONENTES
 # ==============================================================================
 def barra(w, cor):
-    return f"<div class='bar'><span style='width:{max(0.0, min(100.0, w)):.1f}%;background:{cor}'></span></div>"
+    return (
+        f"<div class='bar'><span style='width:{max(0.0, min(100.0, w)):.1f}%;"
+        f"background:{cor}'></span></div>"
+    )
 
 
 def tabela(heads, rows, total=None, altura=330):
@@ -544,7 +612,10 @@ def card(coluna, titulo, dica="", fixo=True):
         ct = coluna.container(border=True, height=ALT_CARD) if fixo else coluna.container(border=True)
     except TypeError:
         ct = coluna.container(border=True)
-    ct.markdown(f"<div class='card-title'>{titulo}<span>{dica}</span></div>", unsafe_allow_html=True)
+    ct.markdown(
+        f"<div class='card-title'>{titulo}<span>{dica}</span></div>",
+        unsafe_allow_html=True,
+    )
     return ct
 
 
@@ -566,7 +637,10 @@ def layout(fig, h=330, legenda=True):
         hoverlabel=dict(bgcolor="#101b32", font_color=TXT, bordercolor=BORDA),
     )
     fig.update_xaxes(showgrid=False, linecolor=BORDA, tickfont=dict(size=10))
-    fig.update_yaxes(gridcolor="rgba(148,163,184,0.12)", zeroline=False, tickprefix="R$ ", tickformat=".2s")
+    fig.update_yaxes(
+        gridcolor="rgba(148,163,184,0.12)", zeroline=False,
+        tickprefix="R$ ", tickformat=".2s",
+    )
     return fig
 
 
@@ -581,24 +655,43 @@ def grafico_click(ct, fig, chave):
         ct.plotly_chart(fig, use_container_width=True, config=cfg)
 
 
+def kpi(titulo, valor, sub, cor=None, ativo=False):
+    estilo = f" style='color:{cor}'" if cor else ""
+    cls = "kpi active" if ativo else "kpi"
+    return (
+        f"<div class='{cls}'>"
+        f"<div class='kpi-top'><div class='kpi-t'{estilo}>{titulo}</div></div>"
+        f"<div class='kpi-v'>{valor}</div>{sub}</div>"
+    )
+
+
 def sub_delta(atual, ant):
     if not ant:
-        return "sem período anterior"
+        return "<div class='kpi-sub'><span>sem período anterior</span></div>"
     v = (atual / ant - 1) * 100
-    seta = "↑" if v >= 0 else "↓"
-    return f"{seta} {pct(abs(v))} vs. período anterior"
+    cls, seta = ("up", "↑") if v >= 0 else ("down", "↓")
+    return (
+        f"<div class='kpi-sub {cls}'>{seta} {pct(abs(v))} "
+        f"<span>vs. período anterior</span></div>"
+    )
 
 
 def sub_pct(v):
-    return f"{pct(div(v, tot) * 100)} do faturado"
+    return f"<div class='kpi-sub'><b>{pct(div(v, tot) * 100)}</b> do faturado</div>"
 
 
 # ==============================================================================
-# 6. CABEÇALHO E KPIs
+# 6. CABEÇALHO + KPIs (visual original + filtro)
 # ==============================================================================
 txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}"
-txt_conv = "Todos" if not conv_sel else (conv_sel[0] if len(conv_sel) == 1 else f"{len(conv_sel)} selecionados")
-txt_sit = "Todas" if not sit_sel else (sit_sel[0] if len(sit_sel) == 1 else f"{len(sit_sel)} selecionadas")
+txt_conv = (
+    "Todos" if not conv_sel
+    else (conv_sel[0] if len(conv_sel) == 1 else f"{len(conv_sel)} selecionados")
+)
+txt_sit = (
+    "Todas" if not sit_sel
+    else (sit_sel[0] if len(sit_sel) == 1 else f"{len(sit_sel)} selecionadas")
+)
 
 st.markdown(
     "<div class='top'><div><h1>FATURAMENTO &amp; SITUAÇÃO DAS CONTAS</h1>"
@@ -611,7 +704,6 @@ st.markdown(
 for e in erros:
     st.warning(e)
 
-# Chips de filtro ativo (gráfico e/ou KPI)
 if filtro_click or filtro_kpi:
     chips = []
     if meses_click:
@@ -626,39 +718,76 @@ if filtro_click or filtro_kpi:
         + "".join(f"<span class='chip'>{x}</span>" for x in chips) + "</div>",
         unsafe_allow_html=True,
     )
-    if cc2.button("✕ Limpar", use_container_width=True):
-        st.session_state["ver_sel"] = VER + 1
-        st.session_state["kpi_key"] = None
-        st.session_state["kpi_cats"] = None
-        st.rerun()
+    with cc2:
+        st.markdown('<div class="btn-limpar">', unsafe_allow_html=True)
+        if st.button("✕ Limpar", use_container_width=True):
+            st.session_state["ver_sel"] = VER + 1
+            st.session_state["kpi_key"] = None
+            st.session_state["kpi_cats"] = None
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 val_prod_fat = cat["Em Produção"] + cat["Em Faturamento"]
+k_ativo = st.session_state.get("kpi_key")
 
-# (id, título, valor, subtítulo, lista de Cat ou None = limpa filtro)
+# Mesmos cards de antes — só Glosas em uma cor + filtro no clique
 kpi_defs = [
-    ("total", "FATURAMENTO TOTAL", moeda(tot), sub_delta(tot, tot_p), None),
-    ("prod_fat", "EM PROD. / FATURAMENTO", moeda(val_prod_fat), sub_pct(val_prod_fat),
-     ["Em Produção", "Em Faturamento"]),
-    ("recebido", "RECEBIDO", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]),
-     ["Recebido"]),
-    ("areceber", "A RECEBER", moeda(cat["A receber"]), sub_pct(cat["A receber"]),
-     ["A receber"]),
-    ("inad", "INADIMPLÊNCIA", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"]),
-     ["Inadimplência"]),
-    ("glosas", "GLOSAS E RECURSOS", moeda(cat["Glosas e Recursos"]), sub_pct(cat["Glosas e Recursos"]),
-     ["Glosas e Recursos"]),
-    ("negados", "RECURSOS NEGADOS", moeda(cat["Recursos Negados"]), sub_pct(cat["Recursos Negados"]),
-     ["Recursos Negados"]),
-    ("taxa", "TAXA DE RECEBIMENTO", pct(div(cat["Recebido"], tot) * 100), "do faturado", None),
+    ("total", kpi("Faturamento total", moeda(tot), sub_delta(tot, tot_p), ativo=(k_ativo == "total")), None),
+    (
+        "prod_fat",
+        kpi(
+            f"<span style='color:{CIANO}'>Em prod.</span> / "
+            f"<span style='color:{AZUL}'>Faturamento</span>",
+            moeda(val_prod_fat), sub_pct(val_prod_fat),
+            ativo=(k_ativo == "prod_fat"),
+        ),
+        ["Em Produção", "Em Faturamento"],
+    ),
+    (
+        "recebido",
+        kpi("Recebido", moeda(cat["Recebido"]), sub_delta(cat["Recebido"], cat_p["Recebido"]),
+            VERDE, ativo=(k_ativo == "recebido")),
+        ["Recebido"],
+    ),
+    (
+        "areceber",
+        kpi("A receber", moeda(cat["A receber"]), sub_pct(cat["A receber"]),
+            ROXO, ativo=(k_ativo == "areceber")),
+        ["A receber"],
+    ),
+    (
+        "inad",
+        kpi("Inadimplência", moeda(cat["Inadimplência"]), sub_pct(cat["Inadimplência"]),
+            VERMELHO, ativo=(k_ativo == "inad")),
+        ["Inadimplência"],
+    ),
+    (
+        "glosas",
+        # ÚNICA mudança visual: título em uma cor só
+        kpi("Glosas e recursos", moeda(cat["Glosas e Recursos"]),
+            sub_pct(cat["Glosas e Recursos"]), AMBAR, ativo=(k_ativo == "glosas")),
+        ["Glosas e Recursos"],
+    ),
+    (
+        "negados",
+        kpi("Recursos negados", moeda(cat["Recursos Negados"]),
+            sub_pct(cat["Recursos Negados"]), ROSA, ativo=(k_ativo == "negados")),
+        ["Recursos Negados"],
+    ),
+    (
+        "taxa",
+        kpi("Taxa de Recebimento", pct(div(cat["Recebido"], tot) * 100),
+            "<div class='kpi-sub'>do faturado</div>", VERDE, ativo=(k_ativo == "taxa")),
+        None,
+    ),
 ]
 
+st.markdown('<div class="kpi-row">', unsafe_allow_html=True)
 cols_kpi = st.columns(8, gap="small")
-for col, (kid, titulo, valor, sub, cats) in zip(cols_kpi, kpi_defs):
-    ativo = st.session_state.get("kpi_key") == kid
-    marca = "● " if ativo else ""
-    rotulo = f"{marca}{titulo}\n{valor}\n{sub}"
+for col, (kid, html, cats) in zip(cols_kpi, kpi_defs):
     with col:
-        if st.button(rotulo, key=f"kpi_btn_{kid}_{VER}", use_container_width=True):
+        st.markdown(html, unsafe_allow_html=True)
+        if st.button(" ", key=f"kpi_btn_{kid}_{VER}", use_container_width=True):
             if st.session_state.get("kpi_key") == kid:
                 st.session_state["kpi_key"] = None
                 st.session_state["kpi_cats"] = None
@@ -666,9 +795,10 @@ for col, (kid, titulo, valor, sub, cats) in zip(cols_kpi, kpi_defs):
                 st.session_state["kpi_key"] = kid
                 st.session_state["kpi_cats"] = cats
             st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. LINHA 1: EVOLUÇÃO | COMPOSIÇÃO | FATURAMENTO
+# 7. LINHA 1
 # ==============================================================================
 b1, b2, b3 = st.columns([1.6, 1.1, 1.3], gap="small")
 
@@ -793,13 +923,22 @@ with c3:
                 abrev(r["Faturado"]), abrev(r["Recebido"]),
                 barra(tx, cor_taxa(tx)), pct(tx),
             ])
-        ct.markdown(tabela(HEAD_ROT + ["Faturado", "Recebido", "", "% Receb."], rows), unsafe_allow_html=True)
+        ct.markdown(
+            tabela(HEAD_ROT + ["Faturado", "Recebido", "", "% Receb."], rows),
+            unsafe_allow_html=True,
+        )
 
 # ==============================================================================
-# 9. DESEMPENHO POR CONVÊNIO
+# 9. DESEMPENHO
 # ==============================================================================
-dica_desemp = "valores em R$ · " + ("convênio(s) selecionado(s)" if mes_a_mes else "período selecionado")
-ct = card(st.container(), "Desempenho mês a mês" if mes_a_mes else "Desempenho por convênio", dica_desemp, fixo=False)
+dica_desemp = "valores em R$ · " + (
+    "convênio(s) selecionado(s)" if mes_a_mes else "período selecionado"
+)
+ct = card(
+    st.container(),
+    "Desempenho mês a mês" if mes_a_mes else "Desempenho por convênio",
+    dica_desemp, fixo=False,
+)
 if perf.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
@@ -828,7 +967,8 @@ else:
         tabela(
             HEAD_ROT + [
                 "Faturado", "Em produção", "Em faturamento", "Recebido", "A receber",
-                "Glosas e recursos", "Recursos negados", "Inadimplência", "% Inadimpl.", "% Receb.",
+                "Glosas e recursos", "Recursos negados", "Inadimplência",
+                "% Inadimpl.", "% Receb.",
             ],
             rows, total, altura=420,
         ),
@@ -836,13 +976,19 @@ else:
     )
 
 # ==============================================================================
-# 10. MATRIZ SITUAÇÃO × MÊS
+# 10. MATRIZ
 # ==============================================================================
-ct = card(st.container(), "Situação das contas × mês de faturamento", "valores em R$", fixo=False)
+ct = card(
+    st.container(),
+    "Situação das contas × mês de faturamento",
+    "valores em R$", fixo=False,
+)
 if sit_df.empty:
     ct.markdown(vazio_html("Sem dados no período"), unsafe_allow_html=True)
 else:
-    mat = sit_df.pivot_table(index="Situação", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    mat = sit_df.pivot_table(
+        index="Situação", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0,
+    )
     mat = mat.reindex(columns=refs_c, fill_value=0.0)
     mat = mat.loc[sorted(mat.index, key=ordem_sit)]
     rows = [
