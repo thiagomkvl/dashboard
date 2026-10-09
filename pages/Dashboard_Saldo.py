@@ -28,126 +28,189 @@ except Exception as _err:
         return None
 
 # ==============================================================================
-# PALETA (mesma de Obras / Faturamento)
+# PALETA — tema claro / clean
 # ==============================================================================
-AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
-ROXO, CIANO = "#8b5cf6", "#22d3ee"
-TXT, MUTED, BORDA = "#e6ecf5", "#8fa3c4", "#1c2a47"
+AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
+ROXO, CIANO = "#7c3aed", "#0891b2"
+TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
+BG, SURFACE, SIDEBAR_BG = "#f8fafc", "#ffffff", "#ffffff"
 
 # ==============================================================================
-# COMPARATIVO COM O MÊS ANTERIOR (aba FCx_Extrato) - ajuste aqui se precisar
+# COMPARATIVO COM O MÊS ANTERIOR (aba FCx_Extrato)
 # ==============================================================================
 ABA_FCX = "FCx_Extrato"
-FCX_COL_DATA =  "c"           # coluna da data: letra (ex.: "B") ou cabeçalho; None = detecta sozinho
-FCX_ACAO_ENTRADA = "d"         # coluna L (Ação): D = entradas
-FCX_ACAO_SAIDA = "c"           # coluna L (Ação): C = saídas
-FCX_IDX_USADOS = {3, 7, 8, 10, 11, 15}  # H, I, K, L, P (não entram na busca pela coluna de data)
+FCX_COL_DATA = "c"
+FCX_ACAO_ENTRADA = "d"
+FCX_ACAO_SAIDA = "c"
+FCX_IDX_USADOS = {3, 7, 8, 10, 11, 15}
 
 css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
     html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
-    .stApp, [data-testid="stAppViewContainer"] { background: #0a1020 !important; color: #e6ecf5; }
+    .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
-    .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
+    .main .block-container { padding: 1.1rem 1.4rem 1.4rem; max-width: 99%; }
     div[data-testid="stVerticalBlock"] { gap: 1.0rem; }
-    [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
-    [data-testid="stCaptionContainer"] { color: #8fa3c4 !important; }
+    [data-testid="stMarkdownContainer"] { color: #0f172a; }
+    [data-testid="stCaptionContainer"] { color: #64748b !important; }
 
     /* Sidebar */
-    [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
-    [data-testid="stWidgetLabel"] p { color: #8fa3c4 !important; font-size: 12px; font-weight: 600; }
-    div[role="radiogroup"] label p { color: #e6ecf5 !important; font-size: 12px; }
-    .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #8fa3c4; text-transform: uppercase; margin: 6px 0 -2px; }
-    .side-card { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
-    .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
-    .side-card b { color: #e6ecf5; font-size: 13px; }
+    [data-testid="stSidebar"] {
+        background: #ffffff !important;
+        border-right: 1px solid #e2e8f0;
+    }
+    [data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
+    div[role="radiogroup"] label p { color: #0f172a !important; font-size: 12px; }
+    .side-sec {
+        font-size: 10px; font-weight: 800; letter-spacing: 1px;
+        color: #64748b; text-transform: uppercase; margin: 6px 0 -2px;
+    }
+    .side-card {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 10px 12px; margin-top: 8px;
+    }
+    .side-card small { display: block; color: #64748b; font-size: 11px; }
+    .side-card b { color: #0f172a; font-size: 13px; }
 
-    /* Widgets */
-    [data-baseweb="select"] > div, [data-testid="stDateInput"] > div > div {
-        background: #101b32 !important; border-color: #1e2d4d !important; color: #e6ecf5 !important;
+    /* Widgets claros */
+    [data-baseweb="select"] > div,
+    [data-testid="stDateInput"] > div > div {
+        background: #ffffff !important;
+        border-color: #e2e8f0 !important;
+        color: #0f172a !important;
     }
+    [data-baseweb="select"] span, [data-baseweb="select"] input { color: #0f172a !important; }
+    [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #ffffff !important; }
+    li[role="option"] { color: #0f172a !important; }
+    li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
+
     .stButton > button {
-        background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none;
-        border-radius: 10px; font-weight: 700;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff;
+        border: none; border-radius: 10px; font-weight: 700;
     }
+    .stButton > button:hover { filter: brightness(1.06); color: #fff; border: none; }
 
     /* Cabeçalho */
     .top {
         display: flex; justify-content: space-between; align-items: center; gap: 16px;
-        padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #1a2744;
+        padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0;
     }
-    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 0.3px; }
-    .top p { margin: 2px 0 0; font-size: 13px; color: #8fa3c4; }
+    .top h1 {
+        margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;
+    }
+    .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
     .pills { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pill { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 6px 14px; min-width: 120px; }
-    .pill small { display: block; font-size: 10px; color: #8fa3c4; }
-    .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
+    .pill {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 6px 14px; min-width: 120px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .pill small { display: block; font-size: 10px; color: #64748b; }
+    .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
     /* KPIs */
     .kpi {
         padding: 12px 14px; border-radius: 12px; min-height: 96px;
-        background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%);
-        border: 1px solid rgba(59,130,246,0.22);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
-    .kpi.green { background: linear-gradient(135deg, rgba(16,185,129,0.10), #0f1a2e 70%); border-color: rgba(16,185,129,0.22); }
-    .kpi.cyan { background: linear-gradient(135deg, rgba(34,211,238,0.10), #0f1a2e 70%); border-color: rgba(34,211,238,0.22); }
-    .kpi.purple { background: linear-gradient(135deg, rgba(139,92,246,0.10), #0f1a2e 70%); border-color: rgba(139,92,246,0.22); }
-    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: #9db2d3; }
-    .kpi-v { font-size: 20px; font-weight: 800; color: #fff; margin: 8px 0 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
-    .kpi-var { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; display: inline-flex; margin-right: 6px; }
-    .kpi-var.up { background: rgba(16,185,129,0.18); color: #34d399; border: 1px solid rgba(16,185,129,0.35); }
-    .kpi-var.down { background: rgba(239,68,68,0.18); color: #f87171; border: 1px solid rgba(239,68,68,0.35); }
-    .kpi-var.neutral { background: rgba(143,163,196,0.15); color: #8fa3c4; border: 1px solid rgba(143,163,196,0.3); }
+    .kpi.green { border-left: 3px solid #059669; }
+    .kpi.cyan { border-left: 3px solid #0891b2; }
+    .kpi.purple { border-left: 3px solid #7c3aed; }
+    .kpi.blue { border-left: 3px solid #2563eb; }
+    .kpi-t {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+        text-transform: uppercase; color: #64748b;
+    }
+    .kpi-v {
+        font-size: 20px; font-weight: 800; color: #0f172a;
+        margin: 8px 0 4px; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
+    .kpi-var {
+        font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+        display: inline-flex; margin-right: 6px;
+    }
+    .kpi-var.up {
+        background: rgba(5, 150, 105, 0.10); color: #059669;
+        border: 1px solid rgba(5, 150, 105, 0.25);
+    }
+    .kpi-var.down {
+        background: rgba(220, 38, 38, 0.08); color: #dc2626;
+        border: 1px solid rgba(220, 38, 38, 0.22);
+    }
+    .kpi-var.neutral {
+        background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
+    }
 
     /* Seções */
     .section-title {
         font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
-        color: #fff; margin: 10px 0 8px; padding-left: 10px; border-left: 3px solid #3b82f6;
+        color: #0f172a; margin: 10px 0 8px; padding-left: 10px;
+        border-left: 3px solid #2563eb;
         display: flex; align-items: center; gap: 8px;
     }
-    .section-title span { font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: 0.2px; color: #8fa3c4; margin-left: auto; }
-    .section-title-inline { font-size: 9px; font-weight: 800; color: #8fa3c4; text-transform: uppercase; letter-spacing: 0.45px; margin-bottom: 2px; }
+    .section-title span {
+        font-size: 10px; font-weight: 600; text-transform: none;
+        letter-spacing: 0.2px; color: #64748b; margin-left: auto;
+    }
+    .section-title-inline {
+        font-size: 9px; font-weight: 800; color: #64748b;
+        text-transform: uppercase; letter-spacing: 0.45px; margin-bottom: 2px;
+    }
 
     /* Cards movimento */
     .movement-card {
-        padding: 10px 12px; border: 1px solid #1c2a47; border-left: 3px solid #3b82f6;
-        border-radius: 10px; background: #0f1a2e; min-height: 56px;
+        padding: 10px 12px; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
+        border-radius: 10px; background: #ffffff; min-height: 56px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    .movement-card div:last-child { font-variant-numeric: tabular-nums; color: #fff; font-weight: 800; font-size: 14px; }
+    .movement-card div:last-child {
+        font-variant-numeric: tabular-nums; color: #0f172a; font-weight: 800; font-size: 14px;
+    }
 
     /* Tabelas */
     .tabela-container, .tabela-container-scroll {
-        overflow: auto; border: 1px solid #1c2a47; border-radius: 12px; background: #0f1a2e; width: 100%;
+        overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px;
+        background: #ffffff; width: 100%;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
     .tabela-container-scroll { max-height: 520px; }
-    .tabela-container::-webkit-scrollbar, .tabela-container-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-    .tabela-container::-webkit-scrollbar-thumb, .tabela-container-scroll::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 6px; }
+    .tabela-container::-webkit-scrollbar,
+    .tabela-container-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+    .tabela-container::-webkit-scrollbar-thumb,
+    .tabela-container-scroll::-webkit-scrollbar-thumb {
+        background: #cbd5e1; border-radius: 6px;
+    }
 
-    .tabela-financeira { width: 100%; border-collapse: collapse; margin: 0; font-size: 11px; color: #dbe6f7; }
+    .tabela-financeira { width: 100%; border-collapse: collapse; margin: 0; font-size: 11px; color: #0f172a; }
     .tabela-financeira th {
-        background: #0f1a2e; color: #8fa3c4; font-size: 10px; font-weight: 700; text-align: left;
-        padding: 9px 10px; border-bottom: 1px solid #1c2a47; text-transform: uppercase;
+        background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; text-align: left;
+        padding: 9px 10px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase;
         position: sticky; top: 0; z-index: 2; white-space: nowrap;
     }
     .tabela-financeira td {
-        padding: 8px 10px; border-bottom: 1px solid #16213a; font-size: 11px; font-weight: 600;
-        color: #dbe6f7; white-space: nowrap; font-variant-numeric: tabular-nums;
+        padding: 8px 10px; border-bottom: 1px solid #f1f5f9; font-size: 11px; font-weight: 600;
+        color: #334155; white-space: nowrap; font-variant-numeric: tabular-nums;
     }
-    .tabela-financeira tbody tr:hover td { background: #13203a; }
+    .tabela-financeira tbody tr:hover td { background: #f8fafc; }
     .tabela-financeira .linha-total td {
-        background: #0d1730 !important; color: #fff; font-weight: 800;
-        border-top: 1px solid #2a3a5c; border-bottom: 1px solid #2a3a5c;
+        background: #f1f5f9 !important; color: #0f172a; font-weight: 800;
+        border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
     }
     .tabela-financeira .linha-limite td {
-        background: rgba(245,158,11,0.12) !important; color: #fbbf24; font-weight: 700;
-        border-top: 1px solid rgba(245,158,11,0.3);
+        background: rgba(217, 119, 6, 0.08) !important; color: #b45309; font-weight: 700;
+        border-top: 1px solid rgba(217, 119, 6, 0.25);
     }
-    .tabela-financeira td.valor-destaque { font-weight: 800; color: #fff; }
+    .tabela-financeira td.valor-destaque { font-weight: 800; color: #0f172a; }
 
-    [data-testid="stInfo"] { background: #0f1a2e; border: 1px solid #1c2a47; color: #8fa3c4; }
+    [data-testid="stInfo"] {
+        background: #ffffff; border: 1px solid #e2e8f0; color: #64748b;
+    }
 
     @media print {
         [data-testid="stSidebar"] { display: none !important; }
@@ -179,7 +242,7 @@ with st.sidebar:
     components.html(
         """
         <button onclick="try { window.parent.print(); } catch(e) { window.print(); }"
-        style="width:100%; background:linear-gradient(135deg,#3b82f6,#2563eb); color:white; border:none;
+        style="width:100%; background:linear-gradient(135deg,#2563eb,#1d4ed8); color:white; border:none;
         padding:12px; border-radius:10px; font-family:Inter,sans-serif; font-weight:700; font-size:13px; cursor:pointer;">
         🖨️ Salvar Dashboard (PDF)
         </button>
@@ -254,15 +317,15 @@ def layout_fig(fig, h=220, legenda=True):
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, Segoe UI, sans-serif", size=11, color=MUTED),
         showlegend=legenda,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11, color="#fff")),
-        hoverlabel=dict(bgcolor="#101b32", font_color=TXT, bordercolor=BORDA),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11, color=TXT)),
+        hoverlabel=dict(bgcolor=SURFACE, font_color=TXT, bordercolor=BORDA),
     )
     fig.update_xaxes(showgrid=False, linecolor=BORDA, tickfont=dict(size=10, color=MUTED))
-    fig.update_yaxes(gridcolor="rgba(148,163,184,0.12)", zeroline=False, tickfont=dict(size=10, color=MUTED))
+    fig.update_yaxes(gridcolor="rgba(148,163,184,0.25)", zeroline=False, tickfont=dict(size=10, color=MUTED))
     return fig
 
 
-# --- INÍCIO: COMPARATIVO COM O MÊS ANTERIOR ----------------------------------
+# --- COMPARATIVO COM O MÊS ANTERIOR ------------------------------------------
 def rgba(hex_cor, a):
     h = hex_cor.lstrip("#")
     return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a})"
@@ -276,7 +339,6 @@ def indice_coluna(letra):
 
 
 def achar_coluna_data(df):
-    """Coluna de data da FCx_Extrato: FCX_COL_DATA (letra/cabeçalho) > cabeçalho 'Data...' > conteúdo."""
     if FCX_COL_DATA:
         ref = str(FCX_COL_DATA).strip()
         for c in df.columns:
@@ -303,7 +365,6 @@ def achar_coluna_data(df):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def carregar_fcx(ini, fim):
-    """Entradas (Ação D) e saídas (Ação C) operacionais por dia na aba FCx_Extrato."""
     vazio = pd.DataFrame(columns=["Data", "Entrada Op", "Saída Op"])
     conn = conectar_sheets()
     if conn is None:
@@ -320,14 +381,14 @@ def carregar_fcx(ini, fim):
         return vazio, f"Coluna de data não identificada na aba '{ABA_FCX}' (defina FCX_COL_DATA)."
 
     datas = pd.to_datetime(df[col_data], dayfirst=True, errors="coerce").dt.normalize()
-    operacional = df.iloc[:, 8].apply(normalizar_texto) == "operacional"  # coluna I (Classificação)
+    operacional = df.iloc[:, 8].apply(normalizar_texto) == "operacional"
     if not operacional.any():
         return vazio, "A coluna I (Classificação) não tem nenhum valor 'Operacional'."
 
     base = pd.DataFrame({
         "Data": datas,
-        "Valor": df.iloc[:, 10].apply(limpa_valor_bruto).abs(),  # coluna K (Valor)
-        "Acao": df.iloc[:, 11].apply(normalizar_texto),          # coluna L (Ação)
+        "Valor": df.iloc[:, 10].apply(limpa_valor_bruto).abs(),
+        "Acao": df.iloc[:, 11].apply(normalizar_texto),
     })
     base = base[operacional & datas.between(pd.Timestamp(ini), pd.Timestamp(fim))]
     ent = base[base["Acao"] == FCX_ACAO_ENTRADA].groupby("Data")["Valor"].sum()
@@ -351,7 +412,7 @@ def fig_comparativo(atual, anterior, cor, acumulado):
         n = min(len(yp), len(x))
         fig.add_trace(go.Scatter(
             x=x[:n], y=yp.values[:n], name="Mês anterior", mode="lines",
-            line=dict(color=MUTED, width=2, dash="dash"),
+            line=dict(color="#94a3b8", width=2, dash="dash"),
             customdata=[d.strftime("%d/%m/%Y") for d in yp.index[:n]],
             hovertemplate="Mês anterior (%{customdata}): R$ %{y:,.2f}<extra></extra>",
         ))
@@ -380,11 +441,10 @@ def resumo_comp(atual, anterior, bom_se_subir):
     cor = VERDE if (v >= 0) == bom_se_subir else VERMELHO
     seta = "↗" if v >= 0 else "↘"
     return f"{base} · <b style='color:{cor}'>{seta} {abs(v):.1f}%</b>"
-# --- FIM: COMPARATIVO COM O MÊS ANTERIOR -------------------------------------
 
 
 # ==============================================================================
-# CARGA DE DADOS (mesma lógica)
+# CARGA DE DADOS
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando dados…")
 def carregar_dados(data_inicio, data_fim):
@@ -425,7 +485,10 @@ def carregar_dados(data_inicio, data_fim):
         entradas_periodo = 0.0
         saidas_periodo = 0.0
         df_process = pd.DataFrame()
-        df_graficos = pd.DataFrame(columns=['Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final', 'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %'])
+        df_graficos = pd.DataFrame(columns=[
+            'Data', 'Vl Crédito', 'Vl Débito', 'Movimentação Líquida', 'Saldo Final',
+            'Saldo Inicial', 'Data_Label', 'Entrada Op', 'Saída Op', 'Delta R$', 'Delta %',
+        ])
 
         try:
             df_ext = conn.read(worksheet="Extratos_Bancos", ttl=0)
@@ -575,7 +638,9 @@ def carregar_dados(data_inicio, data_fim):
                         'Rendimentos_Val': 'sum', 'Resgates_Val': 'sum',
                     }).reset_index()
                 else:
-                    df_app_grouped = pd.DataFrame(columns=['Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val'])
+                    df_app_grouped = pd.DataFrame(columns=[
+                        'Conta Bancária', 'Aplicações_Val', 'Impostos_Val', 'Rendimentos_Val', 'Resgates_Val',
+                    ])
 
                 df_app_full = df_fim_mes[['Conta Bancária', 'Tipo', 'Saldo Inicial', 'Saldo Final']].merge(
                     df_app_grouped, on='Conta Bancária', how='left'
@@ -603,13 +668,20 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Erro ao processar Aplicações do Extrato:", e)
 
-        return df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, 'Conta Bancária', entradas_periodo, saidas_periodo, data_inicio, data_fim
+        return (
+            df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi,
+            'Conta Bancária', entradas_periodo, saidas_periodo, data_inicio, data_fim,
+        )
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
 
 
-df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta, entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel = carregar_dados(data_inicio_filtro, data_fim_filtro)
+(
+    df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta,
+    entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel,
+) = carregar_dados(data_inicio_filtro, data_fim_filtro)
+
 if not col_conta:
     col_conta = 'Conta Bancária'
 
@@ -624,7 +696,6 @@ saldo_inicial_periodo = df_consolidado[df_consolidado['Tipo'].isin(['Disponível
 saldo_aplicado = saldo_aplicado_kpi
 saldo_disponivel = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Final'].sum()
 saldo_total = saldo_disponivel + saldo_aplicado
-saldo_inicial_corrente = df_consolidado[df_consolidado['Tipo'] == 'Disponível']['Saldo Inicial'].sum()
 saldo_inicial_aplicado = df_consolidado[df_consolidado['Tipo'] == 'Aplicação']['Saldo Inicial'].sum()
 
 
@@ -653,12 +724,13 @@ fig_donut = go.Figure(go.Pie(
     values=[saldo_aplicado, saldo_disponivel],
     labels=['Saldo Aplicado', 'Conta Corrente'],
     hole=0.64, textinfo='none',
-    marker=dict(colors=[CIANO, AZUL], line=dict(color="#0f1a2e", width=2)),
+    marker=dict(colors=[CIANO, AZUL], line=dict(color="#ffffff", width=2)),
     hovertemplate="%{label}<br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
 ))
 fig_donut.update_layout(annotations=[dict(
-    text=f"<b>{formatar_abreviado(saldo_total)}</b><br><span style='font-size:10px;color:#8fa3c4'>Saldo total</span>",
-    x=0.5, y=0.5, font_size=13, font_color="#fff", showarrow=False,
+    text=f"<b style='color:#0f172a'>{formatar_abreviado(saldo_total)}</b>"
+         f"<br><span style='font-size:10px;color:#64748b'>Saldo total</span>",
+    x=0.5, y=0.5, font_size=13, showarrow=False,
 )])
 layout_fig(fig_donut, 210)
 
@@ -670,7 +742,7 @@ fig_combinado.add_trace(go.Bar(
     marker_color=AZUL,
     text=[formatar_abreviado(v) for v in df_graficos['Saldo Inicial']],
     textposition='outside',
-    textfont=dict(size=10, color="#e6ecf5"),
+    textfont=dict(size=10, color=TXT),
     opacity=0.95,
     width=0.45,
 ))
@@ -706,7 +778,7 @@ def get_var_html(pct):
 
 kpi_row = st.columns(4)
 kp_data = [
-    (kpi_row[0], "Saldo total atual", formatar_moeda(saldo_total, False), "kpi", get_var_html(var_total_pct)),
+    (kpi_row[0], "Saldo total atual", formatar_moeda(saldo_total, False), "kpi blue", get_var_html(var_total_pct)),
     (kpi_row[1], "Saldo conta corrente", formatar_moeda(saldo_disponivel, False), "kpi green", ""),
     (kpi_row[2], "Saldo aplicado", formatar_moeda(saldo_aplicado, False), "kpi cyan", get_var_html(var_aplicado_pct)),
     (kpi_row[3], "Saldo inicial período", formatar_moeda(saldo_inicial_periodo, False), "kpi purple", "<span class='kpi-var neutral'>→ Ref.</span>"),
@@ -746,7 +818,10 @@ with c2:
         f"<div style='color:{cor_res}'>{formatar_moeda(resultado_liquido_mes, False)}</div></div>",
         unsafe_allow_html=True,
     )
-    st.markdown("<div class='section-title' style='margin-top:10px'>Evolução diária do saldo total</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='section-title' style='margin-top:10px'>Evolução diária do saldo total</div>",
+        unsafe_allow_html=True,
+    )
     st.plotly_chart(fig_combinado, use_container_width=True, config={'displayModeBar': False})
 
 with c3:
@@ -762,7 +837,7 @@ with c3:
     )
     tot_ini = tot_app = tot_imp = tot_ren = tot_res = tot_atu = 0.0
     if df_aplicacoes_nova.empty:
-        tabela_app += "<tr><td colspan='7' style='text-align:center;color:#8fa3c4'>Nenhuma aplicação no período</td></tr>"
+        tabela_app += "<tr><td colspan='7' style='text-align:center;color:#64748b'>Nenhuma aplicação no período</td></tr>"
     else:
         for _, row in df_aplicacoes_nova.sort_values(by='atual', ascending=False).iterrows():
             v_ini, v_app = row.get('inicial', 0), row.get('aplicaç', 0)
@@ -789,8 +864,7 @@ with c3:
     st.markdown(tabela_app, unsafe_allow_html=True)
 
 # ==============================================================================
-# COMPARATIVO OPERACIONAL: MÊS ATUAL × MÊS ANTERIOR
-# (atual = Extratos_Bancos, coluna K "Operacional" | anterior = aba FCx_Extrato)
+# COMPARATIVO OPERACIONAL
 # ==============================================================================
 ini_atual, fim_atual = pd.Timestamp(data_ini_painel), pd.Timestamp(data_fim_painel)
 ini_ant = ini_atual - pd.DateOffset(months=1)
@@ -815,21 +889,28 @@ with cmp1:
         f"<span>{resumo_comp(ent_atual, ent_ant, True)}</span></div>",
         unsafe_allow_html=True,
     )
-    st.plotly_chart(fig_comparativo(ent_atual, ent_ant, VERDE, acumulado),
-                    use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(
+        fig_comparativo(ent_atual, ent_ant, VERDE, acumulado),
+        use_container_width=True, config={'displayModeBar': False},
+    )
 with cmp2:
     st.markdown(
         f"<div class='section-title'>Saídas operacionais · mês atual × anterior "
         f"<span>{resumo_comp(sai_atual, sai_ant, False)}</span></div>",
         unsafe_allow_html=True,
     )
-    st.plotly_chart(fig_comparativo(sai_atual, sai_ant, VERMELHO, acumulado),
-                    use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(
+        fig_comparativo(sai_atual, sai_ant, VERMELHO, acumulado),
+        use_container_width=True, config={'displayModeBar': False},
+    )
 
 if erro_fcx:
     st.caption(f"⚠️ Comparativo com o mês anterior indisponível: {erro_fcx}")
 else:
-    st.caption(f"Mês anterior: {ini_ant:%d/%m/%Y} – {fim_ant:%d/%m/%Y} · fonte: aba {ABA_FCX} (Classificação = Operacional)")
+    st.caption(
+        f"Mês anterior: {ini_ant:%d/%m/%Y} – {fim_ant:%d/%m/%Y} · "
+        f"fonte: aba {ABA_FCX} (Classificação = Operacional)"
+    )
 
 # ==============================================================================
 # TABELAS INFERIORES
@@ -850,7 +931,8 @@ with col_bancos:
         f"<th>Entrada (int.)</th><th>Saída (int.)</th><th>Saldo atual {dt_fim_short}</th>"
         "</tr></thead><tbody>"
     )
-    tot_banco_ini = tot_banco_ent_op = tot_banco_sai_op = tot_banco_ent_tr = tot_banco_sai_tr = tot_banco_atu = 0.0
+    tot_banco_ini = tot_banco_ent_op = tot_banco_sai_op = 0.0
+    tot_banco_ent_tr = tot_banco_sai_tr = tot_banco_atu = 0.0
     idx_count = 1
     for _, row in df_padrao.iterrows():
         si = row.get('Saldo Inicial', 0)
@@ -862,7 +944,7 @@ with col_bancos:
         tot_banco_ini += si; tot_banco_ent_op += e_op; tot_banco_sai_op += s_op
         tot_banco_ent_tr += e_tr; tot_banco_sai_tr += s_tr; tot_banco_atu += sf
         tb += (
-            f"<tr><td><span style='color:#6b7fa3'>{idx_count}</span></td>"
+            f"<tr><td><span style='color:#94a3b8'>{idx_count}</span></td>"
             f"<td><b>{str(row['Conta Bancária']).title()}</b></td>"
             f"<td>{str(row['Tipo']).capitalize()}</td>"
             f"<td>{formatar_moeda(si)}</td>"
@@ -903,7 +985,7 @@ with col_diario:
         "</tr></thead><tbody>"
     )
     if df_graficos.empty:
-        tb_d += "<tr><td colspan='6' style='text-align:center;color:#8fa3c4'>Sem movimentações no período</td></tr>"
+        tb_d += "<tr><td colspan='6' style='text-align:center;color:#64748b'>Sem movimentações no período</td></tr>"
     else:
         for _, row_d in df_graficos.sort_values(by='Data', ascending=False).iterrows():
             delta = row_d.get('Delta R$', 0)
