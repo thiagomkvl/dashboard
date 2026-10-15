@@ -85,7 +85,7 @@ candidatos = [
     ("pages/Análise_Faturamento.py", "Análise Faturamento", "Análise_Faturamento"),
     ("pages/Dashboard_Saldo.py", "Saldo Contas Bancárias", "Dashboard_Saldo"),
     ("pages/Acompanhamento_Obra.py", "Despesas Com Obras", "Acompanhamento_Obra"),
-    ("pages/painel_pagar.py", "Pagamento Escritural", "Pagamento_Escritural"),
+    ("pages/cockpit.py", "Pagamento Escritural", "Pagamento_Escritural"),
     
 ]
 
