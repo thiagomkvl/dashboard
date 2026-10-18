@@ -10,6 +10,7 @@ try:
 except Exception:
     pass
 
+import os
 import re
 import textwrap
 import unicodedata
@@ -33,16 +34,15 @@ AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
 ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
 TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 
-ESPACO_ENTRE_BLOCOS = "1.0rem"
-AJUSTE_APOS_KPIS = "1.0rem"
-
-# Ano de referência das matrizes mensais (janeiro..dezembro sem ano no header)
+ESPACO_ENTRE_BLOCOS = "0.75rem"
+AJUSTE_APOS_KPIS = "0.75rem"
 ANO_REF = 2026
 
 ABA_DESPESAS = "Base_Despesas"
 ABA_BORDERO = "Fluxo_Despesas_Borderô"
 ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
+ABA_CLASSIF = "Classificacao_FCx"  # opcional no Sheets
 
 TRANSACOES_DESPESAS = {
     "despesas administrativas",
@@ -83,8 +83,11 @@ SKIP_LABELS = {
     "", "nan", "none", "total", "total geral", "soma", "geral",
     "mes", "mês", "convenios", "convênios", "origem", "origem receita",
     "conta contabil", "conta contábil", "classificacao", "classificação",
+    "transacao", "transação", "sum de vl debito", "sum de vl débito",
+    "adiantamento fornecedores - banco total", "adiantamento fornecedores - banco",
+    "receitas", "saidas", "saídas",
 }
-SKIP_HEADER = {"total", "total geral", "soma", "geral"}
+SKIP_HEADER = {"total", "total geral", "soma", "geral", "data - mes", "data - mês"}
 
 # ==============================================================================
 # CSS
@@ -171,12 +174,9 @@ css = """
         color: #0f172a; margin: 16px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
     }
 
-    /* Tabela completa — sem scroll interno */
     .tbl-wrap {
-        overflow: visible;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        background: #ffffff;
+        overflow-x: auto; overflow-y: visible;
+        border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff;
     }
     .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
     .tbl th {
@@ -201,11 +201,30 @@ css = """
     .tbl tr.res td {
         font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
     }
+    .tbl tr.sub-row td {
+        background: #fafbfc; color: #64748b; font-size: 11px;
+    }
+    .tbl tr.sub-row td:first-child { padding-left: 28px; }
     .tbl .mut { color: #94a3b8; }
     .dot {
         display: inline-block; width: 8px; height: 8px; border-radius: 50%;
         margin-right: 8px; vertical-align: middle;
     }
+
+    /* Drill-down */
+    .drill-label {
+        cursor: pointer; display: flex; align-items: center; gap: 6px;
+        margin: 0; font-weight: 700; color: #0f172a; user-select: none;
+    }
+    .toggle-checkbox { display: none; }
+    .indicator {
+        display: inline-block; font-size: 10px; color: #2563eb;
+        transition: transform 0.15s ease; width: 12px;
+    }
+    .grp .sub-row { display: none; }
+    .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """
@@ -221,7 +240,10 @@ def normalizar(txt):
     if txt is None or (isinstance(txt, float) and pd.isna(txt)):
         return ""
     s = unicodedata.normalize("NFKD", str(txt)).encode("ASCII", "ignore").decode("utf-8")
-    return s.lower().strip()
+    s = s.lower().strip()
+    s = re.sub(r"[.\-_/]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def limpa_valor(v):
@@ -265,7 +287,6 @@ def parse_mes_header(h, ano_ref=None):
         return None
     if isinstance(h, (pd.Timestamp, datetime)):
         return pd.Timestamp(ano_ref or ANO_REF, h.month, 1)
-
     if isinstance(h, (int, float)) and not isinstance(h, bool):
         n = float(h)
         if 1 <= n <= 12:
@@ -278,11 +299,11 @@ def parse_mes_header(h, ano_ref=None):
     if not t or t in SKIP_HEADER or "total" in t:
         return None
 
-    m = re.match(r"^([a-z]{3,9})[\s\-/._]*(\d{2,4})?$", t)
+    # jan / jan. / janeiro / jan 26
+    m = re.match(r"^([a-z]{3,9})(?:\s+(\d{2,4}))?$", t)
     if m:
-        chave_full = m.group(1)
-        chave3 = chave_full[:3]
-        mes = MESES_MAP.get(chave_full) or MESES_MAP.get(chave3)
+        chave = m.group(1)
+        mes = MESES_MAP.get(chave) or MESES_MAP.get(chave[:3])
         if mes:
             if m.group(2):
                 ano = int(m.group(2))
@@ -292,19 +313,13 @@ def parse_mes_header(h, ano_ref=None):
                 ano = ano_ref or ANO_REF
             return pd.Timestamp(ano, mes, 1)
 
-    m = re.match(r"^(\d{1,2})[\s\-/._]+(\d{2,4})$", t)
+    m = re.match(r"^(\d{1,2})\s+(\d{2,4})$", t)
     if m:
-        mes = int(m.group(1))
-        ano = int(m.group(2))
+        mes, ano = int(m.group(1)), int(m.group(2))
         if ano < 100:
             ano += 2000
         if 1 <= mes <= 12:
             return pd.Timestamp(ano, mes, 1)
-
-    if t in MESES_MAP:
-        return pd.Timestamp(ano_ref or ANO_REF, MESES_MAP[t], 1)
-    if t[:3] in MESES_MAP:
-        return pd.Timestamp(ano_ref or ANO_REF, MESES_MAP[t[:3]], 1)
     return None
 
 
@@ -361,26 +376,6 @@ def col_por_nomes(df, nomes):
     return None
 
 
-def tabela(heads, rows):
-    """Tabela completa, sem max-height / scroll interno."""
-    th = "".join(f"<th>{h}</th>" for h in heads)
-    tb = ""
-    for r in rows:
-        if isinstance(r, tuple) and len(r) == 2 and isinstance(r[0], str):
-            cls, cells = r
-            tb += f"<tr class='{cls}'>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
-        else:
-            tb += "<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
-    return (
-        f"<div class='tbl-wrap'>"
-        f"<table class='tbl'><thead><tr>{th}</tr></thead><tbody>{tb}</tbody></table></div>"
-    )
-
-
-def vazio_html(msg="Sem dados no período"):
-    return f"<div class='vazio'>{msg}</div>"
-
-
 def cor_cat(nome, mapa):
     if nome not in mapa:
         mapa[nome] = CORES_CAT[len(mapa) % len(CORES_CAT)]
@@ -388,10 +383,6 @@ def cor_cat(nome, mapa):
 
 
 def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
-    """
-    Matriz por posição (evita colunas duplicadas).
-    Ignora coluna/linha de Total geral.
-    """
     cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
@@ -412,16 +403,12 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
         grid.append(row[:n_cols])
 
     def score_header(row):
-        hits = 0
-        for j in range(start_col_idx, n_cols):
-            if parse_mes_header(row[j], ano) is not None:
-                hits += 1
-        return hits
+        return sum(1 for j in range(start_col_idx, n_cols) if parse_mes_header(row[j], ano) is not None)
 
     hr = header_row_idx if 0 <= header_row_idx < n_rows else 0
     if score_header(grid[hr]) < 3:
         best, best_s = hr, score_header(grid[hr])
-        for i in range(min(5, n_rows)):
+        for i in range(min(6, n_rows)):
             s = score_header(grid[i])
             if s > best_s:
                 best, best_s = i, s
@@ -437,37 +424,37 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             mapa_mes[j] = ref
 
     if not mapa_mes:
-        for k, j in enumerate(range(start_col_idx, min(start_col_idx + 12, n_cols))):
-            if normalizar(header[j]) in SKIP_HEADER or "total" in normalizar(header[j]):
+        k = 0
+        for j in range(start_col_idx, min(start_col_idx + 12, n_cols)):
+            nt = normalizar(header[j])
+            if nt in SKIP_HEADER or "total" in nt:
                 continue
-            mapa_mes[j] = pd.Timestamp(ano, k + 1, 1)
+            k += 1
+            if 1 <= k <= 12:
+                mapa_mes[j] = pd.Timestamp(ano, k, 1)
 
     if not mapa_mes:
         return pd.DataFrame(columns=cols_out)
 
-    start_row = hr + 1
     registros = []
-
-    for i in range(start_row, n_rows):
+    for i in range(hr + 1, n_rows):
         row = grid[i]
         cat = row[li] if li < len(row) else None
         if cat is None or (isinstance(cat, float) and pd.isna(cat)):
             continue
         cat_s = str(cat).strip()
         ncat = normalizar(cat_s)
-        if ncat in SKIP_LABELS or ncat.startswith("total"):
+        if ncat in SKIP_LABELS or ncat.startswith("total") or "total geral" in ncat:
+            continue
+        # ignora linhas de total do adiantamento
+        if "adiantamento fornecedores" in ncat and "total" in ncat:
             continue
 
         for j, ref in mapa_mes.items():
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            registros.append({
-                "Ref": ref,
-                "Categoria": cat_s,
-                "Valor": val,
-                "Tipo": tipo,
-            })
+            registros.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo})
 
     if not registros:
         return pd.DataFrame(columns=cols_out)
@@ -475,18 +462,98 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 
 # ==============================================================================
-# CARGA
+# MAPA DE CLASSIFICAÇÃO FCx
+# ==============================================================================
+def _mapa_de_dataframe(df_map):
+    """Espera colunas Descrição + Classificação FCx."""
+    if df_map is None or df_map.empty:
+        return {}
+    cols = list(df_map.columns)
+    c_desc = None
+    c_cls = None
+    for c in cols:
+        n = normalizar(c)
+        if n in ("descricao", "descrição", "conta contabil", "conta contábil", "categoria"):
+            c_desc = c
+        if "classific" in n:
+            c_cls = c
+    if c_desc is None:
+        c_desc = cols[0]
+    if c_cls is None and len(cols) > 1:
+        c_cls = cols[1]
+    if c_desc is None or c_cls is None:
+        return {}
+
+    out = {}
+    for _, r in df_map.iterrows():
+        d = str(r[c_desc]).strip() if pd.notna(r[c_desc]) else ""
+        c = str(r[c_cls]).strip() if pd.notna(r[c_cls]) else ""
+        nd, nc = normalizar(d), normalizar(c)
+        if not nd or nd in SKIP_LABELS or nd in ("receitas", "saidas", "saídas", "total receitas", "total saidas"):
+            continue
+        if not nc or nc in SKIP_LABELS:
+            continue
+        out[nd] = c  # mantém o rótulo original da classificação
+    return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def carregar_mapa_classificacao():
+    """
+    Ordem de busca do de-para:
+      1) Google Sheets (aba Classificacao_FCx)
+      2) Arquivo local Classificacao_FCx_Concluida.xlsx
+    """
+    # 1) Sheets
+    try:
+        conn = conectar_sheets()
+        if conn is not None:
+            try:
+                raw = conn.read(worksheet=ABA_CLASSIF, ttl=0)
+                m = _mapa_de_dataframe(raw)
+                if m:
+                    return m
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 2) Arquivo local (vários caminhos possíveis)
+    candidatos = [
+        "Classificacao_FCx_Concluida.xlsx",
+        os.path.join("data", "Classificacao_FCx_Concluida.xlsx"),
+        os.path.join("pages", "Classificacao_FCx_Concluida.xlsx"),
+        "/home/workdir/attachments/Classificacao_FCx_Concluida.xlsx",
+    ]
+    for path in candidatos:
+        if os.path.isfile(path):
+            try:
+                raw = pd.read_excel(path)
+                m = _mapa_de_dataframe(raw)
+                if m:
+                    return m
+            except Exception:
+                continue
+    return {}
+
+
+def aplicar_classificacao(categoria, mapa):
+    """Retorna (Classificação FCx, detalhe original)."""
+    n = normalizar(categoria)
+    if n in mapa:
+        return mapa[n], categoria
+    # tentativa parcial (contém)
+    for k, v in mapa.items():
+        if k and (k in n or n in k):
+            return v, categoria
+    return categoria, categoria  # sem de-para: fica o próprio nome
+
+
+# ==============================================================================
+# CARGA DO FLUXO
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
-    """
-    Saídas (somadas por Classificação quando coincidem):
-      - Base_Despesas
-      - Fluxo_Despesas_Borderô
-      - Fluxo_Adiantamentos
-    Entradas:
-      - Fluxo_Receita
-    """
     cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
     vazio = pd.DataFrame(columns=cols)
     avisos = []
@@ -536,10 +603,7 @@ def carregar_fluxo():
         avisos.append(f"Não foi possível ler borderô de despesas: {e}")
 
     if raw_b is not None and not raw_b.empty:
-        mb = melt_matriz(
-            raw_b, col_label_idx=1, header_row_idx=2, start_col_idx=2,
-            tipo="Saída", ano_ref=ANO_REF,
-        )
+        mb = melt_matriz(raw_b, col_label_idx=1, header_row_idx=2, start_col_idx=2, tipo="Saída", ano_ref=ANO_REF)
         if not mb.empty:
             mb = mb.copy()
             mb["Grupo"] = "Borderô"
@@ -547,8 +611,8 @@ def carregar_fluxo():
         else:
             avisos.append("Borderô de despesas: nenhum valor mensal encontrado.")
 
-    # ---- Fluxo_Adiantamentos (mesmas classificações → soma com despesas) ----
-    # Estrutura esperada: Col B = Conta Contábil; meses a partir da col C
+    # ---- Fluxo_Adiantamentos ----
+    # Estrutura real: A=Transação | B=Conta Contábil | C..=jan. fev. mar. ... | Total geral
     try:
         raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
     except Exception as e:
@@ -557,13 +621,12 @@ def carregar_fluxo():
 
     if raw_a is not None and not raw_a.empty:
         ma = melt_matriz(
-            raw_a, col_label_idx=1, header_row_idx=2, start_col_idx=2,
+            raw_a, col_label_idx=1, header_row_idx=1, start_col_idx=2,
             tipo="Saída", ano_ref=ANO_REF,
         )
-        # fallback: rótulo na col A, meses desde B
         if ma.empty:
             ma = melt_matriz(
-                raw_a, col_label_idx=0, header_row_idx=1, start_col_idx=1,
+                raw_a, col_label_idx=1, header_row_idx=0, start_col_idx=2,
                 tipo="Saída", ano_ref=ANO_REF,
             )
         if not ma.empty:
@@ -597,20 +660,25 @@ def carregar_fluxo():
 
     base = pd.concat(partes, ignore_index=True)
     base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
-
-    # Complementa classificações iguais (Despesas + Borderô + Adiantamentos somam na mesma linha)
     base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
     base = base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True)
     return base, avisos
 
 
 base, avisos = carregar_fluxo()
+mapa_cls = carregar_mapa_classificacao()
 
 if base.empty:
     for a in avisos:
         st.warning(a)
     st.warning("⚠️ Nenhum dado de fluxo de caixa disponível.")
     st.stop()
+
+# Aplica de-para → Classif + Detalhe
+base = base.copy()
+pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
+base["Classif"] = pares.apply(lambda x: x[0])
+base["Detalhe"] = pares.apply(lambda x: x[1])
 
 # ==============================================================================
 # SIDEBAR
@@ -627,12 +695,24 @@ with st.sidebar:
     grupos_all = sorted(base["Grupo"].unique().tolist())
     grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all, placeholder="Todos")
 
-    cats_all = sorted(base["Categoria"].unique().tolist())
-    cat_sel = st.multiselect("Classificação / Origem", cats_all, placeholder="Todas")
+    classifs_all = sorted(base["Classif"].unique().tolist())
+    class_sel = st.multiselect("Classificação FCx", classifs_all, placeholder="Todas")
 
     if st.button("↻ Atualizar dados", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
+    if not mapa_cls:
+        st.markdown(
+            "<div class='side-card'><small>De-para</small>"
+            "<b style='color:#d97706'>Mapa não carregado — linhas sem agrupamento</b></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>",
+            unsafe_allow_html=True,
+        )
 
 if ini > fim:
     ini, fim = fim, ini
@@ -644,14 +724,14 @@ refs_prev = meses_all[max(0, i0 - n_ref):i0] if n_ref else []
 df = base[base["Ref"].isin(refs_sel)].copy()
 if grupo_sel:
     df = df[df["Grupo"].isin(grupo_sel)]
-if cat_sel:
-    df = df[df["Categoria"].isin(cat_sel)]
+if class_sel:
+    df = df[df["Classif"].isin(class_sel)]
 
 df_prev = base[base["Ref"].isin(refs_prev)].copy()
 if grupo_sel:
     df_prev = df_prev[df_prev["Grupo"].isin(grupo_sel)]
-if cat_sel:
-    df_prev = df_prev[df_prev["Categoria"].isin(cat_sel)]
+if class_sel:
+    df_prev = df_prev[df_prev["Classif"].isin(class_sel)]
 
 # ==============================================================================
 # MÉTRICAS
@@ -659,7 +739,6 @@ if cat_sel:
 ent = float(df.loc[df["Tipo"] == "Entrada", "Valor"].sum())
 sai = float(df.loc[df["Tipo"] == "Saída", "Valor"].sum())
 liq = ent - sai
-
 ent_p = float(df_prev.loc[df_prev["Tipo"] == "Entrada", "Valor"].sum())
 sai_p = float(df_prev.loc[df_prev["Tipo"] == "Saída", "Valor"].sum())
 liq_p = ent_p - sai_p
@@ -689,7 +768,7 @@ st.markdown(
     <div class='top'>
         <div>
             <h1>FLUXO DE CAIXA</h1>
-            <p>Receitas × saídas (operacionais, borderô e adiantamentos) · {ANO_REF}</p>
+            <p>Receitas × saídas consolidadas por Classificação FCx · {ANO_REF}</p>
         </div>
         <div class='pills'>
             <div class='pill'><small>Período</small><b>{txt_per}</b></div>
@@ -702,7 +781,8 @@ st.markdown(
 for a in avisos:
     st.warning(a)
 
-kpi_html = f"""
+st.markdown(
+    f"""
 <div class='kpi-grid'>
     <div class='kpi green'>
         <div class='kpi-t'>Receitas</div>
@@ -725,82 +805,103 @@ kpi_html = f"""
         {delta_sub(liq, liq_p, invert=False) if (ent_p or sai_p) else "<div class='kpi-sub'>receitas − saídas</div>"}
     </div>
 </div>
-"""
-st.markdown(kpi_html, unsafe_allow_html=True)
-
-# ==============================================================================
-# TABELA ÚNICA CONSOLIDADA (sem gráficos, sem scroll interno)
-# ==============================================================================
-st.markdown(
-    "<div class='section-title'>Fluxo de caixa consolidado · por mês</div>",
+""",
     unsafe_allow_html=True,
 )
 
+# ==============================================================================
+# TABELA CONSOLIDADA COM DRILL-DOWN
+# ==============================================================================
+st.markdown(
+    "<div class='section-title'>Fluxo de caixa consolidado · clique na seta para ver a composição</div>",
+    unsafe_allow_html=True,
+)
+
+
+def bloco_classif(d, tipo_nome, cor_total):
+    """Gera linhas HTML: seção + classificações (com sub-linhas de detalhe)."""
+    rows_html = []
+    rows_html.append(
+        f"<tr class='sec'><td>{tipo_nome}</td>" + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    if d.empty:
+        rows_html.append(
+            f"<tr><td><span class='mut'>Sem {tipo_nome.lower()}</span></td>"
+            + "".join("<td>—</td>" for _ in refs_sel) + "<td>—</td></tr>"
+        )
+        return rows_html, 0.0
+
+    # total por Classif × mês
+    piv = d.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    piv = piv.reindex(columns=refs_sel, fill_value=0.0)
+    piv["__t__"] = piv.sum(axis=1)
+    piv = piv.sort_values("__t__", ascending=False)
+
+    # detalhe: Classif × Detalhe × mês
+    det = (
+        d.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
+    )
+
+    uid = 0
+    for classif, r in piv.iterrows():
+        uid += 1
+        key = f"d_{tipo_nome[:3]}_{uid}"
+        cor = cor_cat(classif, mapa_cores)
+        # subdetalhes desta classificação
+        sub = det[det["Classif"] == classif]
+        tem_sub = sub["Detalhe"].nunique() > 1 or (
+            sub["Detalhe"].nunique() == 1 and normalizar(sub["Detalhe"].iloc[0]) != normalizar(classif)
+        )
+
+        if tem_sub:
+            label = (
+                f"<label class='drill-label' for='{key}'>"
+                f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
+                f"<span class='indicator'>▶</span>"
+                f"<span class='dot' style='background:{cor}'></span>{classif}"
+                f"</label>"
+            )
+        else:
+            label = f"<span class='dot' style='background:{cor}'></span>{classif}"
+
+        cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
+        if tem_sub:
+            rows_html.append(f"<tbody class='grp'><tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+            # linhas filhas
+            piv_sub = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+            piv_sub = piv_sub.reindex(columns=refs_sel, fill_value=0.0)
+            piv_sub["__t__"] = piv_sub.sum(axis=1)
+            piv_sub = piv_sub.sort_values("__t__", ascending=False)
+            for det_nome, rd in piv_sub.iterrows():
+                sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
+                rows_html.append(
+                    f"<tr class='sub-row'><td>↳ {det_nome}</td>" + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
+                )
+            rows_html.append("</tbody>")
+        else:
+            rows_html.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+
+    total = float(piv["__t__"].sum())
+    tot_m = [float(piv[m].sum()) for m in refs_sel]
+    rows_html.append(
+        f"<tr class='tot'><td><b>Total {tipo_nome.lower()}</b></td>"
+        + "".join(f"<td><span style='color:{cor_total}'>{moeda(v)}</span></td>" for v in tot_m)
+        + f"<td><span style='color:{cor_total}'><b>{moeda(total)}</b></span></td></tr>"
+    )
+    return rows_html, total
+
+
 if df.empty:
-    st.markdown(vazio_html(), unsafe_allow_html=True)
+    st.markdown("<div class='vazio'>Sem dados no período</div>", unsafe_allow_html=True)
 else:
     ent_df = df[df["Tipo"] == "Entrada"]
     sai_df = df[df["Tipo"] == "Saída"]
 
-    def pivot_cat(d):
-        """Pivot por Categoria × mês — soma todas as origens da mesma classificação."""
-        if d.empty:
-            return pd.DataFrame(columns=list(refs_sel) + ["__t__"])
-        p = d.pivot_table(
-            index="Categoria", columns="Ref", values="Valor",
-            aggfunc="sum", fill_value=0.0,
-        )
-        p = p.reindex(columns=refs_sel, fill_value=0.0)
-        p["__t__"] = p.sum(axis=1)
-        return p.sort_values("__t__", ascending=False)
+    html_rows, _ = bloco_classif(ent_df, "RECEITAS", VERDE)
+    html_sai, _ = bloco_classif(sai_df, "SAÍDAS", VERMELHO)
+    html_rows.extend(html_sai)
 
-    # Saídas: Despesas + Borderô + Adiantamentos já somam na mesma Categoria
-    piv_e = pivot_cat(ent_df)
-    piv_s = pivot_cat(sai_df)
-
-    rows = []
-
-    # --- RECEITAS ---
-    rows.append(("sec", ["RECEITAS"] + [""] * len(refs_sel) + [""]))
-    if piv_e.empty:
-        rows.append(["<span class='mut'>Sem receitas</span>"] + ["—"] * len(refs_sel) + ["—"])
-    else:
-        for nome, r in piv_e.iterrows():
-            rows.append(
-                [f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}"]
-                + [moeda(r[m]) for m in refs_sel]
-                + [f"<b>{moeda(r['__t__'])}</b>"]
-            )
-        tot_e_m = [float(piv_e[m].sum()) for m in refs_sel]
-        tot_e = float(piv_e["__t__"].sum())
-        rows.append((
-            "tot",
-            [f"<b>Total receitas</b>"]
-            + [f"<span style='color:{VERDE}'>{moeda(v)}</span>" for v in tot_e_m]
-            + [f"<span style='color:{VERDE}'><b>{moeda(tot_e)}</b></span>"],
-        ))
-
-    # --- SAÍDAS (classificações consolidadas) ---
-    rows.append(("sec", ["SAÍDAS"] + [""] * len(refs_sel) + [""]))
-    if piv_s.empty:
-        rows.append(["<span class='mut'>Sem saídas</span>"] + ["—"] * len(refs_sel) + ["—"])
-    else:
-        for nome, r in piv_s.iterrows():
-            rows.append(
-                [f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}"]
-                + [moeda(r[m]) for m in refs_sel]
-                + [f"<b>{moeda(r['__t__'])}</b>"]
-            )
-        tot_s_m = [float(piv_s[m].sum()) for m in refs_sel]
-        tot_s = float(piv_s["__t__"].sum())
-        rows.append((
-            "tot",
-            [f"<b>Total saídas</b>"]
-            + [f"<span style='color:{VERMELHO}'>{moeda(v)}</span>" for v in tot_s_m]
-            + [f"<span style='color:{VERMELHO}'><b>{moeda(tot_s)}</b></span>"],
-        ))
-
-    # --- RESULTADO ---
+    # Resultado mensal
     ent_m = df[df["Tipo"] == "Entrada"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
     sai_m = df[df["Tipo"] == "Saída"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
     liq_m = ent_m - sai_m
@@ -810,15 +911,16 @@ else:
         cor = VERDE if v >= 0 else VERMELHO
         cells_res.append(f"<span style='color:{cor};font-weight:800'>{moeda(v)}</span>")
     cor_t = VERDE if liq >= 0 else VERMELHO
-    rows.append((
-        "res",
-        [f"<b>RESULTADO LÍQUIDO</b>"]
-        + cells_res
-        + [f"<span style='color:{cor_t}'><b>{moeda(liq)}</b></span>"],
-    ))
+    html_rows.append(
+        f"<tr class='res'><td><b>RESULTADO LÍQUIDO</b></td>"
+        + "".join(f"<td>{c}</td>" for c in cells_res)
+        + f"<td><span style='color:{cor_t}'><b>{moeda(liq)}</b></span></td></tr>"
+    )
 
+    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
+    body = "".join(html_rows)
     st.markdown(
-        tabela(["Descrição"] + x_lab + ["Total"], rows),
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>{body}</table></div>",
         unsafe_allow_html=True,
     )
 
