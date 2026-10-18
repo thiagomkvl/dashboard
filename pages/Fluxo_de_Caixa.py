@@ -256,7 +256,6 @@ def parse_data(v):
 
 
 def parse_mes_header(h, ano_ref=None):
-    """Interpreta cabeçalho de mês (Jan, Janeiro, Jan/25, 01/2025, etc.)."""
     if h is None or (isinstance(h, float) and pd.isna(h)):
         return None
     if isinstance(h, (pd.Timestamp, datetime)):
@@ -272,11 +271,11 @@ def parse_mes_header(h, ano_ref=None):
     t = normalizar(h)
     if not t or t in ("nan", "none", "total", "soma", "geral"):
         return None
-    # jan/25, jan-2025, janeiro 2025
     m = re.match(r"^([a-z]{3,9})[\s\-/._]*(\d{2,4})?$", t)
-    if m and m.group(1)[:3] in MESES_MAP or (m and m.group(1) in MESES_MAP):
-        chave = m.group(1) if m.group(1) in MESES_MAP else m.group(1)[:3]
-        mes = MESES_MAP.get(chave) or MESES_MAP.get(m.group(1)[:3])
+    if m:
+        chave_full = m.group(1)
+        chave3 = chave_full[:3]
+        mes = MESES_MAP.get(chave_full) or MESES_MAP.get(chave3)
         if mes:
             ano = ano_ref or datetime.now().year
             if m.group(2):
@@ -395,7 +394,6 @@ def cor_cat(nome, mapa):
 
 
 def detectar_ano(raw):
-    """Tenta achar um ano nas primeiras células da planilha."""
     try:
         for i in range(min(5, len(raw))):
             for j in range(min(8, len(raw.columns))):
@@ -411,57 +409,71 @@ def detectar_ano(raw):
 def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
     """
     Converte matriz (rótulo em coluna fixa + meses nas colunas) em formato longo.
-    header_row_idx / col indices são 0-based no DataFrame lido.
+    Índices 0-based. Lê por posição — tolerante a headers/colunas duplicados.
     """
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
     if raw is None or raw.empty:
-        return pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo"])
+        return pd.DataFrame(columns=cols_out)
 
     ano = ano_ref or detectar_ano(raw)
-    df = raw.copy()
-    df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(df.columns)]
+    data = raw.values.tolist()
+    if not data:
+        return pd.DataFrame(columns=cols_out)
 
-    # Se a primeira linha ainda não for header de mês, usa a linha indicada como header
-    if header_row_idx > 0 and header_row_idx < len(df):
-        novos = list(df.iloc[header_row_idx].values)
-        # mantém nome da coluna de rótulo
-        if col_label_idx < len(novos):
-            novos[col_label_idx] = df.columns[col_label_idx] if col_label_idx < len(df.columns) else "Categoria"
-        df.columns = [str(x).strip() if pd.notna(x) else f"col_{i}" for i, x in enumerate(novos)]
-        df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols == 0:
+        return pd.DataFrame(columns=cols_out)
 
-    col_label = df.columns[col_label_idx] if col_label_idx < len(df.columns) else df.columns[0]
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
 
-    # Mapeia colunas de mês a partir de start_col_idx
+    hr = header_row_idx if 0 <= header_row_idx < n_rows else 0
+    header = grid[hr]
+    li = col_label_idx if 0 <= col_label_idx < n_cols else 0
+
     mapa_mes = {}
-    for j, c in enumerate(df.columns):
-        if j < start_col_idx:
-            continue
-        ref = parse_mes_header(c, ano)
+    for j in range(start_col_idx, n_cols):
+        ref = parse_mes_header(header[j], ano)
         if ref is not None:
-            mapa_mes[c] = ref
-
-    # Fallback: se não achou meses no header, tenta posições C..N como Jan..Dez
-    if not mapa_mes and len(df.columns) > start_col_idx:
-        for k, j in enumerate(range(start_col_idx, min(start_col_idx + 12, len(df.columns)))):
-            mapa_mes[df.columns[j]] = pd.Timestamp(ano, k + 1, 1)
+            mapa_mes[j] = ref
 
     if not mapa_mes:
-        return pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo"])
+        for k, j in enumerate(range(start_col_idx, min(start_col_idx + 12, n_cols))):
+            mapa_mes[j] = pd.Timestamp(ano, k + 1, 1)
 
-    partes = []
-    for c, ref in mapa_mes.items():
-        tmp = pd.DataFrame({
-            "Categoria": df[col_label].fillna("").astype(str).str.strip(),
-            "Valor": df[c].apply(limpa_valor),
-            "Ref": ref,
-            "Tipo": tipo,
-        })
-        partes.append(tmp)
+    if not mapa_mes:
+        return pd.DataFrame(columns=cols_out)
 
-    out = pd.concat(partes, ignore_index=True)
-    out = out[out["Categoria"].map(normalizar).isin(["", "nan", "none", "total", "total geral", "soma"]) == False]
-    out = out[out["Valor"].abs() > 0.005].copy()
-    return out[["Ref", "Categoria", "Valor", "Tipo"]]
+    start_row = hr + 1
+    skip = {"", "nan", "none", "total", "total geral", "soma", "geral"}
+    registros = []
+
+    for i in range(start_row, n_rows):
+        row = grid[i]
+        cat = row[li] if li < len(row) else None
+        if cat is None or (isinstance(cat, float) and pd.isna(cat)):
+            continue
+        cat_s = str(cat).strip()
+        if normalizar(cat_s) in skip:
+            continue
+
+        for j, ref in mapa_mes.items():
+            val = limpa_valor(row[j] if j < len(row) else 0)
+            if abs(val) <= 0.005:
+                continue
+            registros.append({
+                "Ref": ref,
+                "Categoria": cat_s,
+                "Valor": val,
+                "Tipo": tipo,
+            })
+
+    if not registros:
+        return pd.DataFrame(columns=cols_out)
+    return pd.DataFrame(registros)[cols_out]
 
 
 # ==============================================================================
@@ -469,13 +481,6 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
-    """
-    Saídas:
-      - Base_Despesas (transações filtradas) → agregado por mês e classificação
-      - Fluxo_Despesas_Borderô → matriz Conta Contábil × mês
-    Entradas:
-      - Fluxo_Receita → matriz Origem Receita × mês
-    """
     cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
     vazio = pd.DataFrame(columns=cols)
     avisos = []
@@ -485,7 +490,7 @@ def carregar_fluxo():
 
     partes = []
 
-    # ---- Base_Despesas (saídas por classificação) ----
+    # ---- Base_Despesas ----
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
@@ -517,8 +522,7 @@ def carregar_fluxo():
         else:
             avisos.append("Despesas operacionais: estrutura de colunas não reconhecida.")
 
-    # ---- Fluxo_Despesas_Borderô (matriz) ----
-    # Col B = Conta Contábil; linha 3 (idx 2) = meses a partir da col C (idx 2)
+    # ---- Fluxo_Despesas_Borderô (matriz por posição) ----
     try:
         raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
     except Exception as e:
@@ -526,23 +530,17 @@ def carregar_fluxo():
         avisos.append(f"Não foi possível ler borderô de despesas: {e}")
 
     if raw_b is not None and not raw_b.empty:
-        # header na linha 3 → index 2; rótulo col B → index 1; meses desde col C → index 2
         mb = melt_matriz(raw_b, col_label_idx=1, header_row_idx=2, start_col_idx=2, tipo="Saída")
         if mb.empty:
-            # tenta header já na primeira linha
             mb = melt_matriz(raw_b, col_label_idx=1, header_row_idx=0, start_col_idx=2, tipo="Saída")
         if not mb.empty:
-            mb["Grupo"] = "Borderô"
-            partes.append(mb.rename(columns={})[list(mb.columns) + (["Grupo"] if "Grupo" not in mb.columns else [])])
-            # garante colunas
             mb = mb.copy()
             mb["Grupo"] = "Borderô"
-            partes[-1] = mb[["Ref", "Categoria", "Valor", "Tipo", "Grupo"]]
+            partes.append(mb[["Ref", "Categoria", "Valor", "Tipo", "Grupo"]])
         else:
             avisos.append("Borderô de despesas: nenhum valor mensal encontrado.")
 
-    # ---- Fluxo_Receita (matriz) ----
-    # Col A = Origem Receita; linha 2 (idx 1) = meses a partir da col B (idx 1)
+    # ---- Fluxo_Receita (matriz por posição) ----
     try:
         raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
     except Exception as e:
@@ -630,8 +628,8 @@ ent_p = float(df_prev.loc[df_prev["Tipo"] == "Entrada", "Valor"].sum())
 sai_p = float(df_prev.loc[df_prev["Tipo"] == "Saída", "Valor"].sum())
 liq_p = ent_p - sai_p
 
+
 def delta_sub(atual, ant, invert=False):
-    """invert=True: aumento é ruim (saídas)."""
     if not ant:
         return "<div class='kpi-sub'>sem período anterior</div>"
     v = (atual / ant - 1) * 100
@@ -641,8 +639,10 @@ def delta_sub(atual, ant, invert=False):
         cls, seta = ("up", "↑") if v >= 0 else ("down", "↓")
     return f"<div class='kpi-sub {cls}'>{seta} {pct(abs(v))} vs período anterior</div>"
 
+
 mapa_cores = {}
 txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
+tot_desp_op = float(df.loc[df["Grupo"] == "Despesas", "Valor"].sum())
 
 # ==============================================================================
 # CABEÇALHO + KPIs
@@ -679,8 +679,8 @@ kpi_html = f"""
     </div>
     <div class='kpi'>
         <div class='kpi-t'>Despesas operacionais</div>
-        <div class='kpi-v'>{moeda(float(df.loc[df['Grupo']=='Despesas','Valor'].sum()))}</div>
-        <div class='kpi-sub'><b>{pct(div(float(df.loc[df['Grupo']=='Despesas','Valor'].sum()), sai)*100)}</b> das saídas</div>
+        <div class='kpi-v'>{moeda(tot_desp_op)}</div>
+        <div class='kpi-sub'><b>{pct(div(tot_desp_op, sai)*100)}</b> das saídas</div>
     </div>
     <div class='kpi {"green" if liq>=0 else "red"}'>
         <div class='kpi-t'>Resultado líquido</div>
@@ -764,7 +764,6 @@ with c2:
 # ==============================================================================
 # TABELAS
 # ==============================================================================
-# Ranking saídas por classificação
 st.markdown("<div class='section-title'>Ranking de saídas por classificação</div>", unsafe_allow_html=True)
 sai_df = df[df["Tipo"] == "Saída"]
 if sai_df.empty:
@@ -792,7 +791,6 @@ else:
         unsafe_allow_html=True,
     )
 
-# Ranking receitas
 st.markdown("<div class='section-title'>Ranking de receitas por origem</div>", unsafe_allow_html=True)
 ent_df = df[df["Tipo"] == "Entrada"]
 if ent_df.empty:
@@ -820,7 +818,6 @@ else:
         unsafe_allow_html=True,
     )
 
-# Matriz classificação × mês (saídas)
 st.markdown("<div class='section-title'>Saídas · classificação × mês</div>", unsafe_allow_html=True)
 if sai_df.empty:
     st.markdown(vazio_html("Sem saídas no período"), unsafe_allow_html=True)
@@ -840,7 +837,6 @@ else:
     tot = ["TOTAL"] + [moeda(mat[m].sum()) for m in refs_sel] + [moeda(mat["__t__"].sum())]
     st.markdown(tabela(["Classificação"] + x_lab + ["Total"], rows, tot, 400), unsafe_allow_html=True)
 
-# Matriz receita × mês
 st.markdown("<div class='section-title'>Receitas · origem × mês</div>", unsafe_allow_html=True)
 if ent_df.empty:
     st.markdown(vazio_html("Sem receitas no período"), unsafe_allow_html=True)
@@ -860,7 +856,6 @@ else:
     tot = ["TOTAL"] + [moeda(mat[m].sum()) for m in refs_sel] + [moeda(mat["__t__"].sum())]
     st.markdown(tabela(["Origem"] + x_lab + ["Total"], rows, tot, 360), unsafe_allow_html=True)
 
-# Resumo mensal consolidado
 st.markdown("<div class='section-title'>Resumo mensal consolidado</div>", unsafe_allow_html=True)
 if df.empty:
     st.markdown(vazio_html(), unsafe_allow_html=True)
