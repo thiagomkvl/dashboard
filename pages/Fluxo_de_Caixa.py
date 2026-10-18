@@ -13,7 +13,7 @@ except Exception:
 import re
 import textwrap
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -33,15 +33,15 @@ except Exception as _err:
 AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
 ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
 TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
-SURFACE, BG = "#ffffff", "#f8fafc"
+SURFACE = "#ffffff"
 
 ESPACO_ENTRE_BLOCOS = "1.0rem"
 AJUSTE_APOS_KPIS = "1.0rem"
 
 ABA_DESPESAS = "Base_Despesas"
-ABA_TITULOS = "Base_Titulos"
+ABA_BORDERO = "Fluxo_Despesas_Borderô"
+ABA_RECEITA = "Fluxo_Receita"
 
-# Transações de Base_Despesas permitidas (coluna D = Transação FCx)
 TRANSACOES_DESPESAS = {
     "despesas administrativas",
     "despesas financeiras",
@@ -55,14 +55,25 @@ TRANSACOES_DESPESAS = {
     "pmts",
 }
 
-# Filtro de Base_Titulos (coluna Q = Transação Borderô)
-TRANSACAO_BORDERO = "bx bordero - banco"
-
 CORES_CAT = [
     AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO,
     "#0ea5e9", "#84cc16", "#f43f5e", "#a855f7", "#14b8a6", "#eab308",
 ]
 
+MESES_MAP = {
+    "jan": 1, "janeiro": 1,
+    "fev": 2, "fevereiro": 2,
+    "mar": 3, "marco": 3, "março": 3,
+    "abr": 4, "abril": 4,
+    "mai": 5, "maio": 5,
+    "jun": 6, "junho": 6,
+    "jul": 7, "julho": 7,
+    "ago": 8, "agosto": 8,
+    "set": 9, "setembro": 9,
+    "out": 10, "outubro": 10,
+    "nov": 11, "novembro": 11,
+    "dez": 12, "dezembro": 12,
+}
 MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
                "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
@@ -125,7 +136,7 @@ css = """
     .pill small { display: block; font-size: 10px; color: #64748b; }
     .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
     .kpi {
         padding: 12px 14px; border-radius: 12px; min-height: 96px;
         background: #ffffff; border: 1px solid #e2e8f0;
@@ -152,17 +163,6 @@ css = """
         font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
         color: #0f172a; margin: 16px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
     }
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        background: #ffffff; border: 1px solid #e2e8f0 !important; border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(15,23,42,0.04);
-    }
-    .card-title {
-        display: flex; align-items: center; justify-content: space-between;
-        font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
-        color: #0f172a; margin: 2px 0 6px;
-    }
-    .card-title span { font-size: 10px; font-weight: 600; text-transform: none; color: #64748b; letter-spacing: 0.2px; }
-
     .tbl-wrap {
         overflow: auto; max-height: 420px; border-radius: 10px;
         border: 1px solid #e2e8f0; background: #ffffff;
@@ -202,12 +202,6 @@ css = """
     .leg i { width: 9px; height: 9px; border-radius: 50%; display: block; }
     .leg em { font-style: normal; color: #64748b; }
     .leg b { color: #0f172a; font-weight: 700; }
-    .origem-tag {
-        display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px;
-        border-radius: 999px; letter-spacing: 0.2px;
-    }
-    .origem-desp { background: rgba(37,99,235,0.10); color: #1d4ed8; }
-    .origem-bord { background: rgba(124,58,237,0.10); color: #6d28d9; }
 </style>
 """
 st.markdown(
@@ -261,6 +255,50 @@ def parse_data(v):
         return pd.NaT
 
 
+def parse_mes_header(h, ano_ref=None):
+    """Interpreta cabeçalho de mês (Jan, Janeiro, Jan/25, 01/2025, etc.)."""
+    if h is None or (isinstance(h, float) and pd.isna(h)):
+        return None
+    if isinstance(h, (pd.Timestamp, datetime)):
+        return pd.Timestamp(h.year, h.month, 1)
+    if isinstance(h, (int, float)) and not isinstance(h, bool):
+        n = float(h)
+        if 1 <= n <= 12:
+            ano = ano_ref or datetime.now().year
+            return pd.Timestamp(ano, int(n), 1)
+        if 20000 < n < 80000:
+            d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
+            return pd.Timestamp(d.year, d.month, 1)
+    t = normalizar(h)
+    if not t or t in ("nan", "none", "total", "soma", "geral"):
+        return None
+    # jan/25, jan-2025, janeiro 2025
+    m = re.match(r"^([a-z]{3,9})[\s\-/._]*(\d{2,4})?$", t)
+    if m and m.group(1)[:3] in MESES_MAP or (m and m.group(1) in MESES_MAP):
+        chave = m.group(1) if m.group(1) in MESES_MAP else m.group(1)[:3]
+        mes = MESES_MAP.get(chave) or MESES_MAP.get(m.group(1)[:3])
+        if mes:
+            ano = ano_ref or datetime.now().year
+            if m.group(2):
+                ano = int(m.group(2))
+                if ano < 100:
+                    ano += 2000
+            return pd.Timestamp(ano, mes, 1)
+    m = re.match(r"^(\d{1,2})[\s\-/._]+(\d{2,4})$", t)
+    if m:
+        mes = int(m.group(1))
+        ano = int(m.group(2))
+        if ano < 100:
+            ano += 2000
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    if t in MESES_MAP:
+        return pd.Timestamp(ano_ref or datetime.now().year, MESES_MAP[t], 1)
+    if t[:3] in MESES_MAP:
+        return pd.Timestamp(ano_ref or datetime.now().year, MESES_MAP[t[:3]], 1)
+    return None
+
+
 def _br(v, casas=2):
     return f"{v:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -293,11 +331,9 @@ def rot_mes(ts):
 
 
 def col_por_letra(df, letra):
-    """Retorna a coluna pela letra Excel (A=0). Aceita se o header for a letra."""
     idx = ord(letra.upper()) - ord("A")
     if 0 <= idx < len(df.columns):
         return df.columns[idx]
-    # fallback: header normalizado igual à letra
     for c in df.columns:
         if normalizar(c) == letra.lower():
             return c
@@ -358,19 +394,90 @@ def cor_cat(nome, mapa):
     return mapa[nome]
 
 
+def detectar_ano(raw):
+    """Tenta achar um ano nas primeiras células da planilha."""
+    try:
+        for i in range(min(5, len(raw))):
+            for j in range(min(8, len(raw.columns))):
+                t = normalizar(raw.iloc[i, j])
+                m = re.search(r"(20\d{2})", t)
+                if m:
+                    return int(m.group(1))
+    except Exception:
+        pass
+    return datetime.now().year
+
+
+def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
+    """
+    Converte matriz (rótulo em coluna fixa + meses nas colunas) em formato longo.
+    header_row_idx / col indices são 0-based no DataFrame lido.
+    """
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo"])
+
+    ano = ano_ref or detectar_ano(raw)
+    df = raw.copy()
+    df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(df.columns)]
+
+    # Se a primeira linha ainda não for header de mês, usa a linha indicada como header
+    if header_row_idx > 0 and header_row_idx < len(df):
+        novos = list(df.iloc[header_row_idx].values)
+        # mantém nome da coluna de rótulo
+        if col_label_idx < len(novos):
+            novos[col_label_idx] = df.columns[col_label_idx] if col_label_idx < len(df.columns) else "Categoria"
+        df.columns = [str(x).strip() if pd.notna(x) else f"col_{i}" for i, x in enumerate(novos)]
+        df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+
+    col_label = df.columns[col_label_idx] if col_label_idx < len(df.columns) else df.columns[0]
+
+    # Mapeia colunas de mês a partir de start_col_idx
+    mapa_mes = {}
+    for j, c in enumerate(df.columns):
+        if j < start_col_idx:
+            continue
+        ref = parse_mes_header(c, ano)
+        if ref is not None:
+            mapa_mes[c] = ref
+
+    # Fallback: se não achou meses no header, tenta posições C..N como Jan..Dez
+    if not mapa_mes and len(df.columns) > start_col_idx:
+        for k, j in enumerate(range(start_col_idx, min(start_col_idx + 12, len(df.columns)))):
+            mapa_mes[df.columns[j]] = pd.Timestamp(ano, k + 1, 1)
+
+    if not mapa_mes:
+        return pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo"])
+
+    partes = []
+    for c, ref in mapa_mes.items():
+        tmp = pd.DataFrame({
+            "Categoria": df[col_label].fillna("").astype(str).str.strip(),
+            "Valor": df[c].apply(limpa_valor),
+            "Ref": ref,
+            "Tipo": tipo,
+        })
+        partes.append(tmp)
+
+    out = pd.concat(partes, ignore_index=True)
+    out = out[out["Categoria"].map(normalizar).isin(["", "nan", "none", "total", "total geral", "soma"]) == False]
+    out = out[out["Valor"].abs() > 0.005].copy()
+    return out[["Ref", "Categoria", "Valor", "Tipo"]]
+
+
 # ==============================================================================
-# CARGA DE DADOS
+# CARGA
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
     """
-    Unifica:
-      - Base_Despesas (transações listadas) → Data, Classificação, Transação, Valor
-      - Base_Titulos (Bx Borderô - Banco)   → Data Baixa, Conta contábil, Valor Pago
+    Saídas:
+      - Base_Despesas (transações filtradas) → agregado por mês e classificação
+      - Fluxo_Despesas_Borderô → matriz Conta Contábil × mês
+    Entradas:
+      - Fluxo_Receita → matriz Origem Receita × mês
     """
-    vazio = pd.DataFrame(columns=[
-        "Data", "Ref", "Classificação", "Transação", "Valor", "Origem",
-    ])
+    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
+    vazio = pd.DataFrame(columns=cols)
     avisos = []
     conn = conectar_sheets()
     if conn is None:
@@ -378,98 +485,88 @@ def carregar_fluxo():
 
     partes = []
 
-    # ---- Base_Despesas ----
+    # ---- Base_Despesas (saídas por classificação) ----
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
         raw_d = None
-        avisos.append(f"Aba '{ABA_DESPESAS}': {e}")
+        avisos.append(f"Não foi possível ler despesas operacionais: {e}")
 
     if raw_d is not None and not raw_d.empty:
         df = raw_d.copy()
-        # Preferência por letra (B, D, E, F); fallback por nome
         c_data = col_por_letra(df, "B") or col_por_nomes(df, ["Data", "Data Lançamento", "Dt"])
         c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx", "Transação", "Transacao"])
         c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx", "Classificação", "Classificacao"])
         c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor Débito", "Valor Debito", "Débito", "Debito", "Valor"])
 
-        if not all([c_data, c_trans, c_clas, c_val]):
-            avisos.append(
-                f"Aba '{ABA_DESPESAS}': colunas esperadas não encontradas "
-                f"(Data/B, Transação FCx/D, Classificação FCx/E, Vl Débito/F)."
-            )
-        else:
+        if all([c_data, c_trans, c_clas, c_val]):
             tmp = pd.DataFrame({
                 "Data": df[c_data].apply(parse_data),
                 "Transação": df[c_trans].fillna("").astype(str).str.strip(),
-                "Classificação": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
+                "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
                 "Valor": df[c_val].apply(limpa_valor),
             })
-            tmp["Transação_n"] = tmp["Transação"].map(normalizar)
-            tmp = tmp[tmp["Transação_n"].isin(TRANSACOES_DESPESAS)].copy()
+            tmp = tmp[tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)]
             tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
             if not tmp.empty:
-                tmp["Origem"] = "Despesas"
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
-                partes.append(tmp[["Data", "Ref", "Classificação", "Transação", "Valor", "Origem"]])
-            else:
-                avisos.append(f"Aba '{ABA_DESPESAS}': nenhuma linha nas transações filtradas.")
-    else:
-        if raw_d is None or (hasattr(raw_d, "empty") and raw_d.empty):
-            avisos.append(f"Aba '{ABA_DESPESAS}' vazia ou indisponível.")
-
-    # ---- Base_Titulos (Bx Borderô - Banco) ----
-    try:
-        raw_t = conn.read(worksheet=ABA_TITULOS, ttl=0)
-    except Exception as e:
-        raw_t = None
-        avisos.append(f"Aba '{ABA_TITULOS}': {e}")
-
-    if raw_t is not None and not raw_t.empty:
-        df = raw_t.copy()
-        c_data = col_por_letra(df, "D") or col_por_nomes(df, ["Data Baixa", "Dt Baixa", "Data da Baixa", "Data"])
-        c_clas = col_por_letra(df, "I") or col_por_nomes(df, [
-            "Conta contábil", "Conta contabil", "Classificação FCx", "Classificacao FCx", "Conta Contábil",
-        ])
-        c_val = col_por_letra(df, "W") or col_por_nomes(df, ["Vl Pago", "Valor Pago", "Valor", "Vl. Pago"])
-        c_bord = col_por_letra(df, "Q") or col_por_nomes(df, [
-            "Transação Borderô", "Transacao Bordero", "Transação Bordero", "Transacao Borderô",
-            "Transação Borderô", "Bordero",
-        ])
-
-        if not all([c_data, c_clas, c_val, c_bord]):
-            avisos.append(
-                f"Aba '{ABA_TITULOS}': colunas esperadas não encontradas "
-                f"(Data Baixa/D, Conta contábil/I, Transação Borderô/Q, Vl Pago/W)."
-            )
+                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                g["Tipo"] = "Saída"
+                g["Grupo"] = "Despesas"
+                partes.append(g[cols])
         else:
-            tmp = pd.DataFrame({
-                "Data": df[c_data].apply(parse_data),
-                "Classificação": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
-                "Transação": df[c_bord].fillna("").astype(str).str.strip(),
-                "Valor": df[c_val].apply(limpa_valor),
-            })
-            tmp["Transação_n"] = tmp["Transação"].map(normalizar)
-            tmp = tmp[tmp["Transação_n"] == TRANSACAO_BORDERO].copy()
-            tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
-            if not tmp.empty:
-                # Padroniza rótulo da transação
-                tmp["Transação"] = "Bx Borderô - Banco"
-                tmp["Origem"] = "Borderô"
-                tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
-                partes.append(tmp[["Data", "Ref", "Classificação", "Transação", "Valor", "Origem"]])
-            else:
-                avisos.append(f"Aba '{ABA_TITULOS}': nenhuma linha com 'Bx Borderô - Banco'.")
-    else:
-        if raw_t is None or (hasattr(raw_t, "empty") and raw_t.empty):
-            avisos.append(f"Aba '{ABA_TITULOS}' vazia ou indisponível.")
+            avisos.append("Despesas operacionais: estrutura de colunas não reconhecida.")
+
+    # ---- Fluxo_Despesas_Borderô (matriz) ----
+    # Col B = Conta Contábil; linha 3 (idx 2) = meses a partir da col C (idx 2)
+    try:
+        raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
+    except Exception as e:
+        raw_b = None
+        avisos.append(f"Não foi possível ler borderô de despesas: {e}")
+
+    if raw_b is not None and not raw_b.empty:
+        # header na linha 3 → index 2; rótulo col B → index 1; meses desde col C → index 2
+        mb = melt_matriz(raw_b, col_label_idx=1, header_row_idx=2, start_col_idx=2, tipo="Saída")
+        if mb.empty:
+            # tenta header já na primeira linha
+            mb = melt_matriz(raw_b, col_label_idx=1, header_row_idx=0, start_col_idx=2, tipo="Saída")
+        if not mb.empty:
+            mb["Grupo"] = "Borderô"
+            partes.append(mb.rename(columns={})[list(mb.columns) + (["Grupo"] if "Grupo" not in mb.columns else [])])
+            # garante colunas
+            mb = mb.copy()
+            mb["Grupo"] = "Borderô"
+            partes[-1] = mb[["Ref", "Categoria", "Valor", "Tipo", "Grupo"]]
+        else:
+            avisos.append("Borderô de despesas: nenhum valor mensal encontrado.")
+
+    # ---- Fluxo_Receita (matriz) ----
+    # Col A = Origem Receita; linha 2 (idx 1) = meses a partir da col B (idx 1)
+    try:
+        raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
+    except Exception as e:
+        raw_r = None
+        avisos.append(f"Não foi possível ler receitas: {e}")
+
+    if raw_r is not None and not raw_r.empty:
+        mr = melt_matriz(raw_r, col_label_idx=0, header_row_idx=1, start_col_idx=1, tipo="Entrada")
+        if mr.empty:
+            mr = melt_matriz(raw_r, col_label_idx=0, header_row_idx=0, start_col_idx=1, tipo="Entrada")
+        if not mr.empty:
+            mr = mr.copy()
+            mr["Grupo"] = "Receita"
+            partes.append(mr[["Ref", "Categoria", "Valor", "Tipo", "Grupo"]])
+        else:
+            avisos.append("Receitas: nenhum valor mensal encontrado.")
 
     if not partes:
-        return vazio, avisos or ["Nenhum lançamento encontrado nas bases."]
+        return vazio, avisos or ["Nenhum lançamento encontrado."]
 
     base = pd.concat(partes, ignore_index=True)
-    base["Classificação"] = base["Classificação"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
-    base = base.sort_values("Data").reset_index(drop=True)
+    base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
+    base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
+    base = base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True)
     return base, avisos
 
 
@@ -482,90 +579,70 @@ if base.empty:
     st.stop()
 
 # ==============================================================================
-# SIDEBAR — FILTROS
+# SIDEBAR
 # ==============================================================================
-datas = base["Data"].dropna()
-d_min, d_max = datas.min().date(), datas.max().date()
+meses_all = sorted(base["Ref"].unique())
+rot = {m: rot_mes(m) for m in meses_all}
 
 with st.sidebar:
     st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
+    c_a, c_b = st.columns(2)
+    ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
+    fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
 
-    periodo = st.date_input(
-        "Período",
-        value=(d_min, d_max),
-        min_value=d_min,
-        max_value=d_max,
-    )
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        dt_ini, dt_fim = periodo[0], periodo[1]
-    else:
-        dt_ini, dt_fim = d_min, d_max
-    if dt_ini > dt_fim:
-        dt_ini, dt_fim = dt_fim, dt_ini
+    grupos_all = sorted(base["Grupo"].unique().tolist())
+    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all, placeholder="Todos")
 
-    origens_all = sorted(base["Origem"].unique().tolist())
-    origem_sel = st.multiselect("Origem", origens_all, default=origens_all, placeholder="Todas")
-
-    classes_all = sorted(base["Classificação"].unique().tolist())
-    class_sel = st.multiselect("Classificação FCx", classes_all, placeholder="Todas")
-
-    trans_all = sorted(base["Transação"].unique().tolist())
-    trans_sel = st.multiselect("Transação", trans_all, placeholder="Todas")
+    cats_all = sorted(base["Categoria"].unique().tolist())
+    cat_sel = st.multiselect("Classificação / Origem", cats_all, placeholder="Todas")
 
     if st.button("↻ Atualizar dados", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# Aplica filtros
-mask = (base["Data"] >= pd.Timestamp(dt_ini)) & (base["Data"] <= pd.Timestamp(dt_fim))
-df = base[mask].copy()
-if origem_sel:
-    df = df[df["Origem"].isin(origem_sel)]
-if class_sel:
-    df = df[df["Classificação"].isin(class_sel)]
-if trans_sel:
-    df = df[df["Transação"].isin(trans_sel)]
+if ini > fim:
+    ini, fim = fim, ini
+refs_sel = [m for m in meses_all if ini <= m <= fim]
+n_ref = len(refs_sel)
+i0 = meses_all.index(refs_sel[0]) if refs_sel else 0
+refs_prev = meses_all[max(0, i0 - n_ref):i0] if n_ref else []
 
-# Período anterior (mesmo nº de dias) para comparativo
-n_dias = (pd.Timestamp(dt_fim) - pd.Timestamp(dt_ini)).days + 1
-prev_fim = pd.Timestamp(dt_ini) - pd.Timedelta(days=1)
-prev_ini = prev_fim - pd.Timedelta(days=n_dias - 1)
-df_prev = base[(base["Data"] >= prev_ini) & (base["Data"] <= prev_fim)].copy()
-if origem_sel:
-    df_prev = df_prev[df_prev["Origem"].isin(origem_sel)]
-if class_sel:
-    df_prev = df_prev[df_prev["Classificação"].isin(class_sel)]
-if trans_sel:
-    df_prev = df_prev[df_prev["Transação"].isin(trans_sel)]
+df = base[base["Ref"].isin(refs_sel)].copy()
+if grupo_sel:
+    df = df[df["Grupo"].isin(grupo_sel)]
+if cat_sel:
+    df = df[df["Categoria"].isin(cat_sel)]
+
+df_prev = base[base["Ref"].isin(refs_prev)].copy()
+if grupo_sel:
+    df_prev = df_prev[df_prev["Grupo"].isin(grupo_sel)]
+if cat_sel:
+    df_prev = df_prev[df_prev["Categoria"].isin(cat_sel)]
 
 # ==============================================================================
 # MÉTRICAS
 # ==============================================================================
-total = float(df["Valor"].sum())
-total_prev = float(df_prev["Valor"].sum())
-delta_pct = ((total / total_prev) - 1) * 100 if total_prev else (100.0 if total else 0.0)
+ent = float(df.loc[df["Tipo"] == "Entrada", "Valor"].sum())
+sai = float(df.loc[df["Tipo"] == "Saída", "Valor"].sum())
+liq = ent - sai
 
-tot_desp = float(df.loc[df["Origem"] == "Despesas", "Valor"].sum())
-tot_bord = float(df.loc[df["Origem"] == "Borderô", "Valor"].sum())
-n_lanc = len(df)
-n_class = df["Classificação"].nunique()
+ent_p = float(df_prev.loc[df_prev["Tipo"] == "Entrada", "Valor"].sum())
+sai_p = float(df_prev.loc[df_prev["Tipo"] == "Saída", "Valor"].sum())
+liq_p = ent_p - sai_p
 
-media_dia = total / n_dias if n_dias else 0.0
-
-# Top classificação
-if not df.empty:
-    top_class = df.groupby("Classificação")["Valor"].sum().sort_values(ascending=False)
-    top_nome = top_class.index[0]
-    top_val = float(top_class.iloc[0])
-else:
-    top_nome, top_val = "—", 0.0
+def delta_sub(atual, ant, invert=False):
+    """invert=True: aumento é ruim (saídas)."""
+    if not ant:
+        return "<div class='kpi-sub'>sem período anterior</div>"
+    v = (atual / ant - 1) * 100
+    if invert:
+        cls, seta = ("down", "↑") if v >= 0 else ("up", "↓")
+    else:
+        cls, seta = ("up", "↑") if v >= 0 else ("down", "↓")
+    return f"<div class='kpi-sub {cls}'>{seta} {pct(abs(v))} vs período anterior</div>"
 
 mapa_cores = {}
-
-txt_per = f"{dt_ini:%d/%m/%Y} – {dt_fim:%d/%m/%Y}"
-txt_orig = "Todas" if not origem_sel or set(origem_sel) == set(origens_all) else (
-    origem_sel[0] if len(origem_sel) == 1 else f"{len(origem_sel)} selecionadas"
-)
+txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
 
 # ==============================================================================
 # CABEÇALHO + KPIs
@@ -574,13 +651,12 @@ st.markdown(
     f"""
     <div class='top'>
         <div>
-            <h1>FLUXO DE CAIXA · SAÍDAS OPERACIONAIS</h1>
-            <p>Despesas (Base_Despesas) + Pagamentos Borderô (Base_Titulos)</p>
+            <h1>FLUXO DE CAIXA</h1>
+            <p>Receitas × saídas operacionais e borderô</p>
         </div>
         <div class='pills'>
             <div class='pill'><small>Período</small><b>{txt_per}</b></div>
-            <div class='pill'><small>Origem</small><b>{txt_orig}</b></div>
-            <div class='pill'><small>Lançamentos</small><b>{n_lanc:,}</b></div>
+            <div class='pill'><small>Resultado</small><b style="color:{'#059669' if liq>=0 else '#dc2626'}">{moeda_curta(liq)}</b></div>
         </div>
     </div>
     """,
@@ -589,94 +665,81 @@ st.markdown(
 for a in avisos:
     st.warning(a)
 
-if total_prev:
-    cls_d = "down" if delta_pct > 0 else "up"  # saída ↑ = pior (vermelho)
-    seta = "↑" if delta_pct >= 0 else "↓"
-    sub_delta = f"<div class='kpi-sub {cls_d}'>{seta} {pct(abs(delta_pct))} vs período anterior</div>"
-else:
-    sub_delta = "<div class='kpi-sub'>sem período anterior comparável</div>"
-
 kpi_html = f"""
 <div class='kpi-grid'>
+    <div class='kpi green'>
+        <div class='kpi-t'>Receitas</div>
+        <div class='kpi-v' style='color:{VERDE}'>{moeda(ent)}</div>
+        {delta_sub(ent, ent_p, invert=False)}
+    </div>
     <div class='kpi red'>
-        <div class='kpi-t'>Total de saídas</div>
-        <div class='kpi-v'>{moeda(total)}</div>
-        {sub_delta}
+        <div class='kpi-t'>Saídas totais</div>
+        <div class='kpi-v' style='color:{VERMELHO}'>{moeda(sai)}</div>
+        {delta_sub(sai, sai_p, invert=True)}
     </div>
     <div class='kpi'>
-        <div class='kpi-t'>Despesas (Base_Despesas)</div>
-        <div class='kpi-v'>{moeda(tot_desp)}</div>
-        <div class='kpi-sub'><b>{pct(div(tot_desp, total)*100)}</b> do total</div>
+        <div class='kpi-t'>Despesas operacionais</div>
+        <div class='kpi-v'>{moeda(float(df.loc[df['Grupo']=='Despesas','Valor'].sum()))}</div>
+        <div class='kpi-sub'><b>{pct(div(float(df.loc[df['Grupo']=='Despesas','Valor'].sum()), sai)*100)}</b> das saídas</div>
     </div>
-    <div class='kpi purple'>
-        <div class='kpi-t'>Borderô (Base_Titulos)</div>
-        <div class='kpi-v'>{moeda(tot_bord)}</div>
-        <div class='kpi-sub'><b>{pct(div(tot_bord, total)*100)}</b> do total</div>
-    </div>
-    <div class='kpi amber'>
-        <div class='kpi-t'>Média diária</div>
-        <div class='kpi-v'>{moeda(media_dia)}</div>
-        <div class='kpi-sub'>{n_dias} dia(s) no período</div>
-    </div>
-    <div class='kpi green'>
-        <div class='kpi-t'>Maior classificação</div>
-        <div class='kpi-v' style='font-size:15px'>{top_nome[:28]}{'…' if len(top_nome)>28 else ''}</div>
-        <div class='kpi-sub'>{moeda_curta(top_val)} · {pct(div(top_val, total)*100)}</div>
+    <div class='kpi {"green" if liq>=0 else "red"}'>
+        <div class='kpi-t'>Resultado líquido</div>
+        <div class='kpi-v' style='color:{"#059669" if liq>=0 else "#dc2626"}'>{moeda(liq)}</div>
+        {delta_sub(liq, liq_p, invert=False) if (ent_p or sai_p) else "<div class='kpi-sub'>receitas − saídas</div>"}
     </div>
 </div>
 """
 st.markdown(kpi_html, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 1 — Evolução + Composição
+# GRÁFICOS
 # ==============================================================================
 c1, c2 = st.columns([1.55, 1.0], gap="small")
 
 with c1:
     st.markdown(
-        "<div class='section-title' style='margin-top:4px'>Evolução mensal das saídas</div>",
+        "<div class='section-title' style='margin-top:4px'>Evolução mensal · Receitas × Saídas</div>",
         unsafe_allow_html=True,
     )
     if df.empty:
         st.markdown(vazio_html(), unsafe_allow_html=True)
     else:
-        por_mes = df.groupby("Ref")["Valor"].sum().sort_index()
-        por_mes_d = df[df["Origem"] == "Despesas"].groupby("Ref")["Valor"].sum().reindex(por_mes.index, fill_value=0)
-        por_mes_b = df[df["Origem"] == "Borderô"].groupby("Ref")["Valor"].sum().reindex(por_mes.index, fill_value=0)
-        x_lab = [rot_mes(m) for m in por_mes.index]
+        ent_m = df[df["Tipo"] == "Entrada"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+        sai_m = df[df["Tipo"] == "Saída"].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0)
+        liq_m = ent_m - sai_m
+        x_lab = [rot[m] for m in refs_sel]
 
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            x=x_lab, y=por_mes_d.values, name="Despesas",
-            marker_color=AZUL, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Despesas</extra>",
+            x=x_lab, y=ent_m.values, name="Receitas",
+            marker_color=VERDE, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Receitas</extra>",
         ))
         fig.add_trace(go.Bar(
-            x=x_lab, y=por_mes_b.values, name="Borderô",
-            marker_color=ROXO, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Borderô</extra>",
+            x=x_lab, y=sai_m.values, name="Saídas",
+            marker_color=VERMELHO, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Saídas</extra>",
         ))
         fig.add_trace(go.Scatter(
-            x=x_lab, y=por_mes.values, name="Total",
+            x=x_lab, y=liq_m.values, name="Resultado",
             mode="lines+markers",
-            line=dict(color=VERMELHO, width=2.5), marker=dict(size=7),
-            hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Total</extra>",
+            line=dict(color=AZUL, width=2.5), marker=dict(size=7),
+            hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Resultado</extra>",
         ))
-        fig.update_layout(barmode="stack", bargap=0.3)
+        fig.update_layout(barmode="group", bargap=0.25)
         st.plotly_chart(layout_fig(fig, 300), use_container_width=True, config={"displayModeBar": False})
 
 with c2:
     st.markdown(
-        "<div class='section-title' style='margin-top:4px'>Composição por classificação</div>",
+        "<div class='section-title' style='margin-top:4px'>Composição das saídas</div>",
         unsafe_allow_html=True,
     )
-    if df.empty:
-        st.markdown(vazio_html(), unsafe_allow_html=True)
+    sai_df = df[df["Tipo"] == "Saída"]
+    if sai_df.empty:
+        st.markdown(vazio_html("Sem saídas no período"), unsafe_allow_html=True)
     else:
-        g = df.groupby("Classificação")["Valor"].sum().sort_values(ascending=False)
-        # Agrupa cauda pequena em "Outros" para legibilidade
+        g = sai_df.groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
         if len(g) > 8:
             top = g.head(7)
-            outros = g.iloc[7:].sum()
-            g = pd.concat([top, pd.Series({"Outros": outros})])
+            g = pd.concat([top, pd.Series({"Outros": g.iloc[7:].sum()})])
         labels = g.index.tolist()
         cores = [cor_cat(x, mapa_cores) for x in labels]
         fig = go.Figure(go.Pie(
@@ -685,33 +748,34 @@ with c2:
             hovertemplate="%{label}<br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
         ))
         fig.update_layout(annotations=[dict(
-            text=f"<b style='color:#0f172a'>{moeda_curta(total)}</b>"
-                 f"<br><span style='font-size:10px;color:#64748b'>Total</span>",
+            text=f"<b style='color:#0f172a'>{moeda_curta(sai)}</b>"
+                 f"<br><span style='font-size:10px;color:#64748b'>Saídas</span>",
             showarrow=False, font=dict(size=13),
         )])
         st.plotly_chart(layout_fig(fig, 180, False), use_container_width=True, config={"displayModeBar": False})
         leg = "".join(
             f"<div class='leg'><i style='background:{cor_cat(x, mapa_cores)}'></i>"
-            f"<span>{x}</span><em>{pct(div(g[x], total)*100)}</em>"
+            f"<span>{x}</span><em>{pct(div(g[x], sai)*100)}</em>"
             f"<b>{moeda_curta(g[x])}</b></div>"
             for x in labels
         )
         st.markdown(leg, unsafe_allow_html=True)
 
 # ==============================================================================
-# LINHA 2 — Tabelas analíticas
+# TABELAS
 # ==============================================================================
-st.markdown("<div class='section-title'>Ranking por classificação FCx</div>", unsafe_allow_html=True)
-
-if df.empty:
-    st.markdown(vazio_html(), unsafe_allow_html=True)
+# Ranking saídas por classificação
+st.markdown("<div class='section-title'>Ranking de saídas por classificação</div>", unsafe_allow_html=True)
+sai_df = df[df["Tipo"] == "Saída"]
+if sai_df.empty:
+    st.markdown(vazio_html("Sem saídas no período"), unsafe_allow_html=True)
 else:
     rank = (
-        df.groupby("Classificação")
-        .agg(Valor=("Valor", "sum"), Qtd=("Valor", "count"))
+        sai_df.groupby("Categoria")
+        .agg(Valor=("Valor", "sum"))
         .sort_values("Valor", ascending=False)
     )
-    rank["%"] = rank["Valor"] / total * 100
+    rank["%"] = rank["Valor"] / sai * 100
     mx = rank["Valor"].max()
     rows = []
     for i, (nome, r) in enumerate(rank.iterrows(), 1):
@@ -719,121 +783,124 @@ else:
             f"<span class='mut'>{i}</span>",
             f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}",
             moeda(r["Valor"]),
-            int(r["Qtd"]),
             barra(div(r["Valor"], mx) * 100, cor_cat(nome, mapa_cores)),
             pct(r["%"]),
         ])
-    total_row = ["", "TOTAL", moeda(total), int(rank["Qtd"].sum()), "", "100,0%"]
     st.markdown(
-        tabela(["#", "Classificação", "Valor", "Qtd", "", "%"], rows, total_row, altura=360),
+        tabela(["#", "Classificação", "Valor", "", "%"], rows,
+               ["", "TOTAL", moeda(sai), "", "100,0%"], 360),
         unsafe_allow_html=True,
     )
 
-# Matriz Classificação × Mês
-st.markdown("<div class='section-title'>Classificação × mês</div>", unsafe_allow_html=True)
-
-if df.empty:
-    st.markdown(vazio_html(), unsafe_allow_html=True)
+# Ranking receitas
+st.markdown("<div class='section-title'>Ranking de receitas por origem</div>", unsafe_allow_html=True)
+ent_df = df[df["Tipo"] == "Entrada"]
+if ent_df.empty:
+    st.markdown(vazio_html("Sem receitas no período"), unsafe_allow_html=True)
 else:
-    mat = df.pivot_table(
-        index="Classificação", columns="Ref", values="Valor",
-        aggfunc="sum", fill_value=0.0,
+    rank = (
+        ent_df.groupby("Categoria")
+        .agg(Valor=("Valor", "sum"))
+        .sort_values("Valor", ascending=False)
     )
-    refs = sorted(mat.columns)
-    mat = mat.reindex(columns=refs, fill_value=0.0)
-    mat["__total__"] = mat.sum(axis=1)
-    mat = mat.sort_values("__total__", ascending=False)
-    x_lab = [rot_mes(m) for m in refs]
+    rank["%"] = rank["Valor"] / ent * 100 if ent else 0
+    mx = rank["Valor"].max()
+    rows = []
+    for i, (nome, r) in enumerate(rank.iterrows(), 1):
+        rows.append([
+            f"<span class='mut'>{i}</span>",
+            f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}",
+            moeda(r["Valor"]),
+            barra(div(r["Valor"], mx) * 100, VERDE),
+            pct(r["%"]),
+        ])
+    st.markdown(
+        tabela(["#", "Origem da receita", "Valor", "", "%"], rows,
+               ["", "TOTAL", moeda(ent), "", "100,0%"], 320),
+        unsafe_allow_html=True,
+    )
 
+# Matriz classificação × mês (saídas)
+st.markdown("<div class='section-title'>Saídas · classificação × mês</div>", unsafe_allow_html=True)
+if sai_df.empty:
+    st.markdown(vazio_html("Sem saídas no período"), unsafe_allow_html=True)
+else:
+    mat = sai_df.pivot_table(index="Categoria", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    mat = mat.reindex(columns=refs_sel, fill_value=0.0)
+    mat["__t__"] = mat.sum(axis=1)
+    mat = mat.sort_values("__t__", ascending=False)
+    x_lab = [rot[m] for m in refs_sel]
     rows = []
     for nome, r in mat.iterrows():
         rows.append(
             [f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}"]
-            + [moeda(r[m]) if abs(r[m]) > 0.005 else "—" for m in refs]
-            + [f"<b>{moeda(r['__total__'])}</b>"]
+            + [moeda(r[m]) if abs(r[m]) > 0.005 else "—" for m in refs_sel]
+            + [f"<b>{moeda(r['__t__'])}</b>"]
         )
-    tot_cols = [moeda(mat[m].sum()) for m in refs] + [moeda(mat["__total__"].sum())]
-    total_row = ["TOTAL"] + tot_cols
-    st.markdown(
-        tabela(["Classificação"] + x_lab + ["Total"], rows, total_row, altura=400),
-        unsafe_allow_html=True,
-    )
+    tot = ["TOTAL"] + [moeda(mat[m].sum()) for m in refs_sel] + [moeda(mat["__t__"].sum())]
+    st.markdown(tabela(["Classificação"] + x_lab + ["Total"], rows, tot, 400), unsafe_allow_html=True)
 
-# Por origem / transação
-l1, l2 = st.columns(2, gap="small")
-
-with l1:
-    st.markdown("<div class='section-title' style='margin-top:4px'>Por origem</div>", unsafe_allow_html=True)
-    if df.empty:
-        st.markdown(vazio_html(), unsafe_allow_html=True)
-    else:
-        g = df.groupby("Origem").agg(Valor=("Valor", "sum"), Qtd=("Valor", "count")).sort_values("Valor", ascending=False)
-        rows = []
-        for nome, r in g.iterrows():
-            tag = "origem-desp" if nome == "Despesas" else "origem-bord"
-            rows.append([
-                f"<span class='origem-tag {tag}'>{nome}</span>",
-                moeda(r["Valor"]),
-                int(r["Qtd"]),
-                pct(div(r["Valor"], total) * 100),
-            ])
-        st.markdown(
-            tabela(["Origem", "Valor", "Qtd", "%"], rows, ["TOTAL", moeda(total), int(g["Qtd"].sum()), "100,0%"], 260),
-            unsafe_allow_html=True,
+# Matriz receita × mês
+st.markdown("<div class='section-title'>Receitas · origem × mês</div>", unsafe_allow_html=True)
+if ent_df.empty:
+    st.markdown(vazio_html("Sem receitas no período"), unsafe_allow_html=True)
+else:
+    mat = ent_df.pivot_table(index="Categoria", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    mat = mat.reindex(columns=refs_sel, fill_value=0.0)
+    mat["__t__"] = mat.sum(axis=1)
+    mat = mat.sort_values("__t__", ascending=False)
+    x_lab = [rot[m] for m in refs_sel]
+    rows = []
+    for nome, r in mat.iterrows():
+        rows.append(
+            [f"<span class='dot' style='background:{cor_cat(nome, mapa_cores)}'></span>{nome}"]
+            + [moeda(r[m]) if abs(r[m]) > 0.005 else "—" for m in refs_sel]
+            + [f"<b>{moeda(r['__t__'])}</b>"]
         )
+    tot = ["TOTAL"] + [moeda(mat[m].sum()) for m in refs_sel] + [moeda(mat["__t__"].sum())]
+    st.markdown(tabela(["Origem"] + x_lab + ["Total"], rows, tot, 360), unsafe_allow_html=True)
 
-with l2:
-    st.markdown("<div class='section-title' style='margin-top:4px'>Por transação</div>", unsafe_allow_html=True)
-    if df.empty:
-        st.markdown(vazio_html(), unsafe_allow_html=True)
-    else:
-        g = df.groupby("Transação").agg(Valor=("Valor", "sum"), Qtd=("Valor", "count")).sort_values("Valor", ascending=False)
-        mx = g["Valor"].max()
-        rows = []
-        for i, (nome, r) in enumerate(g.iterrows(), 1):
-            rows.append([
-                f"<span class='mut'>{i}</span>",
-                nome,
-                moeda(r["Valor"]),
-                barra(div(r["Valor"], mx) * 100, AZUL),
-                pct(div(r["Valor"], total) * 100),
-            ])
-        st.markdown(
-            tabela(["#", "Transação", "Valor", "", "%"], rows, None, 260),
-            unsafe_allow_html=True,
-        )
-
-# Detalhamento diário / lançamentos
-st.markdown("<div class='section-title'>Detalhamento de lançamentos</div>", unsafe_allow_html=True)
-
+# Resumo mensal consolidado
+st.markdown("<div class='section-title'>Resumo mensal consolidado</div>", unsafe_allow_html=True)
 if df.empty:
     st.markdown(vazio_html(), unsafe_allow_html=True)
 else:
-    det = df.sort_values("Data", ascending=False).head(500)
     rows = []
-    for _, r in det.iterrows():
-        tag = "origem-desp" if r["Origem"] == "Despesas" else "origem-bord"
+    te = ts = tl = 0.0
+    for m in refs_sel:
+        e = float(df.loc[(df["Ref"] == m) & (df["Tipo"] == "Entrada"), "Valor"].sum())
+        s = float(df.loc[(df["Ref"] == m) & (df["Tipo"] == "Saída"), "Valor"].sum())
+        l = e - s
+        te += e
+        ts += s
+        tl += l
+        cor_l = VERDE if l >= 0 else VERMELHO
         rows.append([
-            r["Data"].strftime("%d/%m/%Y"),
-            f"<span class='origem-tag {tag}'>{r['Origem']}</span>",
-            r["Transação"],
-            r["Classificação"],
-            moeda(r["Valor"]),
+            rot[m],
+            f"<span style='color:{VERDE}'>{moeda(e)}</span>",
+            f"<span style='color:{VERMELHO}'>{moeda(s)}</span>",
+            f"<span style='color:{cor_l};font-weight:800'>{moeda(l)}</span>",
         ])
+    cor_tl = VERDE if tl >= 0 else VERMELHO
     st.markdown(
-        tabela(["Data", "Origem", "Transação", "Classificação", "Valor"], rows, None, 440),
+        tabela(
+            ["Mês", "Receitas", "Saídas", "Resultado"],
+            rows,
+            ["TOTAL", moeda(te), moeda(ts),
+             f"<span style='color:{cor_tl}'>{moeda(tl)}</span>"],
+            320,
+        ),
         unsafe_allow_html=True,
     )
-    if len(df) > 500:
-        st.caption(f"Exibindo os 500 lançamentos mais recentes de {len(df):,} no período.")
 
 # ==============================================================================
 # RODAPÉ SIDEBAR
 # ==============================================================================
 with st.sidebar:
     st.markdown(
-        f"<div class='side-card'><small>Período selecionado</small><b>{txt_per}</b></div>"
-        f"<div class='side-card'><small>Total filtrado</small><b>{moeda(total)}</b></div>"
+        f"<div class='side-card'><small>Período</small><b>{txt_per}</b></div>"
+        f"<div class='side-card'><small>Receitas</small><b style='color:#059669'>{moeda(ent)}</b></div>"
+        f"<div class='side-card'><small>Saídas</small><b style='color:#dc2626'>{moeda(sai)}</b></div>"
         f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
