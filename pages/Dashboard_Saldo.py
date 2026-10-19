@@ -500,7 +500,7 @@ def carregar_dados(data_inicio, data_fim):
                 col_data = df_ext.columns[1]
                 col_deb = df_ext.columns[4]
                 col_cred = df_ext.columns[5]
-                col_tipo = df_ext.columns[7]
+                col_tipo = df_ext.columns[7]       # Coluna H — tipo (Liberação de Empréstimo, etc.)
                 col_operac = df_ext.columns[10]
                 col_subgrupo = df_ext.columns[11]
 
@@ -590,7 +590,12 @@ def carregar_dados(data_inicio, data_fim):
         if df_extratos is not None and not df_extratos.empty:
             df_ext_caixa = df_extratos[df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])].copy()
             df_extratos_diario = df_ext_caixa.groupby('Data').agg({
-                'Vl Crédito': 'sum', 'Vl Débito': 'sum', 'Cred_Op': 'sum', 'Deb_Op': 'sum',
+                'Vl Crédito': 'sum',
+                'Vl Débito': 'sum',
+                'Cred_Op': 'sum',
+                'Deb_Op': 'sum',
+                'Cred_Emp': 'sum',
+                'Deb_Emp': 'sum',
             }).reset_index()
 
             df_graficos = df_extratos_diario.sort_values('Data').copy()
@@ -598,14 +603,23 @@ def carregar_dados(data_inicio, data_fim):
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
 
+            # Delta NÃO inclui Liberação de Empréstimo (coluna H).
+            # Saldo Final continua refletindo o caixa real (com empréstimo).
             saldos_iniciais, saldos_finais, delta_rs, delta_pct = [], [], [], []
             saldo_atual_iter = saldo_inicial_caixa
+            saldo_para_delta = saldo_inicial_caixa
             for _, row in df_graficos.iterrows():
                 si = saldo_atual_iter
                 mov = row['Vl Crédito'] - row['Vl Débito']
+                cred_emp = float(row.get('Cred_Emp', 0) or 0)
+                deb_emp = float(row.get('Deb_Emp', 0) or 0)
+                mov_delta = mov - cred_emp + deb_emp
+
                 sf = si + mov
-                d_rs = sf - saldo_inicial_caixa
-                d_pct = ((sf / saldo_inicial_caixa) - 1) * 100 if saldo_inicial_caixa != 0 else 0.0
+                saldo_para_delta = saldo_para_delta + mov_delta
+                d_rs = saldo_para_delta - saldo_inicial_caixa
+                d_pct = ((saldo_para_delta / saldo_inicial_caixa) - 1) * 100 if saldo_inicial_caixa != 0 else 0.0
+
                 saldos_iniciais.append(si)
                 saldos_finais.append(sf)
                 delta_rs.append(d_rs)
