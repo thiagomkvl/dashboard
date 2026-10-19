@@ -969,4 +969,68 @@ else:
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
     html.extend(linhas_df(df[df["Papel"] == "capex"], "(−) Desembolsos em CAPEX", "k"))
-    s_
+    s_cap = serie(df, "capex")
+    s_fci = -s_cap
+    html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
+
+    # 3. FCF
+    html.append(
+        "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.extend(linhas_df(df_captacao, "(+) Novas captações (empréstimos)", "p"))
+    s_cpt = serie(df, "captacao", tipo="Entrada")
+    html.append(linha_tot("Total captações", s_cpt, VERDE))
+
+    html.extend(linhas_df(df_amort, "(−) Amortizações de empréstimos", "a"))
+    s_amo = serie(df, "amortizacao")
+    html.append(linha_tot("Total amortizações", s_amo, VERMELHO))
+
+    html.extend(linhas_df(df_juros, "(−) Juros e encargos financeiros", "j"))
+    s_jur = serie(df, "juros")
+    html.append(linha_tot("Total juros e encargos", s_jur, VERMELHO))
+
+    s_fcf = s_cpt - s_amo - s_jur
+    html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
+
+    # Variação
+    s_var = s_fco + s_fci + s_fcf
+    html.append(
+        "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
+        + "".join(
+            f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
+            f"{moeda(float(s_var.get(m, 0)))}</span></td>"
+            for m in refs_sel
+        )
+        + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
+        f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
+    )
+
+    d_out = df[df["Papel"] == "outros"]
+    if not d_out.empty:
+        html.append(
+            "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
+            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+        )
+        html.extend(linhas_df(d_out, None, "o"))
+
+    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
+    st.markdown(
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+        f"{''.join(html)}</table></div>",
+        unsafe_allow_html=True,
+    )
+
+with st.sidebar:
+    st.markdown(
+        f"<div class='side-card'><small>FCO</small>"
+        f"<b style='color:{'#059669' if fco >= 0 else '#dc2626'}'>{moeda(fco)}</b></div>"
+        f"<div class='side-card'><small>FCI</small>"
+        f"<b style='color:{'#059669' if fci >= 0 else '#dc2626'}'>{moeda(fci)}</b></div>"
+        f"<div class='side-card'><small>FCF</small>"
+        f"<b style='color:{'#059669' if fcf >= 0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
+        f"<div class='side-card'><small>Captações</small><b style='color:#059669'>{moeda(captacao)}</b></div>"
+        f"<div class='side-card'><small>Última atualização</small>"
+        f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
+        unsafe_allow_html=True,
+    )
