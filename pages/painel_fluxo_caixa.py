@@ -28,7 +28,7 @@ except Exception as _err:
         return None
 
 # ==============================================================================
-# PALETA — tema claro / clean
+# CONFIG
 # ==============================================================================
 AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
 ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
@@ -44,46 +44,9 @@ ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
 ABA_CLASSIF = "Classificacao_FCx"
 
-# Tipos de fluxo (coluna C)
 FLUXO_OP = "Fluxo de Caixa Operacional"
 FLUXO_INV = "Fluxo de Caixa de Investimentos"
 FLUXO_FIN = "Fluxo de Caixa de Financiamento"
-
-# Classificações de RECEITA operacional (sinais +)
-RECEITAS_OP = {
-    "alugueis", "aluguéis", "aluguel",
-    "convenio", "convênio", "convenios", "convênios",
-    "particular",
-    "outras receitas",
-}
-
-# Classificações de CUSTO/DESPESA operacional (sinais −)
-CUSTOS_OP = {
-    "pessoal",
-    "servicos de terceiros e operacionais", "serviços de terceiros e operacionais",
-    "utilidades e infraestrutura",
-    "materiais, medicamentos e opme",
-    "honorarios medicos", "honorários médicos",
-    "despesas administrativas e gerais",
-    "despesas bancarias e tarifas", "despesas bancárias e tarifas",
-    "outras despesas operacionais",
-}
-
-# Impostos operacionais (sinais −)
-IMPOSTOS_OP = {
-    "impostos correntes",
-    "impostos parcelados",
-    "impostos e parcelamentos",  # legado
-    "impostos e taxas",          # legado
-}
-
-# CAPEX (FCI −)
-CAPEX = {"investimentos / capex", "investimentos/capex", "capex"}
-
-# Financiamento (FCF)
-AMORTIZACOES = {"amortizacao de emprestimos", "amortização de empréstimos"}
-JUROS = {"juros e encargos financeiros"}
-CAPTACOES = {"novas captacoes", "novas captações", "captacao", "captação", "liberacao de emprestimo", "liberação de empréstimo"}
 
 TRANSACOES_DESPESAS = {
     "despesas administrativas", "despesas financeiras", "despesas judiciais",
@@ -109,7 +72,7 @@ MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
 
 SKIP_LABELS = {
     "", "nan", "none", "total", "total geral", "soma", "geral",
-    "mes", "mês", "convenios", "convênios", "origem", "origem receita",
+    "mes", "mês", "origem", "origem receita",
     "conta contabil", "conta contábil", "classificacao", "classificação",
     "transacao", "transação", "sum de vl debito", "sum de vl débito",
     "adiantamento fornecedores - banco total", "adiantamento fornecedores - banco",
@@ -162,13 +125,12 @@ css = """
         color: #fff !important; border: none !important; border-radius: 10px !important;
         font-weight: 700 !important; padding: 0.55rem 1rem !important;
     }
-    [data-testid="stSidebar"] .stButton > button:hover { filter: brightness(1.06); color: #fff !important; }
 
     .top {
         display: flex; justify-content: space-between; align-items: center; gap: 16px;
         padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0;
     }
-    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px; }
+    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
     .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
     .pills { display: flex; gap: 10px; flex-wrap: wrap; }
     .pill {
@@ -192,11 +154,11 @@ css = """
     .kpi.purple { border-left-color: #7c3aed; }
     .kpi-t {
         font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
-        text-transform: uppercase; color: #64748b; line-height: 1.25;
+        text-transform: uppercase; color: #64748b;
     }
     .kpi-v {
         font-size: 18px; font-weight: 800; color: #0f172a; margin: 8px 0 4px;
-        letter-spacing: -0.3px; font-variant-numeric: tabular-nums; white-space: nowrap;
+        font-variant-numeric: tabular-nums; white-space: nowrap;
     }
     .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
 
@@ -211,9 +173,9 @@ css = """
     }
     .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
     .tbl th {
-        background: #f8fafc; color: #64748b;
-        font-weight: 700; font-size: 11px; text-align: left; padding: 8px 10px;
-        border-bottom: 1px solid #e2e8f0; white-space: nowrap; text-transform: uppercase;
+        background: #f8fafc; color: #64748b; font-weight: 700; font-size: 11px;
+        text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap; text-transform: uppercase;
     }
     .tbl td {
         padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
@@ -221,31 +183,24 @@ css = """
     }
     .tbl tbody tr:hover td { background: #f8fafc; }
     .tbl tr.tot td {
-        font-weight: 800; color: #0f172a; background: #f1f5f9;
-        border-top: 1px solid #e2e8f0;
+        font-weight: 800; color: #0f172a; background: #f1f5f9; border-top: 1px solid #e2e8f0;
     }
     .tbl tr.sec td {
         font-weight: 800; color: #0f172a; background: #eef2ff;
         border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
-        letter-spacing: 0.4px;
     }
     .tbl tr.subsec td {
-        font-weight: 700; color: #334155; background: #f8fafc;
-        font-size: 11px;
+        font-weight: 700; color: #334155; background: #f8fafc; font-size: 11px;
     }
     .tbl tr.res td {
         font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
     }
-    .tbl tr.sub-row td {
-        background: #fafbfc; color: #64748b; font-size: 11px;
-    }
+    .tbl tr.sub-row td { background: #fafbfc; color: #64748b; font-size: 11px; }
     .tbl tr.sub-row td:first-child { padding-left: 28px; }
-    .tbl .mut { color: #94a3b8; }
     .dot {
         display: inline-block; width: 8px; height: 8px; border-radius: 50%;
         margin-right: 8px; vertical-align: middle;
     }
-
     .drill-label {
         cursor: pointer; display: flex; align-items: center; gap: 6px;
         margin: 0; font-weight: 700; color: #0f172a; user-select: none;
@@ -258,7 +213,6 @@ css = """
     .grp .sub-row { display: none; }
     .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
-
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """
@@ -338,24 +292,20 @@ def parse_mes_header(h, ano_ref=None):
         if 20000 < n < 80000:
             d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
             return pd.Timestamp(ano_ref or ANO_REF, d.month, 1)
-
     t = normalizar(h)
     if not t or t in SKIP_HEADER or "total" in t:
         return None
-
     m = re.match(r"^([a-z]{3,9})(?:\s+(\d{2,4}))?$", t)
     if m:
         chave = m.group(1)
         mes = MESES_MAP.get(chave) or MESES_MAP.get(chave[:3])
         if mes:
+            ano = ano_ref or ANO_REF
             if m.group(2):
                 ano = int(m.group(2))
                 if ano < 100:
                     ano += 2000
-            else:
-                ano = ano_ref or ANO_REF
             return pd.Timestamp(ano, mes, 1)
-
     m = re.match(r"^(\d{1,2})\s+(\d{2,4})$", t)
     if m:
         mes, ano = int(m.group(1)), int(m.group(2))
@@ -380,21 +330,11 @@ def moeda_curta(v):
     a = abs(v)
     if a < 0.005:
         return "—"
-    if a >= 1e9:
-        return f"R$ {_br(v / 1e9, 1)}Bi"
     if a >= 1e6:
         return f"R$ {_br(v / 1e6, 1)}M"
     if a >= 1e3:
         return f"R$ {_br(v / 1e3, 1)}K"
     return f"R$ {_br(v, 0)}"
-
-
-def pct(v):
-    return f"{_br(v, 1)}%"
-
-
-def div(a, b):
-    return a / b if b else 0.0
 
 
 def rot_mes(ts):
@@ -405,9 +345,6 @@ def col_por_letra(df, letra):
     idx = ord(letra.upper()) - ord("A")
     if 0 <= idx < len(df.columns):
         return df.columns[idx]
-    for c in df.columns:
-        if normalizar(c) == letra.lower():
-            return c
     return None
 
 
@@ -429,62 +366,39 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
     cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
-
     ano = ano_ref or ANO_REF
     col_headers = [str(c) if c is not None else "" for c in raw.columns]
     data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
-
-    n_rows = len(data)
-    n_cols = max((len(r) for r in data), default=0)
+    n_rows, n_cols = len(data), max((len(r) for r in data), default=0)
     if n_cols == 0:
         return pd.DataFrame(columns=cols_out)
-
-    grid = []
-    for r in data:
-        row = list(r) + [None] * (n_cols - len(r))
-        grid.append(row[:n_cols])
+    grid = [list(r) + [None] * (n_cols - len(r)) for r in data]
+    grid = [r[:n_cols] for r in grid]
 
     def score_header(row):
-        return sum(
-            1 for j in range(start_col_idx, n_cols)
-            if parse_mes_header(row[j], ano) is not None
-        )
+        return sum(1 for j in range(start_col_idx, n_cols) if parse_mes_header(row[j], ano) is not None)
 
-    hr = 0
-    best_s = score_header(grid[0])
+    hr, best_s = 0, score_header(grid[0])
     for i in range(min(6, n_rows)):
         s = score_header(grid[i])
         if s > best_s:
             hr, best_s = i, s
-
     if 0 <= header_row_idx < n_rows:
-        s_caller = score_header(grid[header_row_idx])
-        if s_caller >= best_s and s_caller >= 3:
+        s_c = score_header(grid[header_row_idx])
+        if s_c >= best_s and s_c >= 3:
             hr = header_row_idx
 
     header = grid[hr]
     li = col_label_idx if 0 <= col_label_idx < n_cols else 0
-
     mapa_mes = {}
     for j in range(start_col_idx, n_cols):
         ref = parse_mes_header(header[j], ano)
         if ref is not None:
             mapa_mes[j] = ref
-
-    if not mapa_mes:
-        k = 0
-        for j in range(start_col_idx, min(start_col_idx + 14, n_cols)):
-            nt = normalizar(header[j]) if header[j] is not None else ""
-            if not nt or nt in SKIP_HEADER or "total" in nt:
-                continue
-            k += 1
-            if 1 <= k <= 12:
-                mapa_mes[j] = pd.Timestamp(ano, k, 1)
-
     if not mapa_mes:
         return pd.DataFrame(columns=cols_out)
 
-    registros = []
+    reg = []
     for i in range(hr + 1, n_rows):
         row = grid[i]
         cat = row[li] if li < len(row) else None
@@ -496,25 +410,20 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             continue
         if "adiantamento fornecedores" in ncat and "total" in ncat:
             continue
-
         for j, ref in mapa_mes.items():
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            registros.append({
-                "Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo,
-            })
-
-    if not registros:
+            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo})
+    if not reg:
         return pd.DataFrame(columns=cols_out)
-    return pd.DataFrame(registros)[cols_out]
+    return pd.DataFrame(reg)[cols_out]
 
 
 # ==============================================================================
-# MAPA: Descrição → (Classificação FCx, Fluxo de Caixa)
+# DE-PARA (A=Descrição, B=Classificação FCx, C=Fluxo de Caixa)
 # ==============================================================================
 def _mapa_de_dataframe(df_map):
-    """Retorna dict normalizar_chave(desc) -> (Classificação FCx, Fluxo de Caixa)."""
     if df_map is None or df_map.empty:
         return {}
     cols = list(df_map.columns)
@@ -523,9 +432,7 @@ def _mapa_de_dataframe(df_map):
         n = normalizar(c)
         if n in ("descricao", "descrição", "conta contabil", "conta contábil", "categoria"):
             c_desc = c
-        if n in ("classificacao fcx", "classificação fcx") or (
-            "classific" in n and "fluxo" not in n
-        ):
+        if ("classific" in n) and ("fluxo" not in n):
             c_cls = c
         if "fluxo" in n:
             c_flx = c
@@ -535,7 +442,7 @@ def _mapa_de_dataframe(df_map):
         c_cls = cols[1]
     if c_flx is None and len(cols) > 2:
         c_flx = cols[2]
-    if c_desc is None or c_cls is None:
+    if not c_desc or not c_cls:
         return {}
 
     out = {}
@@ -544,23 +451,17 @@ def _mapa_de_dataframe(df_map):
         c = str(r[c_cls]).strip() if pd.notna(r[c_cls]) else ""
         f = str(r[c_flx]).strip() if (c_flx and pd.notna(r[c_flx])) else ""
         nd = normalizar_chave(d)
-        nc = normalizar(c)
-        if not nd or nd in SKIP_LABELS or nd in (
-            "receitas", "saidas", "saídas", "total receitas", "total saidas", "total saídas",
-        ):
+        if not nd or nd in SKIP_LABELS:
             continue
-        if not nc or nc in SKIP_LABELS:
+        if not c or normalizar(c) in SKIP_LABELS:
             continue
-        # normaliza rótulo do fluxo
         nf = normalizar(f)
         if "invest" in nf:
             fluxo = FLUXO_INV
         elif "financ" in nf:
             fluxo = FLUXO_FIN
-        elif "operac" in nf:
-            fluxo = FLUXO_OP
         else:
-            fluxo = f if f else FLUXO_OP
+            fluxo = FLUXO_OP
         out[nd] = (c, fluxo)
     return out
 
@@ -579,18 +480,14 @@ def carregar_mapa_classificacao():
                 pass
     except Exception:
         pass
-
     for path in [
         "RegraFCx_Ajustado.xlsx",
-        "Classificacao_FCx_Concluida.xlsx",
-        os.path.join("data", "RegraFCx_Ajustado.xlsx"),
         "/home/workdir/attachments/RegraFCx_Ajustado.xlsx",
-        "/home/workdir/attachments/Classificacao_FCx_Concluida.xlsx",
+        "Classificacao_FCx_Concluida.xlsx",
     ]:
         if os.path.isfile(path):
             try:
-                raw = pd.read_excel(path)
-                m = _mapa_de_dataframe(raw)
+                m = _mapa_de_dataframe(pd.read_excel(path))
                 if m:
                     return m
             except Exception:
@@ -599,42 +496,52 @@ def carregar_mapa_classificacao():
 
 
 def aplicar_classificacao(categoria, mapa):
-    """Retorna (Classificação FCx, Fluxo de Caixa, Detalhe)."""
     n = normalizar_chave(categoria)
     if not n:
         return "Não classificado", FLUXO_OP, categoria
     if n in mapa:
         cls, flx = mapa[n]
         return cls, flx, categoria
-    candidatos = []
+    cand = []
     for k, (cls, flx) in mapa.items():
-        if len(k) < 8:
-            continue
-        if k in n or n in k:
-            candidatos.append((len(k), cls, flx))
-    if candidatos:
-        candidatos.sort(reverse=True)
-        return candidatos[0][1], candidatos[0][2], categoria
+        if len(k) >= 8 and (k in n or n in k):
+            cand.append((len(k), cls, flx))
+    if cand:
+        cand.sort(reverse=True)
+        return cand[0][1], cand[0][2], categoria
     return "Não classificado", FLUXO_OP, categoria
 
 
 def papel_classif(classif):
-    """Papel da classificação nas fórmulas FCO / FCI / FCF."""
+    """Define o papel da Classificação FCx nas fórmulas FCO/FCI/FCF."""
     n = normalizar(classif)
-    if n in RECEITAS_OP or any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
+    # Receitas operacionais
+    if any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
         return "receita_op"
-    if n in IMPOSTOS_OP or n.startswith("imposto"):
+    # Impostos
+    if "imposto" in n:
         return "imposto"
-    if n in CUSTOS_OP:
-        return "custo_op"
-    if n in CAPEX or "capex" in n or "investimento" in n:
+    # CAPEX
+    if "capex" in n or "investimento" in n:
         return "capex"
-    if n in AMORTIZACOES or "amortiza" in n:
+    # Financiamento
+    if "amortiza" in n:
         return "amortizacao"
-    if n in JUROS or ("juros" in n and "encargo" in n):
+    if "juros" in n:
         return "juros"
-    if n in CAPTACOES or "captac" in n or "liberacao de emprestimo" in n:
+    if "captac" in n or "liberacao de emprestimo" in n:
         return "captacao"
+    # Custos operacionais (resto operacional de saída)
+    if n in (
+        "pessoal", "honorarios medicos", "servicos de terceiros e operacionais",
+        "utilidades e infraestrutura", "materiais, medicamentos e opme",
+        "despesas administrativas e gerais", "despesas bancarias e tarifas",
+        "outras despesas operacionais",
+    ) or any(x in n for x in (
+        "pessoal", "honorario", "terceiros", "utilidade", "opme",
+        "administrativ", "bancari", "outras despesas",
+    )):
+        return "custo_op"
     return "outros"
 
 
@@ -648,8 +555,7 @@ def carregar_fluxo():
     avisos = []
     conn = conectar_sheets()
     if conn is None:
-        return vazio, ["Conexão com o Google Sheets indisponível."]
-
+        return vazio, ["Conexão indisponível."]
     partes = []
 
     # Base_Despesas
@@ -657,20 +563,13 @@ def carregar_fluxo():
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
         raw_d = None
-        avisos.append(f"Não foi possível ler despesas operacionais: {e}")
-
+        avisos.append(f"Despesas: {e}")
     if raw_d is not None and not raw_d.empty:
         df = raw_d.copy()
-        c_data = col_por_letra(df, "B") or col_por_nomes(df, ["Data", "Data Lançamento", "Dt"])
-        c_trans = col_por_letra(df, "D") or col_por_nomes(
-            df, ["Transação FCx", "Transacao FCx", "Transação", "Transacao"]
-        )
-        c_clas = col_por_letra(df, "E") or col_por_nomes(
-            df, ["Classificação FCx", "Classificacao FCx", "Classificação", "Classificacao"]
-        )
-        c_val = col_por_letra(df, "F") or col_por_nomes(
-            df, ["Vl Débito", "Vl Debito", "Valor Débito", "Valor Debito", "Débito", "Debito", "Valor"]
-        )
+        c_data = col_por_letra(df, "B") or col_por_nomes(df, ["Data"])
+        c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx"])
+        c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx"])
+        c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor"])
         if all([c_data, c_trans, c_clas, c_val]):
             tmp = pd.DataFrame({
                 "Data": df[c_data].apply(parse_data),
@@ -683,19 +582,15 @@ def carregar_fluxo():
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
                 g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
-                g["Tipo"] = "Saída"
-                g["Grupo"] = "Despesas"
+                g["Tipo"], g["Grupo"] = "Saída", "Despesas"
                 partes.append(g[cols])
-        else:
-            avisos.append("Despesas operacionais: estrutura de colunas não reconhecida.")
 
     # Borderô
     try:
         raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
     except Exception as e:
         raw_b = None
-        avisos.append(f"Não foi possível ler borderô de despesas: {e}")
-
+        avisos.append(f"Borderô: {e}")
     if raw_b is not None and not raw_b.empty:
         mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
         if mb.empty:
@@ -704,16 +599,13 @@ def carregar_fluxo():
             mb = mb.copy()
             mb["Grupo"] = "Borderô"
             partes.append(mb[cols])
-        else:
-            avisos.append("Borderô de despesas: nenhum valor mensal encontrado.")
 
     # Adiantamentos
     try:
         raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
     except Exception as e:
         raw_a = None
-        avisos.append(f"Não foi possível ler adiantamentos: {e}")
-
+        avisos.append(f"Adiantamentos: {e}")
     if raw_a is not None and not raw_a.empty:
         ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
         if ma.empty:
@@ -722,16 +614,13 @@ def carregar_fluxo():
             ma = ma.copy()
             ma["Grupo"] = "Adiantamentos"
             partes.append(ma[cols])
-        else:
-            avisos.append("Adiantamentos: nenhum valor mensal encontrado.")
 
     # Receita
     try:
         raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
     except Exception as e:
         raw_r = None
-        avisos.append(f"Não foi possível ler receitas: {e}")
-
+        avisos.append(f"Receita: {e}")
     if raw_r is not None and not raw_r.empty:
         mr = melt_matriz(raw_r, 0, 0, 1, "Entrada", ANO_REF)
         if mr.empty:
@@ -740,17 +629,13 @@ def carregar_fluxo():
             mr = mr.copy()
             mr["Grupo"] = "Receita"
             partes.append(mr[cols])
-        else:
-            avisos.append("Receitas: nenhum valor mensal encontrado.")
 
     if not partes:
-        return vazio, avisos or ["Nenhum lançamento encontrado."]
-
+        return vazio, avisos or ["Nenhum lançamento."]
     base = pd.concat(partes, ignore_index=True)
     base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
     base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
-    base = base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True)
-    return base, avisos
+    return base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
 
 
 base, avisos = carregar_fluxo()
@@ -759,7 +644,7 @@ mapa_cls = carregar_mapa_classificacao()
 if base.empty:
     for a in avisos:
         st.warning(a)
-    st.warning("⚠️ Nenhum dado de fluxo de caixa disponível.")
+    st.warning("⚠️ Nenhum dado disponível.")
     st.stop()
 
 base = base.copy()
@@ -780,58 +665,38 @@ with st.sidebar:
     c_a, c_b = st.columns(2)
     ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
     fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
-
     grupos_all = sorted(base["Grupo"].unique().tolist())
-    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all, placeholder="Todos")
-
+    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all)
     if st.button("↻ Atualizar dados", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-
     st.markdown(
-        f"<div class='side-card'><small>De-para</small>"
-        f"<b>{len(mapa_cls)} classificações</b></div>" if mapa_cls else
-        "<div class='side-card'><small>De-para</small>"
-        "<b style='color:#d97706'>Mapa não carregado</b></div>",
+        f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>",
         unsafe_allow_html=True,
     )
 
 if ini > fim:
     ini, fim = fim, ini
 refs_sel = [m for m in meses_all if ini <= m <= fim]
-
 df = base[base["Ref"].isin(refs_sel)].copy()
 if grupo_sel:
     df = df[df["Grupo"].isin(grupo_sel)]
 
 # ==============================================================================
-# CÁLCULOS GERENCIAIS (FCO / FCI / FCF)
+# FÓRMULAS
 # ==============================================================================
-def soma_papel(d, papeis, tipo=None):
-    m = d["Papel"].isin(papeis)
-    if tipo:
-        m = m & (d["Tipo"] == tipo)
-    return float(d.loc[m, "Valor"].sum())
+def total_papel(d, papel):
+    return float(d.loc[d["Papel"] == papel, "Valor"].sum())
 
 
-# Valores absolutos por papel (receitas = entradas; demais = saídas da base)
-rec_op = soma_papel(df, ["receita_op"], "Entrada")
-# Se receita veio classificada mas Tipo Entrada vazio, soma pelo papel
-if rec_op < 0.01:
-    rec_op = float(df.loc[df["Papel"] == "receita_op", "Valor"].sum())
+rec_op = total_papel(df, "receita_op")
+custo_op = total_papel(df, "custo_op")
+impostos = total_papel(df, "imposto")
+capex = total_papel(df, "capex")
+amort = total_papel(df, "amortizacao")
+juros = total_papel(df, "juros")
+captacao = total_papel(df, "captacao")
 
-custo_op = float(df.loc[df["Papel"] == "custo_op", "Valor"].sum())
-impostos = float(df.loc[df["Papel"] == "imposto", "Valor"].sum())
-capex = float(df.loc[df["Papel"] == "capex", "Valor"].sum())
-amort = float(df.loc[df["Papel"] == "amortizacao", "Valor"].sum())
-juros = float(df.loc[df["Papel"] == "juros", "Valor"].sum())
-captacao = float(df.loc[df["Papel"] == "captacao", "Valor"].sum())
-# captação também pode vir como Entrada
-captacao += float(df.loc[(df["Papel"] == "captacao") & (df["Tipo"] == "Entrada"), "Valor"].sum())
-# evita double-count se já estava em Valor
-captacao = float(df.loc[df["Papel"] == "captacao", "Valor"].sum())
-
-# Fórmulas
 fco = rec_op - custo_op - impostos
 fci = -capex
 fcf = captacao - amort - juros
@@ -842,7 +707,7 @@ txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
 x_lab = [rot[m] for m in refs_sel]
 
 # ==============================================================================
-# CABEÇALHO + KPIs
+# UI
 # ==============================================================================
 st.markdown(
     f"""
@@ -854,8 +719,7 @@ st.markdown(
         <div class='pills'>
             <div class='pill'><small>Período</small><b>{txt_per}</b></div>
             <div class='pill'><small>Variação líquida</small>
-                <b style="color:{'#059669' if variacao>=0 else '#dc2626'}">{moeda_curta(variacao)}</b>
-            </div>
+                <b style="color:{'#059669' if variacao>=0 else '#dc2626'}">{moeda_curta(variacao)}</b></div>
         </div>
     </div>
     """,
@@ -870,7 +734,7 @@ st.markdown(
     <div class='kpi green'>
         <div class='kpi-t'>FCO · Operacional</div>
         <div class='kpi-v' style='color:{"#059669" if fco>=0 else "#dc2626"}'>{moeda(fco)}</div>
-        <div class='kpi-sub'>Receitas − custos − impostos</div>
+        <div class='kpi-sub'>Receitas {moeda_curta(rec_op)} − Custos − Impostos</div>
     </div>
     <div class='kpi amber'>
         <div class='kpi-t'>FCI · Investimentos</div>
@@ -880,7 +744,7 @@ st.markdown(
     <div class='kpi purple'>
         <div class='kpi-t'>FCF · Financiamento</div>
         <div class='kpi-v' style='color:{"#059669" if fcf>=0 else "#dc2626"}'>{moeda(fcf)}</div>
-        <div class='kpi-sub'>Captações − amort. − juros</div>
+        <div class='kpi-sub'>Captações − Amort. − Juros</div>
     </div>
     <div class='kpi {"green" if variacao>=0 else "red"}'>
         <div class='kpi-t'>Variação líquida de caixa</div>
@@ -892,104 +756,72 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ==============================================================================
-# TABELA GERENCIAL
-# ==============================================================================
 st.markdown(
-    "<div class='section-title'>Demonstrativo de fluxo de caixa · clique na seta para a composição</div>",
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · clique na seta para composição</div>",
     unsafe_allow_html=True,
 )
 
 
-def linhas_grupo(d, classifs_filtro, titulo_sub, uid_prefix, cor_titulo=None):
-    """Gera linhas HTML para um subgrupo de classificações (com drill-down)."""
-    rows = []
-    if classifs_filtro is not None:
-        d = d[d["Classif"].isin(classifs_filtro)]
-    if d.empty:
-        return rows, 0.0
+def serie(d, papel, sinal=1.0):
+    s = d[d["Papel"] == papel].groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
+    return s * sinal
 
-    piv = d.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+
+def linhas_papel(d, papel, titulo, uid_prefix):
+    rows = []
+    x = d[d["Papel"] == papel]
+    if x.empty:
+        return rows
+    rows.append(
+        f"<tr class='subsec'><td>{titulo}</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    piv = x.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
     piv = piv.reindex(columns=refs_sel, fill_value=0.0)
     piv["__t__"] = piv.sum(axis=1)
     piv = piv.sort_values("__t__", ascending=False)
-
-    det = d.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
-    total = float(piv["__t__"].sum())
-
-    if titulo_sub:
-        rows.append(
-            f"<tr class='subsec'><td>{titulo_sub}</td>"
-            + "".join("<td></td>" for _ in refs_sel)
-            + "<td></td></tr>"
-        )
-
+    det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
     uid = 0
     for classif, r in piv.iterrows():
         uid += 1
         key = f"{uid_prefix}_{uid}"
         cor = cor_cat(classif, mapa_cores)
         sub = det[det["Classif"] == classif]
-        tem_sub = sub["Detalhe"].nunique() > 1 or (
+        tem = sub["Detalhe"].nunique() > 1 or (
             sub["Detalhe"].nunique() == 1
             and normalizar_chave(sub["Detalhe"].iloc[0]) != normalizar_chave(classif)
         )
-        if tem_sub:
+        if tem:
             label = (
                 f"<label class='drill-label' for='{key}'>"
                 f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span>"
-                f"<span class='dot' style='background:{cor}'></span>{classif}"
-                f"</label>"
+                f"<span class='dot' style='background:{cor}'></span>{classif}</label>"
             )
         else:
             label = f"<span class='dot' style='background:{cor}'></span>{classif}"
-
         cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
-        if tem_sub:
-            rows.append(
-                f"<tbody class='grp'><tr><td>{label}</td>"
-                + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
-            )
-            piv_sub = sub.pivot_table(
-                index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0,
-            )
-            piv_sub = piv_sub.reindex(columns=refs_sel, fill_value=0.0)
-            piv_sub["__t__"] = piv_sub.sum(axis=1)
-            piv_sub = piv_sub.sort_values("__t__", ascending=False)
-            for det_nome, rd in piv_sub.iterrows():
+        if tem:
+            rows.append(f"<tbody class='grp'><tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+            ps = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+            ps = ps.reindex(columns=refs_sel, fill_value=0.0)
+            ps["__t__"] = ps.sum(axis=1)
+            ps = ps.sort_values("__t__", ascending=False)
+            for dn, rd in ps.iterrows():
                 sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
-                rows.append(
-                    f"<tr class='sub-row'><td>↳ {det_nome}</td>"
-                    + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
-                )
+                rows.append(f"<tr class='sub-row'><td>↳ {dn}</td>" + "".join(f"<td>{c}</td>" for c in sc) + "</tr>")
             rows.append("</tbody>")
         else:
             rows.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+    return rows
 
-    return rows, total
 
-
-def linha_total(label, valor_por_mes, total, cor):
-    cells = []
-    for m in refs_sel:
-        v = float(valor_por_mes.get(m, 0.0)) if hasattr(valor_por_mes, "get") else float(valor_por_mes[m] if m in valor_por_mes.index else 0)
-        cells.append(f"<td><span style='color:{cor}'>{moeda(v)}</span></td>")
+def linha_tot(label, s, cor):
     return (
         f"<tr class='tot'><td><b>{label}</b></td>"
-        + "".join(cells)
-        + f"<td><span style='color:{cor}'><b>{moeda(total)}</b></span></td></tr>"
+        + "".join(f"<td><span style='color:{cor}'>{moeda(float(s.get(m,0)))}</span></td>" for m in refs_sel)
+        + f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td></tr>"
     )
-
-
-def serie_mensal(d, papeis=None, classifs=None, sinal=1.0):
-    x = d.copy()
-    if papeis is not None:
-        x = x[x["Papel"].isin(papeis)]
-    if classifs is not None:
-        x = x[x["Classif"].isin(classifs)]
-    s = x.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0) * sinal
-    return s
 
 
 if df.empty:
@@ -997,110 +829,85 @@ if df.empty:
 else:
     html = []
 
-    # ----- FCO -----
+    # 1. FCO
     html.append(
-        f"<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
+        "<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
+    html.extend(linhas_papel(df, "receita_op", "(+) Receitas operacionais", "r"))
+    s_rec = serie(df, "receita_op")
+    html.append(linha_tot("Total receitas operacionais", s_rec, VERDE))
 
-    # Receitas
-    d_rec = df[df["Papel"] == "receita_op"]
-    rows, _ = linhas_grupo(d_rec, None, "(+) Receitas operacionais", "rec")
-    html.extend(rows)
-    s_rec = serie_mensal(df, ["receita_op"])
-    html.append(linha_total("Total receitas operacionais", s_rec, float(s_rec.sum()), VERDE))
+    html.extend(linhas_papel(df, "custo_op", "(−) Custos e despesas operacionais", "c"))
+    s_cus = serie(df, "custo_op")
+    html.append(linha_tot("Total custos e despesas operacionais", s_cus, VERMELHO))
 
-    # Custos
-    d_cus = df[df["Papel"] == "custo_op"]
-    rows, _ = linhas_grupo(d_cus, None, "(−) Custos e despesas operacionais", "cus")
-    html.extend(rows)
-    s_cus = serie_mensal(df, ["custo_op"])
-    html.append(linha_total("Total custos e despesas operacionais", s_cus, float(s_cus.sum()), VERMELHO))
-
-    # Impostos
-    d_imp = df[df["Papel"] == "imposto"]
-    rows, _ = linhas_grupo(d_imp, None, "(−) Impostos", "imp")
-    html.extend(rows)
-    s_imp = serie_mensal(df, ["imposto"])
-    html.append(linha_total("Total impostos", s_imp, float(s_imp.sum()), VERMELHO))
+    html.extend(linhas_papel(df, "imposto", "(−) Impostos", "i"))
+    s_imp = serie(df, "imposto")
+    html.append(linha_tot("Total impostos", s_imp, VERMELHO))
 
     s_fco = s_rec - s_cus - s_imp
-    cor_fco = VERDE if float(s_fco.sum()) >= 0 else VERMELHO
-    html.append(linha_total("= FCO (Receitas − Custos − Impostos)", s_fco, float(s_fco.sum()), cor_fco))
+    html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
 
-    # ----- FCI -----
+    # 2. FCI
     html.append(
-        f"<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
+        "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
-    d_cap = df[df["Papel"] == "capex"]
-    rows, _ = linhas_grupo(d_cap, None, "(−) Desembolsos em CAPEX", "cap")
-    html.extend(rows)
-    s_cap = serie_mensal(df, ["capex"])
+    html.extend(linhas_papel(df, "capex", "(−) Desembolsos em CAPEX", "k"))
+    s_cap = serie(df, "capex")
     s_fci = -s_cap
-    cor_fci = VERDE if float(s_fci.sum()) >= 0 else VERMELHO
-    html.append(linha_total("= FCI (− CAPEX)", s_fci, float(s_fci.sum()), cor_fci))
+    html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
 
-    # ----- FCF -----
+    # 3. FCF
     html.append(
-        f"<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
+        "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
-    d_capta = df[df["Papel"] == "captacao"]
-    rows, _ = linhas_grupo(d_capta, None, "(+) Novas captações", "cpt")
-    html.extend(rows)
-    s_cpt = serie_mensal(df, ["captacao"])
-
-    d_amo = df[df["Papel"] == "amortizacao"]
-    rows, _ = linhas_grupo(d_amo, None, "(−) Amortizações de empréstimos", "amo")
-    html.extend(rows)
-    s_amo = serie_mensal(df, ["amortizacao"])
-
-    d_jur = df[df["Papel"] == "juros"]
-    rows, _ = linhas_grupo(d_jur, None, "(−) Juros e encargos financeiros", "jur")
-    html.extend(rows)
-    s_jur = serie_mensal(df, ["juros"])
-
+    html.extend(linhas_papel(df, "captacao", "(+) Novas captações", "p"))
+    s_cpt = serie(df, "captacao")
+    html.extend(linhas_papel(df, "amortizacao", "(−) Amortizações de empréstimos", "a"))
+    s_amo = serie(df, "amortizacao")
+    html.extend(linhas_papel(df, "juros", "(−) Juros e encargos financeiros", "j"))
+    s_jur = serie(df, "juros")
     s_fcf = s_cpt - s_amo - s_jur
-    cor_fcf = VERDE if float(s_fcf.sum()) >= 0 else VERMELHO
-    html.append(linha_total("= FCF (Captações − Amort. − Juros)", s_fcf, float(s_fcf.sum()), cor_fcf))
+    html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
 
-    # ----- Variação -----
+    # Variação
     s_var = s_fco + s_fci + s_fcf
-    cor_var = VERDE if float(s_var.sum()) >= 0 else VERMELHO
     html.append(
-        f"<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
+        "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
             f"<td><span style='color:{VERDE if float(s_var.get(m,0))>=0 else VERMELHO};font-weight:800'>"
             f"{moeda(float(s_var.get(m,0)))}</span></td>"
             for m in refs_sel
         )
-        + f"<td><span style='color:{cor_var}'><b>{moeda(float(s_var.sum()))}</b></span></td></tr>"
+        + f"<td><span style='color:{VERDE if float(s_var.sum())>=0 else VERMELHO}'><b>"
+        f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
     )
 
-    # Não classificado (diagnóstico)
-    d_nc = df[df["Classif"] == "Não classificado"]
-    if not d_nc.empty:
+    # Não classificado
+    if (df["Papel"] == "outros").any() or (df["Classif"] == "Não classificado").any():
         html.append(
-            f"<tr class='sec'><td>ITENS SEM DE-PARA</td>"
+            "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
             + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
         )
-        rows, _ = linhas_grupo(d_nc, None, None, "nc")
-        html.extend(rows)
+        html.extend(linhas_papel(df[df["Papel"] == "outros"], "outros", None, "o"))
+        d_nc = df[df["Classif"] == "Não classificado"]
+        if not d_nc.empty:
+            # força papel temporário
+            tmp = d_nc.copy()
+            tmp["Papel"] = "outros"
+            html.extend(linhas_papel(tmp, "outros", "Não classificado no de-para", "n"))
 
     th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
     st.markdown(
-        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
-        f"{''.join(html)}</table></div>",
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>{''.join(html)}</table></div>",
         unsafe_allow_html=True,
     )
 
-# ==============================================================================
-# RODAPÉ SIDEBAR
-# ==============================================================================
 with st.sidebar:
     st.markdown(
-        f"<div class='side-card'><small>Período</small><b>{txt_per}</b></div>"
         f"<div class='side-card'><small>FCO</small><b style='color:{'#059669' if fco>=0 else '#dc2626'}'>{moeda(fco)}</b></div>"
         f"<div class='side-card'><small>FCI</small><b style='color:{'#059669' if fci>=0 else '#dc2626'}'>{moeda(fci)}</b></div>"
         f"<div class='side-card'><small>FCF</small><b style='color:{'#059669' if fcf>=0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
