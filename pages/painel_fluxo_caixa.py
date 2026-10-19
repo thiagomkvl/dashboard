@@ -1,439 +1,1109 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import pandas as pd
-from datetime import datetime, timedelta
-import textwrap
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Fluxo de Caixa Analítico", layout="wide", initial_sidebar_state="expanded")
+try:
+    st.set_page_config(
+        page_title="Fluxo de Caixa",
+        layout="wide",
+        page_icon="💵",
+        initial_sidebar_state="expanded",
+    )
+except Exception:
+    pass
+
+import os
+import re
+import textwrap
+import unicodedata
+from datetime import datetime
+
+import pandas as pd
+
+try:
+    from database import conectar_sheets
+except Exception as _err:
+    _erro_import_db = str(_err)
+
+    def conectar_sheets():
+        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
+        return None
 
 # ==============================================================================
-# 1. CUSTOM CSS — MINIMALISTA E IMPRESSÃO (PDF)
+# PALETA — tema claro / clean
+# ==============================================================================
+AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
+ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
+TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
+
+ESPACO_ENTRE_BLOCOS = "0.75rem"
+AJUSTE_APOS_KPIS = "0.75rem"
+ANO_REF = 2026
+
+ABA_DESPESAS = "Base_Despesas"
+ABA_BORDERO = "Fluxo_Despesas_Borderô"
+ABA_ADIANT = "Fluxo_Adiantamentos"
+ABA_RECEITA = "Fluxo_Receita"
+ABA_CLASSIF = "Classificacao_FCx"
+
+# Tipos de fluxo (coluna C)
+FLUXO_OP = "Fluxo de Caixa Operacional"
+FLUXO_INV = "Fluxo de Caixa de Investimentos"
+FLUXO_FIN = "Fluxo de Caixa de Financiamento"
+
+# Classificações de RECEITA operacional (sinais +)
+RECEITAS_OP = {
+    "alugueis", "aluguéis", "aluguel",
+    "convenio", "convênio", "convenios", "convênios",
+    "particular",
+    "outras receitas",
+}
+
+# Classificações de CUSTO/DESPESA operacional (sinais −)
+CUSTOS_OP = {
+    "pessoal",
+    "servicos de terceiros e operacionais", "serviços de terceiros e operacionais",
+    "utilidades e infraestrutura",
+    "materiais, medicamentos e opme",
+    "honorarios medicos", "honorários médicos",
+    "despesas administrativas e gerais",
+    "despesas bancarias e tarifas", "despesas bancárias e tarifas",
+    "outras despesas operacionais",
+}
+
+# Impostos operacionais (sinais −)
+IMPOSTOS_OP = {
+    "impostos correntes",
+    "impostos parcelados",
+    "impostos e parcelamentos",  # legado
+    "impostos e taxas",          # legado
+}
+
+# CAPEX (FCI −)
+CAPEX = {"investimentos / capex", "investimentos/capex", "capex"}
+
+# Financiamento (FCF)
+AMORTIZACOES = {"amortizacao de emprestimos", "amortização de empréstimos"}
+JUROS = {"juros e encargos financeiros"}
+CAPTACOES = {"novas captacoes", "novas captações", "captacao", "captação", "liberacao de emprestimo", "liberação de empréstimo"}
+
+TRANSACOES_DESPESAS = {
+    "despesas administrativas", "despesas financeiras", "despesas judiciais",
+    "devolucao adiantamento particular", "honorarios medicos", "iptu",
+    "outras despesas", "parcelamento impostos", "pessoal", "pmts",
+}
+
+CORES_CAT = [
+    AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO,
+    "#0ea5e9", "#84cc16", "#f43f5e", "#a855f7", "#14b8a6", "#eab308",
+]
+
+MESES_MAP = {
+    "jan": 1, "janeiro": 1, "fev": 2, "fevereiro": 2,
+    "mar": 3, "marco": 3, "março": 3, "abr": 4, "abril": 4,
+    "mai": 5, "maio": 5, "jun": 6, "junho": 6,
+    "jul": 7, "julho": 7, "ago": 8, "agosto": 8,
+    "set": 9, "setembro": 9, "out": 10, "outubro": 10,
+    "nov": 11, "novembro": 11, "dez": 12, "dezembro": 12,
+}
+MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+               "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+SKIP_LABELS = {
+    "", "nan", "none", "total", "total geral", "soma", "geral",
+    "mes", "mês", "convenios", "convênios", "origem", "origem receita",
+    "conta contabil", "conta contábil", "classificacao", "classificação",
+    "transacao", "transação", "sum de vl debito", "sum de vl débito",
+    "adiantamento fornecedores - banco total", "adiantamento fornecedores - banco",
+    "receitas", "saidas", "saídas",
+}
+SKIP_HEADER = {
+    "total", "total geral", "soma", "geral", "data - mes", "data - mês",
+    "sum de vl debito", "sum de vl débito",
+}
+
+# ==============================================================================
+# CSS
 # ==============================================================================
 css = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
+    [data-testid="stHeader"] { background: transparent !important; }
+    #MainMenu, footer { visibility: hidden; }
+    .main .block-container { padding: 1.1rem 1.4rem 1.4rem; max-width: 99%; }
+    div[data-testid="stVerticalBlock"] { gap: __GAP__; }
+    [data-testid="stMarkdownContainer"] { color: #0f172a; }
 
-:root {
-    --bg: #f8fafc;
-    --surface: #ffffff;
-    --primary-dark: #0f172a;
-    --primary: #3b82f6;
-    --success: #10b981;
-    --danger: #ef4444;
-    --text-main: #1e293b;
-    --text-muted: #64748b;
-    --border: #e2e8f0;
-    --shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
+    [data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
+    [data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
+    .side-sec {
+        font-size: 10px; font-weight: 800; letter-spacing: 1px;
+        color: #64748b; text-transform: uppercase; margin: 6px 0 -2px;
+    }
+    .side-card {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 10px 12px; margin-top: 8px;
+    }
+    .side-card small { display: block; color: #64748b; font-size: 11px; }
+    .side-card b { color: #0f172a; font-size: 13px; }
 
-html, body { font-family: "Inter", sans-serif; color: var(--text-main); }
-.stApp { background-color: var(--bg); }
-.main .block-container { max-width: 98%; padding-top: 1rem; padding-bottom: 2rem; }
+    [data-baseweb="select"] > div {
+        background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important;
+    }
+    [data-baseweb="select"] span, [data-baseweb="select"] input { color: #0f172a !important; }
+    [data-baseweb="select"] svg { fill: #64748b; }
+    [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #ffffff !important; }
+    li[role="option"] { color: #0f172a !important; }
+    li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
+    span[data-baseweb="tag"] { background: #2563eb !important; color: #fff !important; }
 
-/* HEADER PRINCIPAL MINIMALISTA */
-.exec-header { background: transparent; padding: 10px 0 20px 0; border-bottom: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
-.exec-header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: var(--primary-dark); text-transform: uppercase;}
-.exec-header p { margin: 2px 0 0 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
-.exec-filters { display: flex; gap: 20px; align-items: center; }
-.exec-filter-item { display: flex; flex-direction: column; }
-.exec-filter-item label { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; }
-.exec-filter-item .val { background: var(--surface); color: var(--text-main); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; min-width: 130px; display: flex; justify-content: space-between; box-shadow: var(--shadow); }
-.exec-update { border-left: 1px solid var(--border); padding-left: 20px; display: flex; flex-direction: column; justify-content: center; }
-.exec-update span { font-size: 10px; color: var(--text-muted); display:block; text-transform: uppercase; font-weight: 700; }
-.exec-update b { font-size: 12px; font-weight: 700; color: var(--primary-dark); display:block;}
+    [data-testid="stSidebar"] .stButton > button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+        color: #fff !important; border: none !important; border-radius: 10px !important;
+        font-weight: 700 !important; padding: 0.55rem 1rem !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover { filter: brightness(1.06); color: #fff !important; }
 
-/* KPI CARDS */
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
-.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 20px; position: relative; box-shadow: var(--shadow); }
-.kpi-card::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; border-radius: 0 0 6px 6px; }
-.kpi-card.c-blue::after { background: var(--primary); }
-.kpi-card.c-green::after { background: var(--success); }
-.kpi-card.c-red::after { background: var(--danger); }
-.kpi-top { display: flex; align-items: flex-start; margin-bottom: 12px;}
-.kpi-info { flex: 1; }
-.kpi-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px;}
-.kpi-val { font-size: 26px; font-weight: 800; color: var(--primary-dark); letter-spacing: -0.5px; line-height: 1.1; }
-.kpi-meta-box { border-top: 1px dashed var(--border); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
-.kpi-meta-box span { font-size: 11px; color: var(--text-muted); font-weight: 600;}
-.kpi-var { font-size: 12px; font-weight: 800; display:flex; align-items:center; gap:3px;}
-.var-up { color: var(--success); }
-.var-down { color: var(--danger); }
+    .top {
+        display: flex; justify-content: space-between; align-items: center; gap: 16px;
+        padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+    }
+    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px; }
+    .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
+    .pills { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 6px 14px; min-width: 120px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
+    .pill small { display: block; font-size: 10px; color: #64748b; }
+    .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
-/* MATRIZ CSS GRID EXPANSÍVEL */
-.matrix-container { background: var(--surface); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 30px;}
-.matrix-header { background: #f8fafc; color: var(--primary-dark); padding: 15px 20px; font-size: 14px; font-weight: 800; text-transform: uppercase; border-bottom: 2px solid var(--border); letter-spacing: 0.5px;}
-.grid-row { display: grid; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.1s; }
-.grid-row:hover { background-color: #f1f5f9; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
+    .kpi {
+        padding: 12px 14px; border-radius: 12px; min-height: 100px;
+        background: #ffffff; border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+        border-left: 3px solid #2563eb;
+    }
+    .kpi.green { border-left-color: #059669; }
+    .kpi.red { border-left-color: #dc2626; }
+    .kpi.amber { border-left-color: #d97706; }
+    .kpi.purple { border-left-color: #7c3aed; }
+    .kpi-t {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+        text-transform: uppercase; color: #64748b; line-height: 1.25;
+    }
+    .kpi-v {
+        font-size: 18px; font-weight: 800; color: #0f172a; margin: 8px 0 4px;
+        letter-spacing: -0.3px; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
 
-.col-name { padding: 10px 15px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-val { padding: 10px 15px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-main); font-weight: 600; white-space: nowrap; }
+    .section-title {
+        font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+        color: #0f172a; margin: 16px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
+    }
 
-/* Cabeçalhos da Matriz */
-.grid-header { background: var(--surface); font-weight: 800; color: var(--text-muted); font-size: 10px; text-transform: uppercase; border-bottom: 2px solid var(--border); }
-.grid-header .col-val { text-align: center; }
-.border-left { border-left: 1px solid var(--border); }
+    .tbl-wrap {
+        overflow-x: auto; overflow-y: visible;
+        border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff;
+    }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
+    .tbl th {
+        background: #f8fafc; color: #64748b;
+        font-weight: 700; font-size: 11px; text-align: left; padding: 8px 10px;
+        border-bottom: 1px solid #e2e8f0; white-space: nowrap; text-transform: uppercase;
+    }
+    .tbl td {
+        padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .tbl tbody tr:hover td { background: #f8fafc; }
+    .tbl tr.tot td {
+        font-weight: 800; color: #0f172a; background: #f1f5f9;
+        border-top: 1px solid #e2e8f0;
+    }
+    .tbl tr.sec td {
+        font-weight: 800; color: #0f172a; background: #eef2ff;
+        border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
+        letter-spacing: 0.4px;
+    }
+    .tbl tr.subsec td {
+        font-weight: 700; color: #334155; background: #f8fafc;
+        font-size: 11px;
+    }
+    .tbl tr.res td {
+        font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
+    }
+    .tbl tr.sub-row td {
+        background: #fafbfc; color: #64748b; font-size: 11px;
+    }
+    .tbl tr.sub-row td:first-child { padding-left: 28px; }
+    .tbl .mut { color: #94a3b8; }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        margin-right: 8px; vertical-align: middle;
+    }
 
-/* Níveis da Matriz */
-.lvl-macro { background-color: #f8fafc; font-size: 13px; }
-.lvl-macro .col-name { font-weight: 800; color: var(--primary-dark); text-transform: uppercase; }
-.lvl-macro .col-val { font-weight: 800; color: var(--primary-dark); }
+    .drill-label {
+        cursor: pointer; display: flex; align-items: center; gap: 6px;
+        margin: 0; font-weight: 700; color: #0f172a; user-select: none;
+    }
+    .toggle-checkbox { display: none; }
+    .indicator {
+        display: inline-block; font-size: 10px; color: #2563eb;
+        transition: transform 0.15s ease; width: 12px;
+    }
+    .grp .sub-row { display: none; }
+    .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
 
-.lvl-grupo { font-size: 12px; }
-.lvl-grupo .col-name { padding-left: 15px; font-weight: 700; color: var(--primary-dark); }
-
-.lvl-subgrupo { font-size: 11px; }
-.lvl-subgrupo .col-name { padding-left: 40px; font-weight: 600; color: var(--text-secondary); }
-
-.lvl-fornecedor { font-size: 11px; background-color: #fafbfc; }
-.lvl-fornecedor .col-name { padding-left: 65px; font-weight: 600; color: #334155; }
-
-/* Linha de Transação Final */
-.lvl-item { background-color: #ffffff; }
-.lvl-item:hover { background-color: #fefefe; }
-.lvl-item .col-name { padding-left: 90px; font-size: 12px !important; font-weight: 600 !important; color: #334155 !important; }
-.lvl-item .col-val { font-size: 12px !important; font-weight: 600 !important; color: #1e293b !important; }
-
-/* Details e Summary */
-details { width: 100%; display: block; margin: 0; padding: 0; }
-details summary { list-style: none; cursor: pointer; outline: none; margin: 0; padding: 0; }
-details summary::-webkit-details-marker { display: none; }
-.icon-expand { font-family: monospace; font-weight: 800; color: var(--primary); margin-right: 8px; font-size: 14px; display: inline-block; width: 12px; text-align: center;}
-details:not([open]) > summary .icon-expand::before { content: "+"; }
-details[open] > summary .icon-expand::before { content: "-"; }
-
-/* =========================================
-   MODO IMPRESSÃO (PDF)
-   ========================================= */
-@media print {
-    [data-testid="stSidebar"] { display: none !important; }
-    header[data-testid="stHeader"] { display: none !important; }
-    .main .block-container { max-width: 100% !important; padding: 10px !important; }
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-    .kpi-card, .matrix-container { break-inside: avoid; }
-    details[open] summary ~ * { display: block; }
-    details summary { list-style: none; }
-}
+    .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """
-st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
-
-def injetar_html(codigo_html):
-    st.markdown(codigo_html.replace('\n', ''), unsafe_allow_html=True)
+st.markdown(
+    textwrap.dedent(css).replace("__GAP__", ESPACO_ENTRE_BLOCOS).replace("__KPI_GAP__", AJUSTE_APOS_KPIS),
+    unsafe_allow_html=True,
+)
 
 # ==============================================================================
-# 2. FUNÇÕES E LEITURA DE DADOS
+# HELPERS
 # ==============================================================================
-try:
-    from database import conectar_sheets
-except ImportError:
-    def conectar_sheets():
-        st.error("Arquivo 'database.py' não encontrado.")
+def normalizar(txt):
+    if txt is None or (isinstance(txt, float) and pd.isna(txt)):
+        return ""
+    s = unicodedata.normalize("NFKD", str(txt)).encode("ASCII", "ignore").decode("utf-8")
+    s = s.lower().strip()
+    s = re.sub(r"[.\-_/]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def normalizar_chave(txt):
+    if txt is None or (isinstance(txt, float) and pd.isna(txt)):
+        return ""
+    s = unicodedata.normalize("NFKD", str(txt)).encode("ASCII", "ignore").decode("utf-8")
+    s = s.lower().strip()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def limpa_valor(v):
+    try:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return 0.0
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v)
+        s = str(v).strip().replace("R$", "").replace(" ", "")
+        if s in ("", "-", "nan", "None", "NaN"):
+            return 0.0
+        neg = (s.startswith("(") and s.endswith(")")) or s.startswith("-")
+        s = s.strip("()-")
+        if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+            s = s.replace(".", "")
+        r = float(s)
+        return -r if neg else r
+    except Exception:
+        return 0.0
+
+
+def parse_data(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return pd.NaT
+    if isinstance(v, (pd.Timestamp, datetime)):
+        return pd.Timestamp(v).normalize()
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        n = float(v)
+        if 20000 < n < 80000:
+            return (pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)).normalize()
+    try:
+        return pd.to_datetime(v, dayfirst=True, errors="coerce").normalize()
+    except Exception:
+        return pd.NaT
+
+
+def parse_mes_header(h, ano_ref=None):
+    if h is None or (isinstance(h, float) and pd.isna(h)):
+        return None
+    if isinstance(h, (pd.Timestamp, datetime)):
+        return pd.Timestamp(ano_ref or ANO_REF, h.month, 1)
+    if isinstance(h, (int, float)) and not isinstance(h, bool):
+        n = float(h)
+        if 1 <= n <= 12:
+            return pd.Timestamp(ano_ref or ANO_REF, int(n), 1)
+        if 20000 < n < 80000:
+            d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
+            return pd.Timestamp(ano_ref or ANO_REF, d.month, 1)
+
+    t = normalizar(h)
+    if not t or t in SKIP_HEADER or "total" in t:
         return None
 
-def limpa_valor(valor):
+    m = re.match(r"^([a-z]{3,9})(?:\s+(\d{2,4}))?$", t)
+    if m:
+        chave = m.group(1)
+        mes = MESES_MAP.get(chave) or MESES_MAP.get(chave[:3])
+        if mes:
+            if m.group(2):
+                ano = int(m.group(2))
+                if ano < 100:
+                    ano += 2000
+            else:
+                ano = ano_ref or ANO_REF
+            return pd.Timestamp(ano, mes, 1)
+
+    m = re.match(r"^(\d{1,2})\s+(\d{2,4})$", t)
+    if m:
+        mes, ano = int(m.group(1)), int(m.group(2))
+        if ano < 100:
+            ano += 2000
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    return None
+
+
+def _br(v, casas=2):
+    return f"{v:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def moeda(v, casas=2):
+    if abs(v) < 0.005:
+        return "—"
+    return "R$ " + _br(v, casas)
+
+
+def moeda_curta(v):
+    a = abs(v)
+    if a < 0.005:
+        return "—"
+    if a >= 1e9:
+        return f"R$ {_br(v / 1e9, 1)}Bi"
+    if a >= 1e6:
+        return f"R$ {_br(v / 1e6, 1)}M"
+    if a >= 1e3:
+        return f"R$ {_br(v / 1e3, 1)}K"
+    return f"R$ {_br(v, 0)}"
+
+
+def pct(v):
+    return f"{_br(v, 1)}%"
+
+
+def div(a, b):
+    return a / b if b else 0.0
+
+
+def rot_mes(ts):
+    return f"{MESES_ABREV[ts.month - 1]}/{str(ts.year)[2:]}"
+
+
+def col_por_letra(df, letra):
+    idx = ord(letra.upper()) - ord("A")
+    if 0 <= idx < len(df.columns):
+        return df.columns[idx]
+    for c in df.columns:
+        if normalizar(c) == letra.lower():
+            return c
+    return None
+
+
+def col_por_nomes(df, nomes):
+    mapa = {normalizar(c): c for c in df.columns}
+    for n in nomes:
+        if normalizar(n) in mapa:
+            return mapa[normalizar(n)]
+    return None
+
+
+def cor_cat(nome, mapa):
+    if nome not in mapa:
+        mapa[nome] = CORES_CAT[len(mapa) % len(CORES_CAT)]
+    return mapa[nome]
+
+
+def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols_out)
+
+    ano = ano_ref or ANO_REF
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols == 0:
+        return pd.DataFrame(columns=cols_out)
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def score_header(row):
+        return sum(
+            1 for j in range(start_col_idx, n_cols)
+            if parse_mes_header(row[j], ano) is not None
+        )
+
+    hr = 0
+    best_s = score_header(grid[0])
+    for i in range(min(6, n_rows)):
+        s = score_header(grid[i])
+        if s > best_s:
+            hr, best_s = i, s
+
+    if 0 <= header_row_idx < n_rows:
+        s_caller = score_header(grid[header_row_idx])
+        if s_caller >= best_s and s_caller >= 3:
+            hr = header_row_idx
+
+    header = grid[hr]
+    li = col_label_idx if 0 <= col_label_idx < n_cols else 0
+
+    mapa_mes = {}
+    for j in range(start_col_idx, n_cols):
+        ref = parse_mes_header(header[j], ano)
+        if ref is not None:
+            mapa_mes[j] = ref
+
+    if not mapa_mes:
+        k = 0
+        for j in range(start_col_idx, min(start_col_idx + 14, n_cols)):
+            nt = normalizar(header[j]) if header[j] is not None else ""
+            if not nt or nt in SKIP_HEADER or "total" in nt:
+                continue
+            k += 1
+            if 1 <= k <= 12:
+                mapa_mes[j] = pd.Timestamp(ano, k, 1)
+
+    if not mapa_mes:
+        return pd.DataFrame(columns=cols_out)
+
+    registros = []
+    for i in range(hr + 1, n_rows):
+        row = grid[i]
+        cat = row[li] if li < len(row) else None
+        if cat is None or (isinstance(cat, float) and pd.isna(cat)):
+            continue
+        cat_s = str(cat).strip()
+        ncat = normalizar(cat_s)
+        if not ncat or ncat in SKIP_LABELS or ncat.startswith("total"):
+            continue
+        if "adiantamento fornecedores" in ncat and "total" in ncat:
+            continue
+
+        for j, ref in mapa_mes.items():
+            val = limpa_valor(row[j] if j < len(row) else 0)
+            if abs(val) <= 0.005:
+                continue
+            registros.append({
+                "Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo,
+            })
+
+    if not registros:
+        return pd.DataFrame(columns=cols_out)
+    return pd.DataFrame(registros)[cols_out]
+
+
+# ==============================================================================
+# MAPA: Descrição → (Classificação FCx, Fluxo de Caixa)
+# ==============================================================================
+def _mapa_de_dataframe(df_map):
+    """Retorna dict normalizar_chave(desc) -> (Classificação FCx, Fluxo de Caixa)."""
+    if df_map is None or df_map.empty:
+        return {}
+    cols = list(df_map.columns)
+    c_desc = c_cls = c_flx = None
+    for c in cols:
+        n = normalizar(c)
+        if n in ("descricao", "descrição", "conta contabil", "conta contábil", "categoria"):
+            c_desc = c
+        if n in ("classificacao fcx", "classificação fcx") or (
+            "classific" in n and "fluxo" not in n
+        ):
+            c_cls = c
+        if "fluxo" in n:
+            c_flx = c
+    if c_desc is None:
+        c_desc = cols[0]
+    if c_cls is None and len(cols) > 1:
+        c_cls = cols[1]
+    if c_flx is None and len(cols) > 2:
+        c_flx = cols[2]
+    if c_desc is None or c_cls is None:
+        return {}
+
+    out = {}
+    for _, r in df_map.iterrows():
+        d = str(r[c_desc]).strip() if pd.notna(r[c_desc]) else ""
+        c = str(r[c_cls]).strip() if pd.notna(r[c_cls]) else ""
+        f = str(r[c_flx]).strip() if (c_flx and pd.notna(r[c_flx])) else ""
+        nd = normalizar_chave(d)
+        nc = normalizar(c)
+        if not nd or nd in SKIP_LABELS or nd in (
+            "receitas", "saidas", "saídas", "total receitas", "total saidas", "total saídas",
+        ):
+            continue
+        if not nc or nc in SKIP_LABELS:
+            continue
+        # normaliza rótulo do fluxo
+        nf = normalizar(f)
+        if "invest" in nf:
+            fluxo = FLUXO_INV
+        elif "financ" in nf:
+            fluxo = FLUXO_FIN
+        elif "operac" in nf:
+            fluxo = FLUXO_OP
+        else:
+            fluxo = f if f else FLUXO_OP
+        out[nd] = (c, fluxo)
+    return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def carregar_mapa_classificacao():
     try:
-        if pd.isna(valor): return 0.0
-        v = str(valor).replace('R$', '').strip()
-        if '.' in v and ',' in v: v = v.replace('.', '').replace(',', '.')
-        elif ',' in v: v = v.replace(',', '.')
-        return float(v)
-    except: return 0.0
+        conn = conectar_sheets()
+        if conn is not None:
+            try:
+                raw = conn.read(worksheet=ABA_CLASSIF, ttl=0)
+                m = _mapa_de_dataframe(raw)
+                if m:
+                    return m
+            except Exception:
+                pass
+    except Exception:
+        pass
 
-def formata_num(valor):
-    if pd.isna(valor) or valor == 0: return "-"
-    return f"{valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    for path in [
+        "RegraFCx_Ajustado.xlsx",
+        "Classificacao_FCx_Concluida.xlsx",
+        os.path.join("data", "RegraFCx_Ajustado.xlsx"),
+        "/home/workdir/attachments/RegraFCx_Ajustado.xlsx",
+        "/home/workdir/attachments/Classificacao_FCx_Concluida.xlsx",
+    ]:
+        if os.path.isfile(path):
+            try:
+                raw = pd.read_excel(path)
+                m = _mapa_de_dataframe(raw)
+                if m:
+                    return m
+            except Exception:
+                continue
+    return {}
 
-def calc_var(atual, anterior):
-    if anterior == 0: return 0
-    return ((atual - anterior) / abs(anterior)) * 100
 
-@st.cache_data(ttl=60)
-def preparar_dados_fluxo():
+def aplicar_classificacao(categoria, mapa):
+    """Retorna (Classificação FCx, Fluxo de Caixa, Detalhe)."""
+    n = normalizar_chave(categoria)
+    if not n:
+        return "Não classificado", FLUXO_OP, categoria
+    if n in mapa:
+        cls, flx = mapa[n]
+        return cls, flx, categoria
+    candidatos = []
+    for k, (cls, flx) in mapa.items():
+        if len(k) < 8:
+            continue
+        if k in n or n in k:
+            candidatos.append((len(k), cls, flx))
+    if candidatos:
+        candidatos.sort(reverse=True)
+        return candidatos[0][1], candidatos[0][2], categoria
+    return "Não classificado", FLUXO_OP, categoria
+
+
+def papel_classif(classif):
+    """Papel da classificação nas fórmulas FCO / FCI / FCF."""
+    n = normalizar(classif)
+    if n in RECEITAS_OP or any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
+        return "receita_op"
+    if n in IMPOSTOS_OP or n.startswith("imposto"):
+        return "imposto"
+    if n in CUSTOS_OP:
+        return "custo_op"
+    if n in CAPEX or "capex" in n or "investimento" in n:
+        return "capex"
+    if n in AMORTIZACOES or "amortiza" in n:
+        return "amortizacao"
+    if n in JUROS or ("juros" in n and "encargo" in n):
+        return "juros"
+    if n in CAPTACOES or "captac" in n or "liberacao de emprestimo" in n:
+        return "captacao"
+    return "outros"
+
+
+# ==============================================================================
+# CARGA
+# ==============================================================================
+@st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
+def carregar_fluxo():
+    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
+    vazio = pd.DataFrame(columns=cols)
+    avisos = []
     conn = conectar_sheets()
-    if not conn: return pd.DataFrame()
+    if conn is None:
+        return vazio, ["Conexão com o Google Sheets indisponível."]
+
+    partes = []
+
+    # Base_Despesas
     try:
-        df = conn.read(worksheet="Extratos_Bancos", ttl=0)
-        
-        while len(df.columns) < 13:
-            df[f"Col_Extra_{len(df.columns)}"] = ""
-
-        col_banco = df.columns[0]     # A (Banco)
-        col_data = df.columns[1]     # B (Data)
-        col_desc = df.columns[2]     # C (Transação / Descrição)
-        col_deb = df.columns[4]      # E (Débito)
-        col_cred = df.columns[5]     # F (Crédito)
-        col_classif = df.columns[9]  # J (Classificação Financeira)
-        col_operac = df.columns[10]  # K (Operacionalidade)
-        col_subgrupo = df.columns[11] # L (SubGrupo)
-        col_fornecedor = df.columns[12] # M (Resumo Fornecedor)
-
-        df['Data'] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
-        df['Saída'] = df[col_deb].apply(limpa_valor)
-        df['Entrada'] = df[col_cred].apply(limpa_valor)
-        df['Valor Líquido'] = df['Entrada'] - df['Saída']
-        
-        df['Desc_Str'] = df[col_desc].astype(str).str.strip().str.upper()
-        df = df[~df['Desc_Str'].str.contains("TRANSFERÊNCIA INTERNA", na=False)]
-        
-        df['Banco'] = df[col_banco].fillna('Banco S/N').astype(str).str.strip()
-        df['Classificacao'] = df[col_classif].fillna('Não Classificado').astype(str).str.strip()
-        df['SubGrupo'] = df[col_subgrupo].fillna('Não Informado').astype(str).str.strip()
-        df['Fornecedor'] = df[col_fornecedor].fillna('Fornecedor Não Identificado').astype(str).str.strip()
-        df['Descricao'] = df[col_desc].fillna('Lançamento S/ Descrição').astype(str).str.strip()
-        df['Operacionalidade'] = df[col_operac].fillna('OPERACIONAL').astype(str).str.strip().str.upper()
-        
-        df.loc[df['Classificacao'] == '', 'Classificacao'] = 'Não Classificado'
-        df.loc[df['SubGrupo'] == '', 'SubGrupo'] = 'Não Informado'
-        df.loc[df['Fornecedor'] == '', 'Fornecedor'] = 'Fornecedor Não Identificado'
-        
-        return df[df['Data'].notna()]
+        raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
-        st.error(f"Erro ao ler os dados: {e}")
-        return pd.DataFrame()
+        raw_d = None
+        avisos.append(f"Não foi possível ler despesas operacionais: {e}")
 
-df_base = preparar_dados_fluxo()
-if df_base.empty: st.stop()
+    if raw_d is not None and not raw_d.empty:
+        df = raw_d.copy()
+        c_data = col_por_letra(df, "B") or col_por_nomes(df, ["Data", "Data Lançamento", "Dt"])
+        c_trans = col_por_letra(df, "D") or col_por_nomes(
+            df, ["Transação FCx", "Transacao FCx", "Transação", "Transacao"]
+        )
+        c_clas = col_por_letra(df, "E") or col_por_nomes(
+            df, ["Classificação FCx", "Classificacao FCx", "Classificação", "Classificacao"]
+        )
+        c_val = col_por_letra(df, "F") or col_por_nomes(
+            df, ["Vl Débito", "Vl Debito", "Valor Débito", "Valor Debito", "Débito", "Debito", "Valor"]
+        )
+        if all([c_data, c_trans, c_clas, c_val]):
+            tmp = pd.DataFrame({
+                "Data": df[c_data].apply(parse_data),
+                "Transação": df[c_trans].fillna("").astype(str).str.strip(),
+                "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
+                "Valor": df[c_val].apply(limpa_valor),
+            })
+            tmp = tmp[tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)]
+            tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
+            if not tmp.empty:
+                tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
+                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                g["Tipo"] = "Saída"
+                g["Grupo"] = "Despesas"
+                partes.append(g[cols])
+        else:
+            avisos.append("Despesas operacionais: estrutura de colunas não reconhecida.")
+
+    # Borderô
+    try:
+        raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
+    except Exception as e:
+        raw_b = None
+        avisos.append(f"Não foi possível ler borderô de despesas: {e}")
+
+    if raw_b is not None and not raw_b.empty:
+        mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
+        if mb.empty:
+            mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF)
+        if not mb.empty:
+            mb = mb.copy()
+            mb["Grupo"] = "Borderô"
+            partes.append(mb[cols])
+        else:
+            avisos.append("Borderô de despesas: nenhum valor mensal encontrado.")
+
+    # Adiantamentos
+    try:
+        raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
+    except Exception as e:
+        raw_a = None
+        avisos.append(f"Não foi possível ler adiantamentos: {e}")
+
+    if raw_a is not None and not raw_a.empty:
+        ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
+        if ma.empty:
+            ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF)
+        if not ma.empty:
+            ma = ma.copy()
+            ma["Grupo"] = "Adiantamentos"
+            partes.append(ma[cols])
+        else:
+            avisos.append("Adiantamentos: nenhum valor mensal encontrado.")
+
+    # Receita
+    try:
+        raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
+    except Exception as e:
+        raw_r = None
+        avisos.append(f"Não foi possível ler receitas: {e}")
+
+    if raw_r is not None and not raw_r.empty:
+        mr = melt_matriz(raw_r, 0, 0, 1, "Entrada", ANO_REF)
+        if mr.empty:
+            mr = melt_matriz(raw_r, 0, 1, 1, "Entrada", ANO_REF)
+        if not mr.empty:
+            mr = mr.copy()
+            mr["Grupo"] = "Receita"
+            partes.append(mr[cols])
+        else:
+            avisos.append("Receitas: nenhum valor mensal encontrado.")
+
+    if not partes:
+        return vazio, avisos or ["Nenhum lançamento encontrado."]
+
+    base = pd.concat(partes, ignore_index=True)
+    base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
+    base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
+    base = base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True)
+    return base, avisos
+
+
+base, avisos = carregar_fluxo()
+mapa_cls = carregar_mapa_classificacao()
+
+if base.empty:
+    for a in avisos:
+        st.warning(a)
+    st.warning("⚠️ Nenhum dado de fluxo de caixa disponível.")
+    st.stop()
+
+base = base.copy()
+pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
+base["Classif"] = pares.apply(lambda x: x[0])
+base["Fluxo"] = pares.apply(lambda x: x[1])
+base["Detalhe"] = pares.apply(lambda x: x[2])
+base["Papel"] = base["Classif"].apply(papel_classif)
 
 # ==============================================================================
-# 3. FILTROS LATERAIS (MENU NATIVO)
+# SIDEBAR
 # ==============================================================================
-hoje = datetime.now().date()
-primeiro_dia_mes = hoje.replace(day=1)
+meses_all = sorted(base["Ref"].unique())
+rot = {m: rot_mes(m) for m in meses_all}
 
 with st.sidebar:
-    st.markdown("### Filtros de Análise")
-    data_selecionada = st.date_input("Selecione o Período:", value=(primeiro_dia_mes, hoje), format="DD/MM/YYYY")
-    
-    st.markdown("<hr style='margin: 15px 0 10px;'>", unsafe_allow_html=True)
-    st.markdown("### Relatório")
-    st.info("💡 Para um relatório de alta qualidade, gere um PDF. Escolha a orientação **Retrato** ou **Paisagem** e desmarque 'Cabeçalhos/Rodapés'.", icon="ℹ️")
-    components.html("""
-        <button onclick="try { window.parent.print(); } catch(e) { window.print(); }" 
-        style="width:100%; background:linear-gradient(135deg, #3b82f6, #1e40af); color:white; border:none; padding:12px; border-radius:8px; font-family:sans-serif; font-weight:bold; font-size:14px; cursor:pointer; box-shadow: 0 4px 6px rgba(30, 64, 175, 0.2); transition: transform 0.2s;">
-        🖨️ Salvar Dashboard (PDF)
-        </button>
-    """, height=55)
+    st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
+    c_a, c_b = st.columns(2)
+    ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
+    fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
 
-if isinstance(data_selecionada, tuple) and len(data_selecionada) == 2:
-    dt_ini, dt_fim = data_selecionada
-else:
-    dt_ini = data_selecionada[0] if isinstance(data_selecionada, tuple) else data_selecionada
-    dt_fim = dt_ini
+    grupos_all = sorted(base["Grupo"].unique().tolist())
+    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all, placeholder="Todos")
 
-mask_atual = (df_base['Data'].dt.date >= dt_ini) & (df_base['Data'].dt.date <= dt_fim)
-dias_periodo = (dt_fim - dt_ini).days + 1
-dt_fim_ant = dt_ini - timedelta(days=1)
-dt_ini_ant = dt_fim_ant - timedelta(days=dias_periodo - 1)
-mask_ant = (df_base['Data'].dt.date >= dt_ini_ant) & (df_base['Data'].dt.date <= dt_fim_ant)
+    if st.button("↻ Atualizar dados", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-df_op_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
-df_op_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'OPERACIONAL')].copy()
+    st.markdown(
+        f"<div class='side-card'><small>De-para</small>"
+        f"<b>{len(mapa_cls)} classificações</b></div>" if mapa_cls else
+        "<div class='side-card'><small>De-para</small>"
+        "<b style='color:#d97706'>Mapa não carregado</b></div>",
+        unsafe_allow_html=True,
+    )
 
-df_nop_atual = df_base[mask_atual & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
-df_nop_ant = df_base[mask_ant & (df_base['Operacionalidade'] == 'NÃO OPERACIONAL')].copy()
+if ini > fim:
+    ini, fim = fim, ini
+refs_sel = [m for m in meses_all if ini <= m <= fim]
+
+df = base[base["Ref"].isin(refs_sel)].copy()
+if grupo_sel:
+    df = df[df["Grupo"].isin(grupo_sel)]
 
 # ==============================================================================
-# 4. KPIS (COM TAXA DE CONSUMO AJUSTADA PARA O CAIXA INICIAL)
+# CÁLCULOS GERENCIAIS (FCO / FCI / FCF)
 # ==============================================================================
-tot_entrada_at = df_op_atual['Entrada'].sum()
-tot_saida_at = df_op_atual['Saída'].sum()
-geracao_liq_at = tot_entrada_at - tot_saida_at
+def soma_papel(d, papeis, tipo=None):
+    m = d["Papel"].isin(papeis)
+    if tipo:
+        m = m & (d["Tipo"] == tipo)
+    return float(d.loc[m, "Valor"].sum())
 
-# Leitura do Caixa Inicial para cálculo correto da taxa de consumo (Burn Rate / Impacto)
-try:
-    df_si_kpi = conectar_sheets().read(worksheet="Saldo_Inicial", ttl=0)
-    col_si_valor_kpi = next((c for c in df_si_kpi.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si_kpi.columns[1])
-    caixa_inicial_total = df_si_kpi[col_si_valor_kpi].apply(limpa_valor_bruto).sum()
-except:
-    caixa_inicial_total = 8585221.29 # Fallback de segurança se falhar a leitura
 
-# Taxa de Consumo: Mapeia o percentual que as saídas representam em relação à receita + caixa inicial disponível
-base_consumo = tot_entrada_at + caixa_inicial_total
-eficiencia_at = (tot_saida_at / base_consumo * 100) if base_consumo > 0 else 0
+# Valores absolutos por papel (receitas = entradas; demais = saídas da base)
+rec_op = soma_papel(df, ["receita_op"], "Entrada")
+# Se receita veio classificada mas Tipo Entrada vazio, soma pelo papel
+if rec_op < 0.01:
+    rec_op = float(df.loc[df["Papel"] == "receita_op", "Valor"].sum())
 
-tot_entrada_ant = df_op_ant['Entrada'].sum()
-tot_saida_ant = df_op_ant['Saída'].sum()
-geracao_liq_ant = tot_entrada_ant - tot_saida_ant
-eficiencia_ant = (tot_saida_ant / (tot_entrada_ant + caixa_inicial_total) * 100) if (tot_entrada_ant + caixa_inicial_total) > 0 else 0
+custo_op = float(df.loc[df["Papel"] == "custo_op", "Valor"].sum())
+impostos = float(df.loc[df["Papel"] == "imposto", "Valor"].sum())
+capex = float(df.loc[df["Papel"] == "capex", "Valor"].sum())
+amort = float(df.loc[df["Papel"] == "amortizacao", "Valor"].sum())
+juros = float(df.loc[df["Papel"] == "juros", "Valor"].sum())
+captacao = float(df.loc[df["Papel"] == "captacao", "Valor"].sum())
+# captação também pode vir como Entrada
+captacao += float(df.loc[(df["Papel"] == "captacao") & (df["Tipo"] == "Entrada"), "Valor"].sum())
+# evita double-count se já estava em Valor
+captacao = float(df.loc[df["Papel"] == "captacao", "Valor"].sum())
 
-periodo_str = f"{dt_ini.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')}"
-header_html = f"""
-<div class='exec-header'>
-    <div>
-        <h1>Fluxo de Caixa Analítico</h1>
-        <p>Visão Exclusiva de Entradas e Saídas Operacionais (Regime de Caixa)</p>
+# Fórmulas
+fco = rec_op - custo_op - impostos
+fci = -capex
+fcf = captacao - amort - juros
+variacao = fco + fci + fcf
+
+mapa_cores = {}
+txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
+x_lab = [rot[m] for m in refs_sel]
+
+# ==============================================================================
+# CABEÇALHO + KPIs
+# ==============================================================================
+st.markdown(
+    f"""
+    <div class='top'>
+        <div>
+            <h1>FLUXO DE CAIXA</h1>
+            <p>Visão gerencial · FCO · FCI · FCF · {ANO_REF}</p>
+        </div>
+        <div class='pills'>
+            <div class='pill'><small>Período</small><b>{txt_per}</b></div>
+            <div class='pill'><small>Variação líquida</small>
+                <b style="color:{'#059669' if variacao>=0 else '#dc2626'}">{moeda_curta(variacao)}</b>
+            </div>
+        </div>
     </div>
-    <div class='exec-filters'>
-        <div class='exec-filter-item'><label>Período Selecionado</label><div class='val'>{periodo_str}</div></div>
-        <div class='exec-update'><span>Última Atualização</span><b>{datetime.now().strftime('%d/%m/%Y %H:%M')}</b></div>
+    """,
+    unsafe_allow_html=True,
+)
+for a in avisos:
+    st.warning(a)
+
+st.markdown(
+    f"""
+<div class='kpi-grid'>
+    <div class='kpi green'>
+        <div class='kpi-t'>FCO · Operacional</div>
+        <div class='kpi-v' style='color:{"#059669" if fco>=0 else "#dc2626"}'>{moeda(fco)}</div>
+        <div class='kpi-sub'>Receitas − custos − impostos</div>
+    </div>
+    <div class='kpi amber'>
+        <div class='kpi-t'>FCI · Investimentos</div>
+        <div class='kpi-v' style='color:{"#059669" if fci>=0 else "#dc2626"}'>{moeda(fci)}</div>
+        <div class='kpi-sub'>− CAPEX ({moeda_curta(capex)})</div>
+    </div>
+    <div class='kpi purple'>
+        <div class='kpi-t'>FCF · Financiamento</div>
+        <div class='kpi-v' style='color:{"#059669" if fcf>=0 else "#dc2626"}'>{moeda(fcf)}</div>
+        <div class='kpi-sub'>Captações − amort. − juros</div>
+    </div>
+    <div class='kpi {"green" if variacao>=0 else "red"}'>
+        <div class='kpi-t'>Variação líquida de caixa</div>
+        <div class='kpi-v' style='color:{"#059669" if variacao>=0 else "#dc2626"}'>{moeda(variacao)}</div>
+        <div class='kpi-sub'>FCO + FCI + FCF</div>
     </div>
 </div>
-"""
-injetar_html(header_html)
-
-def html_var(atual, ant, is_invertido=False):
-    val = calc_var(abs(atual), abs(ant))
-    if is_invertido: cor = "var-down" if val >= 0 else "var-up"
-    else: cor = "var-up" if val >= 0 else "var-down"
-    seta = "▲" if val >= 0 else "▼"
-    return f"<div class='kpi-var {cor}'><span>{seta}</span> {abs(val):.1f}%</div>"
-
-kpis_html = f"""<div class='kpi-row'>
-<div class='kpi-card c-green'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Entradas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_entrada_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_entrada_ant)}</span>{html_var(tot_entrada_at, tot_entrada_ant)}</div></div>
-<div class='kpi-card c-red'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Saídas Operacionais</div><div class='kpi-val'>R$ {formata_num(tot_saida_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(tot_saida_ant)}</span>{html_var(tot_saida_at, tot_saida_ant, True)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Geração Líquida (Cash Flow)</div><div class='kpi-val'>R$ {formata_num(geracao_liq_at)}</div></div></div><div class='kpi-meta-box'><span>Anterior: R$ {formata_num(geracao_liq_ant)}</span>{html_var(geracao_liq_at, geracao_liq_ant)}</div></div>
-<div class='kpi-card c-blue'><div class='kpi-top'><div class='kpi-info'><div class='kpi-title'>Taxa de Consumo</div><div class='kpi-val'>{eficiencia_at:.1f}%</div></div></div><div class='kpi-meta-box'><span>Anterior: {eficiencia_ant:.1f}%</span></div></div>
-</div>"""
-injetar_html(kpis_html)
+""",
+    unsafe_allow_html=True,
+)
 
 # ==============================================================================
-# 5. MATRIZ EXPANSÍVEL HIERARQUIZADA COM % REPRESENTAÇÃO NAS LINHAS 1 E 2
+# TABELA GERENCIAL
 # ==============================================================================
-grid_cols = "minmax(350px, 2fr) 130px 100px 130px 90px"
+st.markdown(
+    "<div class='section-title'>Demonstrativo de fluxo de caixa · clique na seta para a composição</div>",
+    unsafe_allow_html=True,
+)
 
-def render_linha(nome, classe, val_at, rep_pct, val_ant, var_pct, cor_var, is_item=False):
-    html = f"<div class='grid-row {classe}' style='grid-template-columns: {grid_cols};'>"
-    html += f"<div class='col-name'>{nome}</div>"
-    
-    if is_item:
-        html += f"<div class='col-val'>R$ {formata_num(val_at)}</div>"
-        html += f"<div class='col-val'>-</div><div class='col-val'>-</div><div class='col-val'>-</div>"
-    else:
-        sinal = "+" if var_pct > 0 else ""
-        rep_str = f"{rep_pct:.1f}%" if rep_pct > 0 else "-"
-        html += f"<div class='col-val border-left'>R$ {formata_num(val_at)}</div>"
-        html += f"<div class='col-val border-left' style='font-size:11px; color:var(--text-muted); text-align:center;'>{rep_str}</div>"
-        html += f"<div class='col-val border-left' style='color:var(--text-muted);'>R$ {formata_num(val_ant)}</div>"
-        html += f"<div class='col-val border-left' style='color:{cor_var}; font-size:11px; font-weight:800; text-align:center;'>{sinal}{var_pct:.1f}%</div>"
-        
-    html += "</div>"
-    return html
 
-def renderizar_estrutura(df_at, df_ant, col_valor, total_periodo, is_saida=False):
-    html = ""
-    if df_at.empty and df_ant.empty: return html
-    
-    classif_at = df_at.groupby('Classificacao')[col_valor].sum().to_dict()
-    classif_ant = df_ant.groupby('Classificacao')[col_valor].sum().to_dict()
-    chaves_classif = sorted(set(list(classif_at.keys()) + list(classif_ant.keys())), key=lambda k: classif_at.get(k, 0), reverse=True)
-    
-    for classif in chaves_classif:
-        v_classif_at = classif_at.get(classif, 0)
-        v_classif_ant = classif_ant.get(classif, 0)
-        rep_classif = (v_classif_at / total_periodo * 100) if total_periodo > 0 else 0
-        var_classif = calc_var(v_classif_at, v_classif_ant)
-        
-        if is_saida: cor_classif = "var(--danger)" if var_classif > 0 else "var(--success)"
-        else: cor_classif = "var(--success)" if var_classif > 0 else "var(--danger)"
-            
-        html += "<details><summary>"
-        html += render_linha(f"<span class='icon-expand'></span>{classif}", "lvl-grupo", v_classif_at, rep_classif, v_classif_ant, var_classif, cor_classif)
-        html += "</summary>"
-        
-        df_at_c = df_at[df_at['Classificacao'] == classif]
-        df_ant_c = df_ant[df_ant['Classificacao'] == classif]
-        
-        sub_at = df_at_c.groupby('SubGrupo')[col_valor].sum().to_dict()
-        sub_ant = df_ant_c.groupby('SubGrupo')[col_valor].sum().to_dict()
-        chaves_sub = sorted(set(list(sub_at.keys()) + list(sub_ant.keys())), key=lambda k: sub_at.get(k, 0), reverse=True)
-        
-        for subg in chaves_sub:
-            v_sub_at = sub_at.get(subg, 0)
-            v_sub_ant = sub_ant.get(subg, 0)
-            # % de representação da Linha 2 em relação ao total geral do período
-            rep_sub = (v_sub_at / total_periodo * 100) if total_periodo > 0 else 0
-            var_sub = calc_var(v_sub_at, v_sub_ant)
-            
-            if is_saida: cor_sub = "var(--danger)" if var_sub > 0 else "var(--success)"
-            else: cor_sub = "var(--success)" if var_sub > 0 else "var(--danger)"
-                
-            html += "<details><summary>"
-            html += render_linha(f"<span class='icon-expand'></span>{subg}", "lvl-subgrupo", v_sub_at, rep_sub, v_sub_ant, var_sub, cor_sub)
-            html += "</summary>"
-            
-            df_at_s = df_at_c[df_at_c['SubGrupo'] == subg]
-            df_ant_s = df_ant_c[df_ant_c['SubGrupo'] == subg]
-            
-            forn_at = df_at_s.groupby('Fornecedor')[col_valor].sum().to_dict()
-            forn_ant = df_ant_s.groupby('Fornecedor')[col_valor].sum().to_dict()
-            chaves_forn = sorted(set(list(forn_at.keys()) + list(forn_ant.keys())), key=lambda k: forn_at.get(k, 0), reverse=True)
-            
-            for fornecedor in chaves_forn:
-                v_forn_at = forn_at.get(fornecedor, 0)
-                v_forn_ant = forn_ant.get(fornecedor, 0)
-                var_forn = calc_var(v_forn_at, v_forn_ant)
-                
-                if is_saida: cor_forn = "var(--danger)" if var_forn > 0 else "var(--success)"
-                else: cor_forn = "var(--success)" if var_forn > 0 else "var(--danger)"
-                
-                html += "<details><summary>"
-                html += render_linha(f"<span class='icon-expand'></span>{fornecedor}", "lvl-fornecedor", v_forn_at, 0, v_forn_ant, var_forn, cor_forn)
-                html += "</summary>"
-                
-                df_trans = df_at_s[df_at_s['Fornecedor'] == fornecedor].sort_values('Data')
-                for _, row in df_trans.iterrows():
-                    dt_str = row['Data'].strftime('%d/%m')
-                    banco_str = row['Banco']
-                    desc = row['Descricao'][:50] + ("..." if len(row['Descricao']) > 50 else "")
-                    html += render_linha(f"↳ {dt_str} &nbsp;|&nbsp; <b>[{banco_str}]</b> &nbsp;-&nbsp; {desc}", "lvl-item", row[col_valor], 0, 0, 0, "", is_item=True)
-                    
-                html += "</details>"
-            html += "</details>"
-        html += "</details>"
-        
-    return html
+def linhas_grupo(d, classifs_filtro, titulo_sub, uid_prefix, cor_titulo=None):
+    """Gera linhas HTML para um subgrupo de classificações (com drill-down)."""
+    rows = []
+    if classifs_filtro is not None:
+        d = d[d["Classif"].isin(classifs_filtro)]
+    if d.empty:
+        return rows, 0.0
 
-# ----------------- TABELA OPERACIONAL -----------------
-html_tab = f"""
-<div class='matrix-container'>
-    <div class='matrix-header'>Fluxo Operacional</div>
-    <div class='grid-row grid-header' style='grid-template-columns: {grid_cols};'>
-        <div class='col-name'>Nível Estrutural</div>
-        <div class='col-val border-left'>Realizado ({dt_fim.strftime('%b').capitalize()})</div>
-        <div class='col-val border-left'>% Rep.</div>
-        <div class='col-val border-left'>Período Anterior</div>
-        <div class='col-val border-left'>Var. (MoM)</div>
-    </div>
-"""
+    piv = d.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    piv = piv.reindex(columns=refs_sel, fill_value=0.0)
+    piv["__t__"] = piv.sum(axis=1)
+    piv = piv.sort_values("__t__", ascending=False)
 
-var_tot_ent = calc_var(tot_entrada_at, tot_entrada_ant)
-cor_tot_ent = "var(--success)" if var_tot_ent >= 0 else "var(--danger)"
-html_tab += render_linha("[+] ENTRADAS OPERACIONAIS", "lvl-macro", tot_entrada_at, 100, tot_entrada_ant, var_tot_ent, cor_tot_ent)
-html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Entrada'] > 0], df_op_ant[df_op_ant['Entrada'] > 0], 'Entrada', tot_entrada_at, is_saida=False)
+    det = d.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
+    total = float(piv["__t__"].sum())
 
-var_tot_sai = calc_var(tot_saida_at, tot_saida_ant)
-cor_tot_sai = "var(--danger)" if var_tot_sai >= 0 else "var(--success)"
-html_tab += render_linha("[-] SAÍDAS OPERACIONAIS", "lvl-macro", tot_saida_at, 100, tot_saida_ant, var_tot_sai, cor_tot_sai)
-html_tab += renderizar_estrutura(df_op_atual[df_op_atual['Saída'] > 0], df_op_ant[df_op_ant['Saída'] > 0], 'Saída', tot_saida_at, is_saida=True)
+    if titulo_sub:
+        rows.append(
+            f"<tr class='subsec'><td>{titulo_sub}</td>"
+            + "".join("<td></td>" for _ in refs_sel)
+            + "<td></td></tr>"
+        )
 
-html_tab += "</div>"
-injetar_html(html_tab)
+    uid = 0
+    for classif, r in piv.iterrows():
+        uid += 1
+        key = f"{uid_prefix}_{uid}"
+        cor = cor_cat(classif, mapa_cores)
+        sub = det[det["Classif"] == classif]
+        tem_sub = sub["Detalhe"].nunique() > 1 or (
+            sub["Detalhe"].nunique() == 1
+            and normalizar_chave(sub["Detalhe"].iloc[0]) != normalizar_chave(classif)
+        )
+        if tem_sub:
+            label = (
+                f"<label class='drill-label' for='{key}'>"
+                f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
+                f"<span class='indicator'>▶</span>"
+                f"<span class='dot' style='background:{cor}'></span>{classif}"
+                f"</label>"
+            )
+        else:
+            label = f"<span class='dot' style='background:{cor}'></span>{classif}"
 
-# ----------------- TABELA NÃO OPERACIONAL -----------------
-tot_nop_ent_at = df_nop_atual['Entrada'].sum()
-tot_nop_sai_at = df_nop_atual['Saída'].sum()
+        cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
+        if tem_sub:
+            rows.append(
+                f"<tbody class='grp'><tr><td>{label}</td>"
+                + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            )
+            piv_sub = sub.pivot_table(
+                index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0,
+            )
+            piv_sub = piv_sub.reindex(columns=refs_sel, fill_value=0.0)
+            piv_sub["__t__"] = piv_sub.sum(axis=1)
+            piv_sub = piv_sub.sort_values("__t__", ascending=False)
+            for det_nome, rd in piv_sub.iterrows():
+                sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
+                rows.append(
+                    f"<tr class='sub-row'><td>↳ {det_nome}</td>"
+                    + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
+                )
+            rows.append("</tbody>")
+        else:
+            rows.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
 
-if tot_nop_ent_at > 0 or tot_nop_sai_at > 0:
-    tot_nop_ent_ant = df_nop_ant['Entrada'].sum()
-    tot_nop_sai_ant = df_nop_ant['Saída'].sum()
-    
-    html_nop = f"""
-    <div class='matrix-container'>
-        <div class='matrix-header' style='background: #f1f5f9; color: var(--text-muted); border-bottom: 2px solid var(--border);'>Fluxo Não Operacional (Financeiro/Investimentos)</div>
-    """
-    
-    if tot_nop_ent_at > 0 or tot_nop_ent_ant > 0:
-        var_nop_ent = calc_var(tot_nop_ent_at, tot_nop_ent_ant)
-        cor_nop_ent = "var(--success)" if var_nop_ent >= 0 else "var(--danger)"
-        html_nop += render_linha("[+] ENTRADAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_ent_at, 100, tot_nop_ent_ant, var_nop_ent, cor_nop_ent)
-        html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Entrada'] > 0], df_nop_ant[df_nop_ant['Entrada'] > 0], 'Entrada', tot_nop_ent_at, is_saida=False)
-        
-    if tot_nop_sai_at > 0 or tot_nop_sai_ant > 0:
-        var_nop_sai = calc_var(tot_nop_sai_at, tot_nop_sai_ant)
-        cor_nop_sai = "var(--danger)" if var_nop_sai >= 0 else "var(--success)"
-        html_nop += render_linha("[-] SAÍDAS NÃO OPERACIONAIS", "lvl-macro", tot_nop_sai_at, 100, tot_nop_sai_ant, var_nop_sai, cor_nop_sai)
-        html_nop += renderizar_estrutura(df_nop_atual[df_nop_atual['Saída'] > 0], df_nop_ant[df_nop_ant['Saída'] > 0], 'Saída', tot_nop_sai_at, is_saida=True)
+    return rows, total
 
-    html_nop += "</div>"
-    injetar_html(html_nop)
+
+def linha_total(label, valor_por_mes, total, cor):
+    cells = []
+    for m in refs_sel:
+        v = float(valor_por_mes.get(m, 0.0)) if hasattr(valor_por_mes, "get") else float(valor_por_mes[m] if m in valor_por_mes.index else 0)
+        cells.append(f"<td><span style='color:{cor}'>{moeda(v)}</span></td>")
+    return (
+        f"<tr class='tot'><td><b>{label}</b></td>"
+        + "".join(cells)
+        + f"<td><span style='color:{cor}'><b>{moeda(total)}</b></span></td></tr>"
+    )
+
+
+def serie_mensal(d, papeis=None, classifs=None, sinal=1.0):
+    x = d.copy()
+    if papeis is not None:
+        x = x[x["Papel"].isin(papeis)]
+    if classifs is not None:
+        x = x[x["Classif"].isin(classifs)]
+    s = x.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0) * sinal
+    return s
+
+
+if df.empty:
+    st.markdown("<div class='vazio'>Sem dados no período</div>", unsafe_allow_html=True)
+else:
+    html = []
+
+    # ----- FCO -----
+    html.append(
+        f"<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+
+    # Receitas
+    d_rec = df[df["Papel"] == "receita_op"]
+    rows, _ = linhas_grupo(d_rec, None, "(+) Receitas operacionais", "rec")
+    html.extend(rows)
+    s_rec = serie_mensal(df, ["receita_op"])
+    html.append(linha_total("Total receitas operacionais", s_rec, float(s_rec.sum()), VERDE))
+
+    # Custos
+    d_cus = df[df["Papel"] == "custo_op"]
+    rows, _ = linhas_grupo(d_cus, None, "(−) Custos e despesas operacionais", "cus")
+    html.extend(rows)
+    s_cus = serie_mensal(df, ["custo_op"])
+    html.append(linha_total("Total custos e despesas operacionais", s_cus, float(s_cus.sum()), VERMELHO))
+
+    # Impostos
+    d_imp = df[df["Papel"] == "imposto"]
+    rows, _ = linhas_grupo(d_imp, None, "(−) Impostos", "imp")
+    html.extend(rows)
+    s_imp = serie_mensal(df, ["imposto"])
+    html.append(linha_total("Total impostos", s_imp, float(s_imp.sum()), VERMELHO))
+
+    s_fco = s_rec - s_cus - s_imp
+    cor_fco = VERDE if float(s_fco.sum()) >= 0 else VERMELHO
+    html.append(linha_total("= FCO (Receitas − Custos − Impostos)", s_fco, float(s_fco.sum()), cor_fco))
+
+    # ----- FCI -----
+    html.append(
+        f"<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    d_cap = df[df["Papel"] == "capex"]
+    rows, _ = linhas_grupo(d_cap, None, "(−) Desembolsos em CAPEX", "cap")
+    html.extend(rows)
+    s_cap = serie_mensal(df, ["capex"])
+    s_fci = -s_cap
+    cor_fci = VERDE if float(s_fci.sum()) >= 0 else VERMELHO
+    html.append(linha_total("= FCI (− CAPEX)", s_fci, float(s_fci.sum()), cor_fci))
+
+    # ----- FCF -----
+    html.append(
+        f"<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    d_capta = df[df["Papel"] == "captacao"]
+    rows, _ = linhas_grupo(d_capta, None, "(+) Novas captações", "cpt")
+    html.extend(rows)
+    s_cpt = serie_mensal(df, ["captacao"])
+
+    d_amo = df[df["Papel"] == "amortizacao"]
+    rows, _ = linhas_grupo(d_amo, None, "(−) Amortizações de empréstimos", "amo")
+    html.extend(rows)
+    s_amo = serie_mensal(df, ["amortizacao"])
+
+    d_jur = df[df["Papel"] == "juros"]
+    rows, _ = linhas_grupo(d_jur, None, "(−) Juros e encargos financeiros", "jur")
+    html.extend(rows)
+    s_jur = serie_mensal(df, ["juros"])
+
+    s_fcf = s_cpt - s_amo - s_jur
+    cor_fcf = VERDE if float(s_fcf.sum()) >= 0 else VERMELHO
+    html.append(linha_total("= FCF (Captações − Amort. − Juros)", s_fcf, float(s_fcf.sum()), cor_fcf))
+
+    # ----- Variação -----
+    s_var = s_fco + s_fci + s_fcf
+    cor_var = VERDE if float(s_var.sum()) >= 0 else VERMELHO
+    html.append(
+        f"<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
+        + "".join(
+            f"<td><span style='color:{VERDE if float(s_var.get(m,0))>=0 else VERMELHO};font-weight:800'>"
+            f"{moeda(float(s_var.get(m,0)))}</span></td>"
+            for m in refs_sel
+        )
+        + f"<td><span style='color:{cor_var}'><b>{moeda(float(s_var.sum()))}</b></span></td></tr>"
+    )
+
+    # Não classificado (diagnóstico)
+    d_nc = df[df["Classif"] == "Não classificado"]
+    if not d_nc.empty:
+        html.append(
+            f"<tr class='sec'><td>ITENS SEM DE-PARA</td>"
+            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+        )
+        rows, _ = linhas_grupo(d_nc, None, None, "nc")
+        html.extend(rows)
+
+    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
+    st.markdown(
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+        f"{''.join(html)}</table></div>",
+        unsafe_allow_html=True,
+    )
+
+# ==============================================================================
+# RODAPÉ SIDEBAR
+# ==============================================================================
+with st.sidebar:
+    st.markdown(
+        f"<div class='side-card'><small>Período</small><b>{txt_per}</b></div>"
+        f"<div class='side-card'><small>FCO</small><b style='color:{'#059669' if fco>=0 else '#dc2626'}'>{moeda(fco)}</b></div>"
+        f"<div class='side-card'><small>FCI</small><b style='color:{'#059669' if fci>=0 else '#dc2626'}'>{moeda(fci)}</b></div>"
+        f"<div class='side-card'><small>FCF</small><b style='color:{'#059669' if fcf>=0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
+        f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
+        unsafe_allow_html=True,
+    )
