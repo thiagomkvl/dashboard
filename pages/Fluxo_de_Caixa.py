@@ -410,6 +410,14 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             continue
         if "adiantamento fornecedores" in ncat and "total" in ncat:
             continue
+        # cabeçalhos de seção sem valor (PMTs, Captações, Alúgueis…) — só pula se não houver valor
+        tem_valor = False
+        for j in mapa_mes:
+            if abs(limpa_valor(row[j] if j < len(row) else 0)) > 0.005:
+                tem_valor = True
+                break
+        if not tem_valor:
+            continue
         for j, ref in mapa_mes.items():
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
@@ -496,12 +504,25 @@ def carregar_mapa_classificacao():
 
 
 def aplicar_classificacao(categoria, mapa):
+    """Retorna (Classificação FCx, Fluxo de Caixa, Detalhe)."""
     n = normalizar_chave(categoria)
     if not n:
         return "Não classificado", FLUXO_OP, categoria
+
+    # Captações de empréstimo (Fluxo_Receita → PMTs / Captações)
+    # Ex.: "Empréstimo Outros Bancos - Empréstimo BANCO"
+    if "amortiza" not in n and (
+        "captacao" in n
+        or "captacoes" in n
+        or ("emprestimo" in n and "banco" in n)
+        or n.startswith("emprestimo")
+    ):
+        return "Captações", FLUXO_FIN, categoria
+
     if n in mapa:
         cls, flx = mapa[n]
         return cls, flx, categoria
+
     cand = []
     for k, (cls, flx) in mapa.items():
         if len(k) >= 8 and (k in n or n in k):
@@ -509,39 +530,45 @@ def aplicar_classificacao(categoria, mapa):
     if cand:
         cand.sort(reverse=True)
         return cand[0][1], cand[0][2], categoria
+
     return "Não classificado", FLUXO_OP, categoria
 
 
 def papel_classif(classif):
-    """Define o papel da Classificação FCx nas fórmulas FCO/FCI/FCF."""
+    """Papel gerencial da Classificação FCx nas fórmulas FCO / FCI / FCF."""
     n = normalizar(classif)
+
+    # Financiamento — captações
+    if "captac" in n:
+        return "captacao"
+    if "emprestimo" in n and "amortiza" not in n:
+        return "captacao"
+
     # Receitas operacionais
     if any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
         return "receita_op"
+
     # Impostos
     if "imposto" in n:
         return "imposto"
+
     # CAPEX
     if "capex" in n or "investimento" in n:
         return "capex"
-    # Financiamento
+
+    # Financiamento — saídas
     if "amortiza" in n:
         return "amortizacao"
     if "juros" in n:
         return "juros"
-    if "captac" in n or "liberacao de emprestimo" in n:
-        return "captacao"
-    # Custos operacionais (resto operacional de saída)
-    if n in (
-        "pessoal", "honorarios medicos", "servicos de terceiros e operacionais",
-        "utilidades e infraestrutura", "materiais, medicamentos e opme",
-        "despesas administrativas e gerais", "despesas bancarias e tarifas",
-        "outras despesas operacionais",
-    ) or any(x in n for x in (
+
+    # Custos operacionais
+    if any(x in n for x in (
         "pessoal", "honorario", "terceiros", "utilidade", "opme",
         "administrativ", "bancari", "outras despesas",
     )):
         return "custo_op"
+
     return "outros"
 
 
@@ -558,7 +585,7 @@ def carregar_fluxo():
         return vazio, ["Conexão indisponível."]
     partes = []
 
-    # Base_Despesas
+    # ---- Base_Despesas ----
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
@@ -585,7 +612,7 @@ def carregar_fluxo():
                 g["Tipo"], g["Grupo"] = "Saída", "Despesas"
                 partes.append(g[cols])
 
-    # Borderô
+    # ---- Borderô ----
     try:
         raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
     except Exception as e:
@@ -600,7 +627,7 @@ def carregar_fluxo():
             mb["Grupo"] = "Borderô"
             partes.append(mb[cols])
 
-    # Adiantamentos
+    # ---- Adiantamentos ----
     try:
         raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
     except Exception as e:
@@ -615,7 +642,7 @@ def carregar_fluxo():
             ma["Grupo"] = "Adiantamentos"
             partes.append(ma[cols])
 
-    # Receita
+    # ---- Receita (inclui Captações / PMTs / Empréstimos) ----
     try:
         raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
     except Exception as e:
@@ -683,7 +710,7 @@ if grupo_sel:
     df = df[df["Grupo"].isin(grupo_sel)]
 
 # ==============================================================================
-# FÓRMULAS
+# FÓRMULAS GERENCIAIS
 # ==============================================================================
 def total_papel(d, papel):
     return float(d.loc[d["Papel"] == papel, "Valor"].sum())
@@ -697,9 +724,9 @@ amort = total_papel(df, "amortizacao")
 juros = total_papel(df, "juros")
 captacao = total_papel(df, "captacao")
 
-fco = rec_op - custo_op - impostos
-fci = -capex
-fcf = captacao - amort - juros
+fco = rec_op - custo_op - impostos          # Receitas − Custos − Impostos
+fci = -capex                                 # − CAPEX
+fcf = captacao - amort - juros               # Captações − Amortizações − Juros
 variacao = fco + fci + fcf
 
 mapa_cores = {}
@@ -744,7 +771,7 @@ st.markdown(
     <div class='kpi purple'>
         <div class='kpi-t'>FCF · Financiamento</div>
         <div class='kpi-v' style='color:{"#059669" if fcf>=0 else "#dc2626"}'>{moeda(fcf)}</div>
-        <div class='kpi-sub'>Captações − Amort. − Juros</div>
+        <div class='kpi-sub'>Captações {moeda_curta(captacao)} − Amort. − Juros</div>
     </div>
     <div class='kpi {"green" if variacao>=0 else "red"}'>
         <div class='kpi-t'>Variação líquida de caixa</div>
@@ -772,10 +799,11 @@ def linhas_papel(d, papel, titulo, uid_prefix):
     x = d[d["Papel"] == papel]
     if x.empty:
         return rows
-    rows.append(
-        f"<tr class='subsec'><td>{titulo}</td>"
-        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
-    )
+    if titulo:
+        rows.append(
+            f"<tr class='subsec'><td>{titulo}</td>"
+            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+        )
     piv = x.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
     piv = piv.reindex(columns=refs_sel, fill_value=0.0)
     piv["__t__"] = piv.sum(axis=1)
@@ -802,14 +830,20 @@ def linhas_papel(d, papel, titulo, uid_prefix):
             label = f"<span class='dot' style='background:{cor}'></span>{classif}"
         cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
         if tem:
-            rows.append(f"<tbody class='grp'><tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+            rows.append(
+                f"<tbody class='grp'><tr><td>{label}</td>"
+                + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            )
             ps = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
             ps = ps.reindex(columns=refs_sel, fill_value=0.0)
             ps["__t__"] = ps.sum(axis=1)
             ps = ps.sort_values("__t__", ascending=False)
             for dn, rd in ps.iterrows():
                 sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
-                rows.append(f"<tr class='sub-row'><td>↳ {dn}</td>" + "".join(f"<td>{c}</td>" for c in sc) + "</tr>")
+                rows.append(
+                    f"<tr class='sub-row'><td>↳ {dn}</td>"
+                    + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
+                )
             rows.append("</tbody>")
         else:
             rows.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
@@ -819,7 +853,10 @@ def linhas_papel(d, papel, titulo, uid_prefix):
 def linha_tot(label, s, cor):
     return (
         f"<tr class='tot'><td><b>{label}</b></td>"
-        + "".join(f"<td><span style='color:{cor}'>{moeda(float(s.get(m,0)))}</span></td>" for m in refs_sel)
+        + "".join(
+            f"<td><span style='color:{cor}'>{moeda(float(s.get(m, 0)))}</span></td>"
+            for m in refs_sel
+        )
         + f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td></tr>"
     )
 
@@ -829,7 +866,7 @@ if df.empty:
 else:
     html = []
 
-    # 1. FCO
+    # ----- 1. FCO -----
     html.append(
         "<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
@@ -849,7 +886,7 @@ else:
     s_fco = s_rec - s_cus - s_imp
     html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
 
-    # 2. FCI
+    # ----- 2. FCI -----
     html.append(
         "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
@@ -859,58 +896,65 @@ else:
     s_fci = -s_cap
     html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
 
-    # 3. FCF
+    # ----- 3. FCF -----
     html.append(
         "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
-    html.extend(linhas_papel(df, "captacao", "(+) Novas captações", "p"))
+    html.extend(linhas_papel(df, "captacao", "(+) Novas captações (empréstimos)", "p"))
     s_cpt = serie(df, "captacao")
+    html.append(linha_tot("Total captações", s_cpt, VERDE))
+
     html.extend(linhas_papel(df, "amortizacao", "(−) Amortizações de empréstimos", "a"))
     s_amo = serie(df, "amortizacao")
+    html.append(linha_tot("Total amortizações", s_amo, VERMELHO))
+
     html.extend(linhas_papel(df, "juros", "(−) Juros e encargos financeiros", "j"))
     s_jur = serie(df, "juros")
+    html.append(linha_tot("Total juros e encargos", s_jur, VERMELHO))
+
     s_fcf = s_cpt - s_amo - s_jur
     html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
 
-    # Variação
+    # ----- Variação -----
     s_var = s_fco + s_fci + s_fcf
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
-            f"<td><span style='color:{VERDE if float(s_var.get(m,0))>=0 else VERMELHO};font-weight:800'>"
-            f"{moeda(float(s_var.get(m,0)))}</span></td>"
+            f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
+            f"{moeda(float(s_var.get(m, 0)))}</span></td>"
             for m in refs_sel
         )
-        + f"<td><span style='color:{VERDE if float(s_var.sum())>=0 else VERMELHO}'><b>"
+        + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
         f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
     )
 
-    # Não classificado
-    if (df["Papel"] == "outros").any() or (df["Classif"] == "Não classificado").any():
+    # Itens sem papel gerencial
+    d_out = df[df["Papel"] == "outros"]
+    if not d_out.empty:
         html.append(
             "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
             + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
         )
-        html.extend(linhas_papel(df[df["Papel"] == "outros"], "outros", None, "o"))
-        d_nc = df[df["Classif"] == "Não classificado"]
-        if not d_nc.empty:
-            # força papel temporário
-            tmp = d_nc.copy()
-            tmp["Papel"] = "outros"
-            html.extend(linhas_papel(tmp, "outros", "Não classificado no de-para", "n"))
+        html.extend(linhas_papel(d_out, "outros", None, "o"))
 
     th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
     st.markdown(
-        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>{''.join(html)}</table></div>",
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+        f"{''.join(html)}</table></div>",
         unsafe_allow_html=True,
     )
 
 with st.sidebar:
     st.markdown(
-        f"<div class='side-card'><small>FCO</small><b style='color:{'#059669' if fco>=0 else '#dc2626'}'>{moeda(fco)}</b></div>"
-        f"<div class='side-card'><small>FCI</small><b style='color:{'#059669' if fci>=0 else '#dc2626'}'>{moeda(fci)}</b></div>"
-        f"<div class='side-card'><small>FCF</small><b style='color:{'#059669' if fcf>=0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
-        f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
+        f"<div class='side-card'><small>FCO</small>"
+        f"<b style='color:{'#059669' if fco >= 0 else '#dc2626'}'>{moeda(fco)}</b></div>"
+        f"<div class='side-card'><small>FCI</small>"
+        f"<b style='color:{'#059669' if fci >= 0 else '#dc2626'}'>{moeda(fci)}</b></div>"
+        f"<div class='side-card'><small>FCF</small>"
+        f"<b style='color:{'#059669' if fcf >= 0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
+        f"<div class='side-card'><small>Captações</small><b style='color:#059669'>{moeda(captacao)}</b></div>"
+        f"<div class='side-card'><small>Última atualização</small>"
+        f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
