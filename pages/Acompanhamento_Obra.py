@@ -886,6 +886,5 @@ if not df_real_filtrado.empty:
 with st.sidebar:
     st.markdown(
         f"<div class='side-card'><small>Filtro atual</small><b>{txt_mes} · {txt_obra}</b></div>"
-        f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
