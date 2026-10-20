@@ -52,7 +52,7 @@ TRANSACOES_DESPESAS = {
     "despesas administrativas", "despesas financeiras", "despesas judiciais",
     "devolucao adiantamento particular", "honorarios medicos", "iptu",
     "outras despesas", "parcelamento impostos", "pessoal", "pmts",
-    "tributos correntes", "juros fornecedor", "seguros", "iof", "Tributos S/ Empréstimos - IOF"
+    "tributos correntes", "juros fornecedor", "seguros", "iof", "Tributos S/ Empréstimos",
 }
 
 CORES_CAT = [
