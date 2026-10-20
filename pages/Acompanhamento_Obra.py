@@ -25,20 +25,23 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# PALETA — tema claro
+# PALETA — tema claro (sem roxo forte)
 # ==============================================================================
 AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
-ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
+AZUL_CLARO, LARANJA, CIANO, ROSA = "#60a5fa", "#ea580c", "#0891b2", "#e11d48"
 TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 
 ESPACO_ENTRE_BLOCOS = "0.75rem"
 AJUSTE_APOS_KPIS = "0.75rem"
 
-PALETA_OBRAS = [AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO,
-                "#0ea5e9", "#84cc16", "#a855f7", "#14b8a6", "#eab308", "#f43f5e"]
+# Paleta de obras: azuis claros + complementares suaves (sem roxo intenso)
+PALETA_OBRAS = [
+    AZUL, VERDE, AMBAR, AZUL_CLARO, LARANJA, CIANO, ROSA, VERMELHO,
+    "#93c5fd", "#34d399", "#fbbf24", "#38bdf8", "#fb923c", "#2dd4bf",
+]
 
 # ==============================================================================
-# CSS — identidade branca
+# CSS — identidade branca + Total sticky
 # ==============================================================================
 css = """
 <style>
@@ -91,7 +94,7 @@ css = """
            border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(15,23,42,0.05); border-left: 3px solid #2563eb; }
     .kpi.green { border-left-color: #059669; }
     .kpi.amber { border-left-color: #d97706; }
-    .kpi.purple { border-left-color: #7c3aed; }
+    .kpi.purple { border-left-color: #60a5fa; }
     .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: #64748b; min-height: 22px; }
     .kpi-v { font-size: 17px; font-weight: 800; color: #0f172a; margin: 6px 0 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
@@ -121,12 +124,23 @@ css = """
         background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
     .unified-table td:last-child { border-right: none; }
-    .unified-table th.col-total, .unified-table td.col-total {
-        background: #f1f5f9; font-weight: 800; border-left: 2px solid #e2e8f0;
+    /* Coluna Total FIXA à direita */
+    .unified-table th.col-total,
+    .unified-table td.col-total {
+        position: sticky;
+        right: 0;
+        z-index: 5;
+        background: #f1f5f9 !important;
+        font-weight: 800;
+        border-left: 2px solid #e2e8f0;
+        min-width: 90px;
+        box-shadow: -4px 0 8px rgba(15,23,42,0.04);
     }
+    .unified-table th.col-total { z-index: 6; }
     .row-label {
         text-align: left; padding-left: 14px !important; font-weight: 700; color: #64748b;
         background: #f8fafc !important; width: 170px; border-right: 2px solid #e2e8f0 !important;
+        position: sticky; left: 0; z-index: 4;
     }
     .val-real { font-weight: 800; color: #059669; }
     .val-orc { font-weight: 800; color: #2563eb; }
@@ -505,7 +519,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# EVOLUÇÃO MENSAL (+ TOTAL por linha)
+# EVOLUÇÃO MENSAL (+ TOTAL por linha, coluna fixa)
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -526,7 +540,6 @@ meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
                7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
 
-# totais por linha
 tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
 tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
@@ -550,7 +563,6 @@ fig_linha.add_trace(go.Scatter(
 ))
 st.plotly_chart(layout_fig(fig_linha, 260, True), use_container_width=True, config={'displayModeBar': False})
 
-# Tabela com TOTAL
 html_unified = (
     "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
     "<th class='row-label'>Mês</th>"
@@ -685,7 +697,7 @@ html_fluxo += "</tr></tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
 
 # ==============================================================================
-# DETALHAMENTO ORÇAMENTO (valores à esquerda)
+# DETALHAMENTO ORÇAMENTO (TOTAL ORÇADO em preto)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
 
@@ -728,7 +740,8 @@ if not df_orc_filtrado.empty:
                 f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
-            html_orc_det += f"<td style='font-weight:800;color:{AZUL}'>{formatar_moeda(tot_obra)}</td>"
+            # TOTAL ORÇADO em preto
+            html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(tot_obra)}</td>"
             for m_num in range(1, 13):
                 val_m = row.get(m_num, 0.0)
                 totais_col_orc[m_num] += val_m
@@ -753,7 +766,7 @@ if not df_orc_filtrado.empty:
             html_orc_det += "</tbody>"
 
         html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
-        html_orc_det += f"<td style='font-weight:900;color:{AZUL}'>{formatar_moeda(total_geral_orc)}</td>"
+        html_orc_det += f"<td style='font-weight:900;color:{TXT}'>{formatar_moeda(total_geral_orc)}</td>"
         for m_num in range(1, 13):
             t_col = totais_col_orc[m_num]
             html_orc_det += f"<td style='font-weight:900'>{formatar_moeda(t_col) if t_col > 0 else '-'}</td>"
@@ -761,7 +774,7 @@ if not df_orc_filtrado.empty:
         st.markdown(html_orc_det, unsafe_allow_html=True)
 
 # ==============================================================================
-# DETALHAMENTO PAGAMENTOS (valores à esquerda)
+# DETALHAMENTO PAGAMENTOS
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de pagamentos realizados</div>", unsafe_allow_html=True)
 
