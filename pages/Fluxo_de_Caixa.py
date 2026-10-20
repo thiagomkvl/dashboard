@@ -53,7 +53,6 @@ TRANSACOES_DESPESAS = {
     "devolucao adiantamento particular", "honorarios medicos", "iptu",
     "outras despesas", "parcelamento impostos", "pessoal", "pmts",
     "tributos correntes", "juros fornecedor",
-
 }
 
 CORES_CAT = [
@@ -369,15 +368,7 @@ def cor_cat(nome, mapa):
     return mapa[nome]
 
 
-# ==============================================================================
-# MELT — cabeçalho dinâmico por seção + ignora Total geral
-# ==============================================================================
 def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
-    """
-    Converte matriz mensal em formato longo.
-    - Suporta cabeçalhos de seção no meio da aba (ex.: Captações: maio | setembro | Total geral).
-    - Colunas de total NUNCA entram como mês (evita dobra de valor).
-    """
     cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
@@ -410,7 +401,6 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
     def score_header(row):
         return len(montar_mapa_mes(row))
 
-    # cabeçalho global inicial
     hr0, best_s = 0, score_header(grid[0])
     for i in range(min(8, n_rows)):
         s = score_header(grid[i])
@@ -430,8 +420,6 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
     for i in range(hr0 + 1, n_rows):
         row = grid[i]
-
-        # Nova linha de cabeçalho de seção? (ex.: maio | setembro | Total geral)
         s_local = score_header(row)
         if s_local >= 1:
             cat_test = row[li] if li < len(row) else None
@@ -459,7 +447,6 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
         if "adiantamento fornecedores" in ncat and "total" in ncat:
             continue
 
-        # título de seção sem valores → pula
         tem_valor = any(
             abs(limpa_valor(row[j] if j < len(row) else 0)) > 0.005
             for j in mapa_atual
@@ -481,7 +468,7 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 
 # ==============================================================================
-# DE-PARA
+# DE-PARA  (prioridade absoluta da aba Classificacao_FCx)
 # ==============================================================================
 def _mapa_de_dataframe(df_map):
     if df_map is None or df_map.empty:
@@ -559,12 +546,27 @@ def eh_juros(nome):
     return "juros" in normalizar_chave(nome)
 
 
+def eh_juros_fornecedor(nome):
+    n = normalizar_chave(nome)
+    return "juros" in n and "fornecedor" in n
+
+
+def eh_juros_financiamento(nome):
+    """Juros de empréstimo/banco — FCF. Exclui juros de fornecedor."""
+    n = normalizar_chave(nome)
+    if "juros" not in n or "fornecedor" in n:
+        return False
+    return any(x in n for x in (
+        "emprestimo", "financiament", "banco", "unicred", "encarg",
+        "capital de giro", "cdc", "leasing",
+    ))
+
+
 def eh_amortizacao(nome):
     return "amortiza" in normalizar_chave(nome)
 
 
 def eh_captacao(nome):
-    """Captação de empréstimo (entrada). NÃO é juros nem amortização."""
     n = normalizar_chave(nome)
     if not n:
         return False
@@ -583,60 +585,90 @@ def eh_captacao(nome):
 
 
 def aplicar_classificacao(categoria, mapa):
+    """
+    Prioridade:
+      1) De-para da aba Classificacao_FCx (Classificação + Fluxo)
+      2) Fallbacks só se não houver match
+    """
     n = normalizar_chave(categoria)
     if not n:
         return "Não classificado", FLUXO_OP, categoria
 
-    if eh_juros(categoria):
-        return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
-    if eh_amortizacao(categoria):
-        return "Amortização de Empréstimos", FLUXO_FIN, categoria
-    if eh_captacao(categoria):
-        return "Captações", FLUXO_FIN, categoria
-
+    # 1) Match exato
     if n in mapa:
         cls, flx = mapa[n]
-        if eh_juros(cls) or eh_juros(categoria):
-            return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
-        if eh_amortizacao(cls) or eh_amortizacao(categoria):
-            return "Amortização de Empréstimos", FLUXO_FIN, categoria
         return cls, flx, categoria
 
+    # 2) Match fuzzy
     cand = []
     for k, (cls, flx) in mapa.items():
-        if len(k) >= 8 and (k in n or n in k):
+        if len(k) >= 6 and (k in n or n in k):
             cand.append((len(k), cls, flx))
     if cand:
         cand.sort(reverse=True)
-        cls, flx = cand[0][1], cand[0][2]
-        if eh_juros(cls) or eh_juros(categoria):
-            return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
-        if eh_amortizacao(cls) or eh_amortizacao(categoria):
-            return "Amortização de Empréstimos", FLUXO_FIN, categoria
-        return cls, flx, categoria
+        return cand[0][1], cand[0][2], categoria
+
+    # 3) Fallbacks
+    if eh_captacao(categoria):
+        return "Captações", FLUXO_FIN, categoria
+    if eh_amortizacao(categoria):
+        return "Amortização de Empréstimos", FLUXO_FIN, categoria
+    if eh_juros_fornecedor(categoria):
+        return "Juros Fornecedor", FLUXO_OP, categoria
+    if eh_juros_financiamento(categoria):
+        return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
+    # juros genérico sem "fornecedor" e sem indício de empréstimo → operacional
+    if eh_juros(categoria):
+        return "Juros Fornecedor", FLUXO_OP, categoria
 
     return "Não classificado", FLUXO_OP, categoria
 
 
-def papel_classif(classif):
+def papel_classif(classif, fluxo=""):
+    """
+    Papel para fórmulas FCO / FCI / FCF.
+    Respeita o bloco de Fluxo vindo do de-para.
+    """
     n = normalizar(classif)
-    if "juros" in n:
-        return "juros"
-    if "amortiza" in n:
-        return "amortizacao"
-    if "captac" in n:
-        return "captacao"
-    if "emprestimo" in n:
-        return "captacao"
+    nf = normalizar(fluxo)
+
+    # ----- Investimentos -----
+    if "invest" in nf:
+        return "capex"
+
+    # ----- Financiamento -----
+    if "financ" in nf:
+        if "captac" in n or (
+            "emprestimo" in n and "amortiza" not in n and "juros" not in n
+        ):
+            return "captacao"
+        if "amortiza" in n:
+            return "amortizacao"
+        if "juros" in n:
+            return "juros"
+        return "outros"
+
+    # ----- Operacional -----
     if any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
         return "receita_op"
-    if "imposto" in n:
+    if "imposto" in n or "tributo" in n:
         return "imposto"
+    # juros de fornecedor (ou juros com fluxo operacional) → custo op
+    if "juros" in n:
+        if "fornecedor" in n or "operac" in nf:
+            return "custo_op"
+        if any(x in n for x in ("emprestimo", "banco", "financiament", "encarg")):
+            return "juros"
+        return "custo_op"
     if "capex" in n or "investimento" in n:
         return "capex"
+    if "captac" in n:
+        return "captacao"
+    if "amortiza" in n:
+        return "amortizacao"
     if any(x in n for x in (
         "pessoal", "honorario", "terceiros", "utilidade", "opme",
-        "administrativ", "bancari", "outras despesas",
+        "administrativ", "bancari", "outras despesas", "fornecedor",
     )):
         return "custo_op"
     return "outros"
@@ -655,7 +687,6 @@ def carregar_fluxo():
         return vazio, ["Conexão indisponível."]
     partes = []
 
-    # Base_Despesas
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
@@ -682,7 +713,6 @@ def carregar_fluxo():
                 g["Tipo"], g["Grupo"] = "Saída", "Despesas"
                 partes.append(g[cols])
 
-    # Borderô
     try:
         raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
     except Exception as e:
@@ -697,7 +727,6 @@ def carregar_fluxo():
             mb["Grupo"] = "Borderô"
             partes.append(mb[cols])
 
-    # Adiantamentos
     try:
         raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
     except Exception as e:
@@ -712,7 +741,6 @@ def carregar_fluxo():
             ma["Grupo"] = "Adiantamentos"
             partes.append(ma[cols])
 
-    # Receita (Aluguéis, Outras Receitas, Captações/PMTs…)
     try:
         raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
     except Exception as e:
@@ -749,7 +777,7 @@ pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
 base["Classif"] = pares.apply(lambda x: x[0])
 base["Fluxo"] = pares.apply(lambda x: x[1])
 base["Detalhe"] = pares.apply(lambda x: x[2])
-base["Papel"] = base["Classif"].apply(papel_classif)
+base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
 # ==============================================================================
 # SIDEBAR
@@ -798,10 +826,10 @@ custo_op = total_papel(df, "custo_op")
 impostos = total_papel(df, "imposto")
 capex = total_papel(df, "capex")
 amort = total_papel(df, "amortizacao")
-juros = total_papel(df, "juros")
+juros = total_papel(df, "juros")          # só FCF
 captacao = total_papel(df, "captacao", tipo="Entrada")
 
-fco = rec_op - custo_op - impostos
+fco = rec_op - custo_op - impostos        # juros fornecedor entra em custo_op
 fci = -capex
 fcf = captacao - amort - juros
 variacao = fco + fci + fcf
@@ -945,7 +973,6 @@ if df.empty:
 else:
     html = []
 
-    # 1. FCO
     html.append(
         "<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
@@ -965,7 +992,6 @@ else:
     s_fco = s_rec - s_cus - s_imp
     html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
 
-    # 2. FCI
     html.append(
         "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
@@ -975,7 +1001,6 @@ else:
     s_fci = -s_cap
     html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
 
-    # 3. FCF
     html.append(
         "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
@@ -995,7 +1020,6 @@ else:
     s_fcf = s_cpt - s_amo - s_jur
     html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
 
-    # Variação
     s_var = s_fco + s_fci + s_fcf
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
