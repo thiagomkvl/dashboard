@@ -7,15 +7,15 @@ import textwrap
 import io
 from datetime import datetime
 
-# ==============================================================================
-# 0. CONFIGURAÇÃO DA PÁGINA
-# ==============================================================================
-st.set_page_config(
-    page_title="Acompanhamento de Obras",
-    layout="wide",
-    page_icon="🏗️",
-    initial_sidebar_state="expanded",
-)
+try:
+    st.set_page_config(
+        page_title="Acompanhamento de Obras",
+        layout="wide",
+        page_icon="🏗️",
+        initial_sidebar_state="expanded",
+    )
+except Exception:
+    pass
 
 try:
     from database import conectar_sheets
@@ -25,160 +25,156 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# PALETA (mesma identidade do painel de faturamento)
+# PALETA — tema claro
 # ==============================================================================
-AZUL, VERDE, AMBAR, VERMELHO = "#3b82f6", "#10b981", "#f59e0b", "#ef4444"
-ROXO, LARANJA, CIANO, ROSA = "#8b5cf6", "#f97316", "#22d3ee", "#fb7185"
-TXT, MUTED, BORDA = "#e6ecf5", "#8fa3c4", "#1c2a47"
-BG_APP, BG_CARD, BG_SIDE = "#0a1020", "#0f1a2e", "#0b1326"
+AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
+ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
+TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 
-ESPACO_ENTRE_BLOCOS = "1.0rem"
-AJUSTE_APOS_KPIS = "1.0rem"
+ESPACO_ENTRE_BLOCOS = "0.75rem"
+AJUSTE_APOS_KPIS = "0.75rem"
+
+PALETA_OBRAS = [AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO,
+                "#0ea5e9", "#84cc16", "#a855f7", "#14b8a6", "#eab308", "#f43f5e"]
 
 # ==============================================================================
-# 1. CUSTOM CSS (IDENTIDADE VISUAL ESCURA)
+# CSS — identidade branca
 # ==============================================================================
 css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
-    .stApp, [data-testid="stAppViewContainer"] { background: #0a1020 !important; color: #e6ecf5; }
+    .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
     .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
     div[data-testid="stVerticalBlock"] { gap: __GAP__; }
-    [data-testid="stMarkdownContainer"] { color: #e6ecf5; }
+    [data-testid="stMarkdownContainer"] { color: #0f172a; }
 
-    /* Sidebar */
-    [data-testid="stSidebar"] { background: #0b1326 !important; border-right: 1px solid #1a2744; }
-    [data-testid="stWidgetLabel"] p { color: #8fa3c4 !important; font-size: 12px; font-weight: 600; }
-    .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #8fa3c4; text-transform: uppercase; margin: 6px 0 -2px; }
-    .side-card { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
-    .side-card small { display: block; color: #8fa3c4; font-size: 11px; }
-    .side-card b { color: #e6ecf5; font-size: 13px; }
+    [data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
+    [data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
+    .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #64748b; text-transform: uppercase; margin: 6px 0 -2px; }
+    .side-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+    .side-card small { display: block; color: #64748b; font-size: 11px; }
+    .side-card b { color: #0f172a; font-size: 13px; }
 
-    /* Widgets escuros */
-    [data-baseweb="select"] > div { background: #101b32 !important; border-color: #1e2d4d !important; color: #e6ecf5 !important; }
-    [data-baseweb="select"] span, [data-baseweb="select"] input { color: #e6ecf5 !important; }
-    [data-baseweb="select"] svg { fill: #8fa3c4; }
-    [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #101b32 !important; }
-    li[role="option"] { color: #e6ecf5 !important; }
-    li[role="option"]:hover, li[aria-selected="true"] { background: #1a2a4a !important; }
-    span[data-baseweb="tag"] { background: #f97316 !important; color: #fff !important; }
-    .stButton > button { background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; border-radius: 10px; font-weight: 700; padding: 0.55rem 1rem; }
-    .stButton > button:hover { filter: brightness(1.1); color: #fff; border: none; }
+    [data-baseweb="select"] > div { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+    [data-baseweb="select"] span, [data-baseweb="select"] input { color: #0f172a !important; }
+    [data-baseweb="select"] svg { fill: #64748b; }
+    [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #ffffff !important; }
+    li[role="option"] { color: #0f172a !important; }
+    li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
+    span[data-baseweb="tag"] { background: #2563eb !important; color: #fff !important; }
+    .stButton > button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+        color: #fff !important; border: none !important; border-radius: 10px !important;
+        font-weight: 700 !important; padding: 0.55rem 1rem !important;
+    }
     [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
         color: #fff !important; border: none !important; border-radius: 10px !important;
         font-weight: 700 !important; height: 36px; font-size: 12px;
     }
 
-    /* Cabeçalho */
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #1a2744; }
-    .top h1 { margin: 0; padding: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.3px; color: #fff; }
-    .top p { margin: 2px 0 0; font-size: 13px; color: #8fa3c4; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+           padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
+    .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
     .pills { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pill { background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 10px; padding: 6px 14px; min-width: 120px; }
-    .pill small { display: block; font-size: 10px; color: #8fa3c4; }
-    .pill b { font-size: 13px; color: #fff; white-space: nowrap; }
+    .pill { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px 14px; min-width: 120px;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+    .pill small { display: block; font-size: 10px; color: #64748b; }
+    .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
-    /* KPIs */
     .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
-    .kpi {
-        padding: 12px; border-radius: 12px; height: 110px; container-type: inline-size; overflow: hidden;
-        background: linear-gradient(135deg, rgba(59,130,246,0.10), #0f1a2e 70%);
-        border: 1px solid rgba(59,130,246,0.22);
-    }
-    .kpi.green { background: linear-gradient(135deg, rgba(16,185,129,0.10), #0f1a2e 70%); border-color: rgba(16,185,129,0.22); }
-    .kpi.amber { background: linear-gradient(135deg, rgba(245,158,11,0.10), #0f1a2e 70%); border-color: rgba(245,158,11,0.22); }
-    .kpi.purple { background: linear-gradient(135deg, rgba(139,92,246,0.10), #0f1a2e 70%); border-color: rgba(139,92,246,0.22); }
-    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; line-height: 1.2; min-height: 22px; color: #9db2d3; }
-    .kpi-v { font-size: clamp(11px, 11cqw, 18px); font-weight: 800; color: #fff; letter-spacing: -0.3px; white-space: nowrap; margin: 6px 0 3px; font-variant-numeric: tabular-nums; }
-    .kpi-sub { font-size: 11px; color: #8fa3c4; font-weight: 600; }
-    .kpi-sub.up { color: #34d399; }
-    .kpi-sub.down { color: #f87171; }
-    .pb { width: 100%; background: #16213a; height: 6px; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+    .kpi { padding: 12px 14px; border-radius: 12px; min-height: 110px; background: #ffffff;
+           border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(15,23,42,0.05); border-left: 3px solid #2563eb; }
+    .kpi.green { border-left-color: #059669; }
+    .kpi.amber { border-left-color: #d97706; }
+    .kpi.purple { border-left-color: #7c3aed; }
+    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: #64748b; min-height: 22px; }
+    .kpi-v { font-size: 17px; font-weight: 800; color: #0f172a; margin: 6px 0 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
+    .kpi-sub.up { color: #059669; }
+    .kpi-sub.down { color: #dc2626; }
+    .pb { width: 100%; background: #e2e8f0; height: 6px; border-radius: 3px; margin-top: 6px; overflow: hidden; }
     .pb span { display: block; height: 100%; border-radius: 3px; }
 
-    /* Cards / seções */
-    [data-testid="stVerticalBlockBorderWrapper"] { background: #0f1a2e; border: 1px solid #1c2a47 !important; border-radius: 12px; }
-    .card-title {
-        display: flex; align-items: center; justify-content: space-between;
-        font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
-        color: #fff; margin: 2px 0 8px;
-    }
-    .card-title span { font-size: 10px; font-weight: 600; letter-spacing: 0.2px; text-transform: none; color: #8fa3c4; }
     .section-title {
         font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
-        color: #fff; margin: 18px 0 10px; padding-left: 10px; border-left: 3px solid #3b82f6;
+        color: #0f172a; margin: 18px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
     }
 
-    /* Tabelas unificadas */
     .unified-summary-box {
-        background: #0f1a2e; border: 1px solid #1c2a47; border-radius: 12px;
-        margin-top: 8px; margin-bottom: 16px; overflow: hidden;
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
+        margin-top: 8px; margin-bottom: 16px; overflow: auto;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.04);
     }
-    .unified-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; color: #dbe6f7; }
+    .unified-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; color: #334155; }
     .unified-table th {
-        background: #0f1a2e; color: #8fa3c4; font-weight: 700; text-transform: uppercase;
-        padding: 10px 4px; border-bottom: 1px solid #1c2a47; border-right: 1px solid #16213a;
+        background: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase;
+        padding: 10px 8px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #f1f5f9; text-align: left;
     }
     .unified-table th:last-child { border-right: none; }
     .unified-table td {
-        padding: 10px 4px; border-bottom: 1px solid #16213a; border-right: 1px solid #16213a;
-        background: #0f1a2e; font-variant-numeric: tabular-nums;
+        padding: 10px 8px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9;
+        background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
     .unified-table td:last-child { border-right: none; }
-    .row-label {
-        text-align: left; padding-left: 14px !important; font-weight: 700; color: #8fa3c4;
-        background: #0d1730 !important; width: 170px; border-right: 2px solid #1c2a47 !important;
+    .unified-table th.col-total, .unified-table td.col-total {
+        background: #f1f5f9; font-weight: 800; border-left: 2px solid #e2e8f0;
     }
-    .val-real { font-weight: 800; color: #34d399; }
-    .val-orc { font-weight: 800; color: #60a5fa; }
+    .row-label {
+        text-align: left; padding-left: 14px !important; font-weight: 700; color: #64748b;
+        background: #f8fafc !important; width: 170px; border-right: 2px solid #e2e8f0 !important;
+    }
+    .val-real { font-weight: 800; color: #059669; }
+    .val-orc { font-weight: 800; color: #2563eb; }
 
-    /* Tabelas com drilldown */
     .fases-table-container {
-        max-height: 500px; overflow: auto; border: 1px solid #1c2a47; border-radius: 12px;
-        background: #0f1a2e;
+        max-height: 500px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px;
+        background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
     }
     .fases-table {
         width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
-        background: #0f1a2e; table-layout: fixed; color: #dbe6f7;
+        background: #ffffff; table-layout: fixed; color: #334155;
     }
     .fases-table thead { position: sticky; top: 0; z-index: 15; }
     .fases-table th {
-        background: #0f1a2e; color: #8fa3c4; font-weight: 700; text-transform: uppercase;
-        padding: 12px 10px; border-bottom: 1px solid #1c2a47; text-align: left;
+        background: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase;
+        padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: left;
         position: sticky; top: 0; z-index: 15;
     }
-    .fases-table td { padding: 10px; border-bottom: 1px solid #16213a; color: #dbe6f7; background: #0f1a2e; }
+    .fases-table td {
+        padding: 10px; border-bottom: 1px solid #f1f5f9; color: #334155;
+        background: #ffffff; text-align: left;
+    }
     .fases-table th:nth-child(1), .fases-table td:nth-child(1) {
         width: 300px; min-width: 300px; max-width: 300px; position: sticky; left: 0; z-index: 10;
-        background: #0f1a2e; border-right: 2px solid #1c2a47; overflow: hidden; text-overflow: ellipsis;
+        background: #ffffff; border-right: 2px solid #e2e8f0; overflow: hidden; text-overflow: ellipsis;
     }
-    .fases-table th:nth-child(1) { z-index: 20; }
+    .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
     .fases-table th:nth-child(2), .fases-table td:nth-child(2) { width: 140px; min-width: 140px; max-width: 140px; }
     .fases-table th:nth-child(n+3), .fases-table td:nth-child(n+3) { width: 110px; min-width: 110px; max-width: 110px; }
-    .fases-table tr:hover td { background: #13203a; }
+    .fases-table tr:hover td { background: #f8fafc; }
     .total-geral-row td {
-        font-weight: 900; background: #0d1730 !important; border-top: 1px solid #2a3a5c; color: #fff;
+        font-weight: 900; background: #f1f5f9 !important; border-top: 1px solid #e2e8f0; color: #0f172a;
     }
 
-    /* Drilldown */
-    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; color: #e6ecf5; }
+    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; color: #0f172a; }
     .toggle-checkbox { display: none; }
-    .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #3b82f6; }
+    .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #2563eb; }
     .obra-group .sub-row { display: none; }
     .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
-    .orcado-indicator { display: block; font-size: 9px; color: #8fa3c4; margin-top: 3px; font-weight: 600; }
+    .orcado-indicator { display: block; font-size: 9px; color: #64748b; margin-top: 3px; font-weight: 600; }
 
     .fases-table-container::-webkit-scrollbar,
     .unified-summary-box::-webkit-scrollbar { height: 6px; width: 6px; }
     .fases-table-container::-webkit-scrollbar-thumb,
-    .unified-summary-box::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 6px; }
+    .unified-summary-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
 
-    hr { border: none !important; border-top: 1px solid #1a2744 !important; margin: 20px 0 !important; }
+    hr { border: none !important; border-top: 1px solid #e2e8f0 !important; margin: 20px 0 !important; }
 </style>
 """
 st.markdown(
@@ -187,7 +183,7 @@ st.markdown(
 )
 
 # ==============================================================================
-# 2. FUNÇÕES DE LIMPEZA E FORMATAÇÃO
+# HELPERS
 # ==============================================================================
 def limpa_valor(valor):
     try:
@@ -243,28 +239,33 @@ def extract_month(m):
         return 0
 
 
+def mapa_cores_obras(lista):
+    ordenadas = sorted([str(o) for o in lista if o])
+    return {obra: PALETA_OBRAS[i % len(PALETA_OBRAS)] for i, obra in enumerate(ordenadas)}
+
+
 def layout_fig(fig, h=280, legenda=True):
     fig.update_layout(
         height=h,
-        margin=dict(l=0, r=0, t=30 if legenda else 8, b=0),
+        margin=dict(l=0, r=0, t=36 if legenda else 8, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, Segoe UI, sans-serif", size=11, color=MUTED),
         separators=",.",
         showlegend=legenda,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11, color="#ffffff")),
-        hoverlabel=dict(bgcolor="#101b32", font_color=TXT, bordercolor=BORDA),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11, color=TXT), bgcolor="rgba(0,0,0,0)"),
+        hoverlabel=dict(bgcolor="#ffffff", font_color=TXT, bordercolor=BORDA),
     )
     fig.update_xaxes(showgrid=False, linecolor=BORDA, tickfont=dict(size=10, color=MUTED))
     fig.update_yaxes(
-        gridcolor="rgba(148,163,184,0.12)", zeroline=False,
+        gridcolor="rgba(148,163,184,0.25)", zeroline=False,
         tickprefix="R$ ", tickformat=".2s", tickfont=dict(size=10, color=MUTED),
     )
     return fig
 
 
 # ==============================================================================
-# 3. CARGA DOS DADOS E TRATAMENTO
+# CARGA
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando dados…")
 def carregar_dados_obras_detalhado():
@@ -272,7 +273,6 @@ def carregar_dados_obras_detalhado():
     if not conn:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     try:
-        # --- ORÇADO ---
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc.columns = [str(c).strip() for c in df_orc.columns]
 
@@ -282,9 +282,10 @@ def carregar_dados_obras_detalhado():
             'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
         }
         meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
-
         col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
-        col_item = next((c for c in df_orc.columns if c.upper() in ['CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA']), None)
+        col_item = next((c for c in df_orc.columns if c.upper() in [
+            'CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA'
+        ]), None)
 
         df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
@@ -305,26 +306,21 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
 
-        # --- FASES DA OBRA ---
         df_fases = pd.DataFrame()
         try:
             df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
             valid_cols = [c for c in df_fases_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_fases = df_fases_raw[valid_cols].copy()
             df_fases = df_fases.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
-
             if not df_fases.empty and len(df_fases.columns) >= 2:
-                col_obra_fases = df_fases.columns[0]
-                col_tarefa_fases = df_fases.columns[1]
-                df_fases['Obra'] = df_fases[col_obra_fases].fillna('').astype(str).str.strip().str.upper()
-                df_fases['Fase_Tarefa'] = df_fases[col_tarefa_fases].fillna('').astype(str).str.strip().str.upper()
+                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
+                df_fases['Fase_Tarefa'] = df_fases[df_fases.columns[1]].fillna('').astype(str).str.strip().str.upper()
             elif not df_fases.empty and len(df_fases.columns) == 1:
                 df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
                 df_fases['Fase_Tarefa'] = "GERAL"
         except Exception:
             df_fases = pd.DataFrame()
 
-        # --- RECURSOS DA OBRA ---
         df_recursos = pd.DataFrame()
         try:
             df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
@@ -333,7 +329,6 @@ def carregar_dados_obras_detalhado():
         except Exception:
             df_recursos = pd.DataFrame()
 
-        # --- REALIZADO ---
         df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
         df_real['Mes'] = df_real['MÊS'].apply(extract_month)
@@ -359,9 +354,10 @@ obras_orcadas = df_orcado['Obra'].dropna().astype(str).unique().tolist() if not 
 obras_realizadas = df_realizado['Obra'].dropna().astype(str).unique().tolist() if not df_realizado.empty else []
 todas_obras = set(obras_orcadas) | set(obras_realizadas)
 lista_obras = sorted([o for o in todas_obras if o.strip() not in ['NAN', '0', '', 'DIVERSAS', 'SEGUROS']])
+CORES_OBRA = mapa_cores_obras(lista_obras)
 
 # ==============================================================================
-# 4. BARRA LATERAL E FILTROS
+# FILTROS
 # ==============================================================================
 df_orc_filtrado = df_orcado.copy()
 df_real_filtrado = df_realizado.copy()
@@ -375,7 +371,6 @@ with st.sidebar:
         format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x,
     )
     obra_selecionada = st.selectbox("Empreendimento / Obra", ["Todas"] + lista_obras)
-
     if st.button("↻ Limpar filtros", use_container_width=True):
         st.rerun()
 
@@ -406,18 +401,16 @@ with st.sidebar:
             df_orc_filtrado.to_excel(writer, sheet_name='Orcado_Mensal', index=False)
         if not df_recursos.empty:
             df_recursos.to_excel(writer, sheet_name='Recursos_Obra', index=False)
-    relatorio_bytes = output_excel.getvalue()
-
     st.download_button(
         label="📥 Baixar Relatório Completo",
-        data=relatorio_bytes,
+        data=output_excel.getvalue(),
         file_name="relatorio_detalhado_obras.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 
 # ==============================================================================
-# 5. CÁLCULOS E ANÁLISE (MoM) E BARRA DE PROGRESSO
+# CÁLCULOS
 # ==============================================================================
 total_orcado = df_orc_filtrado['Valor_Orcado'].sum()
 total_realizado = df_real_filtrado['Valor_Realizado'].sum()
@@ -433,7 +426,6 @@ if not df_recursos.empty:
             caixa_inicial_base = val_rec
 
 caixa_disponivel = caixa_inicial_base - total_realizado
-
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_realizado['Mes'].max()) if not df_realizado.empty else 0)
 mes_anterior = mes_atual - 1
 
@@ -443,32 +435,27 @@ if obra_selecionada != "Todas":
 
 realizado_atual = df_real_mom[df_real_mom['Mes'] == mes_atual]['Valor_Realizado'].sum()
 realizado_anterior = df_real_mom[df_real_mom['Mes'] == mes_anterior]['Valor_Realizado'].sum()
-
 if realizado_anterior > 0:
     mom_pct = ((realizado_atual / realizado_anterior) - 1) * 100
 else:
     mom_pct = 100 if realizado_atual > 0 else 0
 
 if mom_pct > 0:
-    mom_str = f"↗ +{mom_pct:.1f}% vs Mês {mes_anterior:02d}"
-    mom_cls = "down"
+    mom_str, mom_cls = f"↗ +{mom_pct:.1f}% vs Mês {mes_anterior:02d}", "down"
 elif mom_pct < 0:
-    mom_str = f"↘ {mom_pct:.1f}% vs Mês {mes_anterior:02d}"
-    mom_cls = "up"
+    mom_str, mom_cls = f"↘ {mom_pct:.1f}% vs Mês {mes_anterior:02d}", "up"
 else:
-    mom_str = f"→ 0.0% vs Mês {mes_anterior:02d}"
-    mom_cls = ""
+    mom_str, mom_cls = f"→ 0.0% vs Mês {mes_anterior:02d}", ""
 
 pb_width = min(consumo_geral_perc, 100)
 pb_color = VERMELHO if consumo_geral_perc > 100 else VERDE
-saldo_color = VERMELHO if saldo_orcamento < 0 else "#fff"
+saldo_color = VERMELHO if saldo_orcamento < 0 else TXT
 caixa_disp_color = VERMELHO if caixa_disponivel < 0 else VERDE
-
 txt_mes = f"Até Mês {mes_selecionado:02d}" if mes_selecionado != "Todos" else "Todos os meses"
 txt_obra = obra_selecionada if obra_selecionada != "Todas" else "Todas"
 
 # ==============================================================================
-# 6. CABEÇALHO E KPIs
+# CABEÇALHO + KPIs
 # ==============================================================================
 st.markdown(
     f"""
@@ -486,7 +473,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-kpi_html = f"""
+st.markdown(f"""
 <div class='kpi-grid'>
     <div class='kpi'>
         <div class='kpi-t'>Orçamento total</div>
@@ -515,11 +502,10 @@ kpi_html = f"""
         <div class='kpi-sub {mom_cls}'>{mom_str}</div>
     </div>
 </div>
-"""
-st.markdown(kpi_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # ==============================================================================
-# EVOLUÇÃO MENSAL
+# EVOLUÇÃO MENSAL (+ TOTAL por linha)
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -533,11 +519,16 @@ df_real_mensal = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().reset_in
 df_linha = pd.DataFrame({'Mes': range(1, 13)})
 df_linha = pd.merge(df_linha, df_orc_mensal, on='Mes', how='left').fillna({'Valor_Orcado': 0.0})
 df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
-df_linha.loc[df_linha['Mes'] > (df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0), 'Valor_Realizado'] = None
+max_mes_real = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
+df_linha.loc[df_linha['Mes'] > max_mes_real, 'Valor_Realizado'] = None
 
 meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
                7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
+
+# totais por linha
+tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
+tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
 st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
 
@@ -546,78 +537,89 @@ fig_linha.add_trace(go.Scatter(
     x=df_linha['Mes_Nome'], y=df_linha['Valor_Orcado'],
     mode='lines+markers', name='Orçado',
     line=dict(color=AZUL, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(59,130,246,0.14)',
+    fill='tozeroy', fillcolor='rgba(37,99,235,0.10)',
     hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>",
 ))
 fig_linha.add_trace(go.Scatter(
     x=df_linha['Mes_Nome'], y=df_linha['Valor_Realizado'],
     mode='lines+markers', name='Realizado',
     line=dict(color=VERDE, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(16,185,129,0.18)',
+    fill='tozeroy', fillcolor='rgba(5,150,105,0.12)',
     connectgaps=False,
     hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>",
 ))
-st.plotly_chart(layout_fig(fig_linha, 260), use_container_width=True, config={'displayModeBar': False})
+st.plotly_chart(layout_fig(fig_linha, 260, True), use_container_width=True, config={'displayModeBar': False})
 
-html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Mês</th>"
+# Tabela com TOTAL
+html_unified = (
+    "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
+    "<th class='row-label'>Mês</th>"
+)
 for _, r in df_linha.iterrows():
     html_unified += f"<th>{r['Mes_Nome']}</th>"
-html_unified += "</tr></thead><tbody><tr><td class='row-label'>Realizado</td>"
+html_unified += "<th class='col-total'>Total</th></tr></thead><tbody>"
+
+html_unified += "<tr><td class='row-label'>Realizado</td>"
 for _, r in df_linha.iterrows():
     val_disp = formatar_moeda_curta(r['Valor_Realizado']) if pd.notna(r['Valor_Realizado']) else '-'
     html_unified += f"<td class='val-real'>{val_disp}</td>"
-html_unified += "</tr><tr><td class='row-label'>Orçado</td>"
+html_unified += f"<td class='col-total val-real'>{formatar_moeda_curta(tot_real_linha)}</td></tr>"
+
+html_unified += "<tr><td class='row-label'>Orçado</td>"
 for _, r in df_linha.iterrows():
     html_unified += f"<td class='val-orc'>{formatar_moeda_curta(r['Valor_Orcado'])}</td>"
-html_unified += "</tr></tbody></table></div>"
+html_unified += f"<td class='col-total val-orc'>{formatar_moeda_curta(tot_orc_linha)}</td></tr>"
+html_unified += "</tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
-# GRÁFICOS ANALÍTICOS
+# GRÁFICOS
 # ==============================================================================
 col_g1, col_g2 = st.columns(2, gap="small")
 
 with col_g1:
     st.markdown("<div class='section-title' style='margin-top:4px'>Distribuição de custo por obra</div>", unsafe_allow_html=True)
-    df_donut = df_real_filtrado.groupby('Obra')['Valor_Realizado'].sum().reset_index()
+    df_donut = df_real_filtrado.groupby('Obra')['Valor_Realizado'].sum().reset_index().sort_values('Obra')
     if not df_donut.empty:
-        cores = [AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO]
+        cores_donut = [CORES_OBRA.get(o, PALETA_OBRAS[i % len(PALETA_OBRAS)]) for i, o in enumerate(df_donut['Obra'])]
         fig_donut = go.Figure(go.Pie(
             labels=df_donut['Obra'], values=df_donut['Valor_Realizado'],
-            hole=0.62, textinfo="none",
-            marker=dict(colors=cores[:len(df_donut)], line=dict(color="#0f1a2e", width=2)),
+            hole=0.62, textinfo="none", sort=False,
+            marker=dict(colors=cores_donut, line=dict(color="#ffffff", width=2)),
             hovertemplate="%{label}<br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
         ))
         total_d = df_donut['Valor_Realizado'].sum()
         fig_donut.update_layout(annotations=[dict(
-            text=f"<b>{formatar_moeda_curta(total_d)}</b><br><span style='font-size:10px;color:#8fa3c4'>Total</span>",
-            showarrow=False, font=dict(size=13, color="#fff"),
+            text=f"<b>{formatar_moeda_curta(total_d)}</b><br><span style='font-size:10px;color:#64748b'>Total</span>",
+            showarrow=False, font=dict(size=13, color=TXT),
         )])
-        st.plotly_chart(layout_fig(fig_donut, 280, True), use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(layout_fig(fig_donut, 300, True), use_container_width=True, config={'displayModeBar': False})
 
 with col_g2:
     st.markdown("<div class='section-title' style='margin-top:4px'>Consumo de caixa mensal por obra</div>", unsafe_allow_html=True)
     df_stack = df_real_filtrado.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().reset_index()
     if not df_stack.empty:
         df_stack['Mes_Nome'] = df_stack['Mes'].map(meses_nomes)
-        df_stack = df_stack.sort_values('Mes')
+        df_stack = df_stack.sort_values(['Mes', 'Obra'])
         df_stack_tot = df_stack.groupby(['Mes', 'Mes_Nome'])['Valor_Realizado'].sum().reset_index()
-
+        obras_no_graf = sorted(df_stack['Obra'].unique().tolist())
         fig_stack = px.bar(
             df_stack, x='Mes_Nome', y='Valor_Realizado', color='Obra',
-            color_discrete_sequence=[AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO],
+            category_orders={"Obra": obras_no_graf, "Mes_Nome": list(meses_nomes.values())},
+            color_discrete_map=CORES_OBRA,
         )
         fig_stack.add_trace(go.Scatter(
             x=df_stack_tot['Mes_Nome'], y=df_stack_tot['Valor_Realizado'],
             text=df_stack_tot['Valor_Realizado'].apply(formatar_moeda_curta),
             mode='text', textposition='top center', showlegend=False,
-            textfont=dict(size=10, color='#e6ecf5', family='Inter'),
+            textfont=dict(size=10, color=TXT, family='Inter'),
         ))
-        fig_stack.update_layout(bargap=0.3, xaxis_title=None, yaxis_title=None, showlegend=False)
-        st.plotly_chart(layout_fig(fig_stack, 280, False), use_container_width=True, config={'displayModeBar': False})
+        fig_stack.update_layout(bargap=0.3, xaxis_title=None, yaxis_title=None,
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None))
+        st.plotly_chart(layout_fig(fig_stack, 300, True), use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# 6.1 FLUXO DE CAIXA DA OBRA
+# FLUXO DE CAIXA DA OBRA
 # ==============================================================================
 st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
 
@@ -641,7 +643,7 @@ for m in range(1, 13):
     s_ini_list.append(curr_saldo)
     saida_m = saidas_real_dict.get(m, 0.0) if m <= max_mes_realizado else saidas_orc_dict.get(m, 0.0)
     saidas_tot_list.append(saida_m)
-    curr_saldo = curr_saldo - saida_m
+    curr_saldo -= saida_m
     s_fim_list.append(curr_saldo)
 
 html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Fluxo de Caixa</th>"
@@ -656,25 +658,22 @@ html_fluxo += "</tr>"
 
 html_fluxo += "<tbody class='obra-group'><tr>"
 html_fluxo += (
-    "<td class='row-label'>"
-    "<label class='drilldown-label' style='padding-left:0;'>"
+    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
     "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
     "<b>(-) Saídas Totais</b></label></td>"
 )
 for val in saidas_tot_list:
-    html_fluxo += f"<td style='color:#f87171;font-weight:800'>{formatar_moeda_curta(val)}</td>"
+    html_fluxo += f"<td style='color:#dc2626;font-weight:800'>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
 for obra_name in obras_fluxo:
     html_fluxo += (
         f"<tr class='sub-row'><td class='row-label' style='padding-left:28px;font-size:10px;"
-        f"font-weight:normal;color:#8fa3c4;border-right:2px solid #1c2a47;overflow:hidden;"
-        f"text-overflow:ellipsis;white-space:nowrap'>↳ {obra_name}</td>"
+        f"font-weight:normal;color:#64748b;border-right:2px solid #e2e8f0'>↳ {obra_name}</td>"
     )
     for m_num in range(1, 13):
         v_obra = real_por_obra_mes.get((m_num, obra_name), 0.0) if m_num <= max_mes_realizado else orc_por_obra_mes.get((m_num, obra_name), 0.0)
-        v_str = formatar_moeda_curta(v_obra) if v_obra > 0 else "-"
-        html_fluxo += f"<td style='text-align:right;font-size:10px;color:#8fa3c4'>{v_str}</td>"
+        html_fluxo += f"<td style='font-size:10px;color:#64748b'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
     html_fluxo += "</tr>"
 html_fluxo += "</tbody>"
 
@@ -686,17 +685,14 @@ html_fluxo += "</tr></tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
 
 # ==============================================================================
-# 7. TABELA DETALHADA DE ORÇAMENTOS POR OBRA
+# DETALHAMENTO ORÇAMENTO (valores à esquerda)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
 
 if not df_orc_filtrado.empty:
     df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy()
     if not df_orc_tab.empty:
-        pivot_orc = pd.pivot_table(
-            df_orc_tab, index='Obra', columns='Mes', values='Valor_Orcado',
-            aggfunc='sum', fill_value=0.0,
-        )
+        pivot_orc = pd.pivot_table(df_orc_tab, index='Obra', columns='Mes', values='Valor_Orcado', aggfunc='sum', fill_value=0.0)
         for m in range(1, 13):
             if m not in pivot_orc.columns:
                 pivot_orc[m] = 0.0
@@ -705,9 +701,9 @@ if not df_orc_filtrado.empty:
         pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
 
         html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FASE DA OBRA</th>"
-        html_orc_det += "<th style='text-align:right'>TOTAL ORÇADO</th>"
+        html_orc_det += "<th>TOTAL ORÇADO</th>"
         for m_num in range(1, 13):
-            html_orc_det += f"<th style='text-align:right'>{meses_nomes[m_num].upper()}</th>"
+            html_orc_det += f"<th>{meses_nomes[m_num].upper()}</th>"
         html_orc_det += "</tr></thead>"
 
         totais_col_orc = {m: 0.0 for m in range(1, 13)}
@@ -722,7 +718,6 @@ if not df_orc_filtrado.empty:
                 sub_fases = df_fases[df_fases['Obra'] == obra_name]
                 if not sub_fases.empty:
                     fases_lista = [f for f in sub_fases['Fase_Tarefa'].dropna().unique().tolist() if f and f != 'NAN']
-
             if not fases_lista:
                 sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
                 if 'Item' in sub_df_orc.columns:
@@ -733,13 +728,11 @@ if not df_orc_filtrado.empty:
                 f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
-            html_orc_det += f"<td style='text-align:right;font-weight:800;color:{AZUL}'>{formatar_moeda(tot_obra)}</td>"
-
+            html_orc_det += f"<td style='font-weight:800;color:{AZUL}'>{formatar_moeda(tot_obra)}</td>"
             for m_num in range(1, 13):
                 val_m = row.get(m_num, 0.0)
                 totais_col_orc[m_num] += val_m
-                val_str = formatar_moeda(val_m) if val_m > 0 else "-"
-                html_orc_det += f"<td style='text-align:right;font-weight:700'>{val_str}</td>"
+                html_orc_det += f"<td style='font-weight:700'>{formatar_moeda(val_m) if val_m > 0 else '-'}</td>"
             html_orc_det += "</tr>"
 
             if fases_lista:
@@ -747,30 +740,28 @@ if not df_orc_filtrado.empty:
                 for fase_name in fases_lista:
                     html_orc_det += "<tr class='sub-row'>"
                     html_orc_det += (
-                        f"<td title='↳ {fase_name}' style='padding-left:30px;font-size:11px;color:#8fa3c4;"
-                        f"border-right:2px solid #1c2a47;overflow:hidden;text-overflow:ellipsis;"
+                        f"<td title='↳ {fase_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
+                        f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
                         f"white-space:nowrap'>↳ {fase_name}</td>"
                     )
                     val_sub_total = tot_obra / num_fases if num_fases > 0 else 0
-                    html_orc_det += f"<td style='text-align:right;font-size:11px;font-weight:600;color:#8fa3c4'>{formatar_moeda(val_sub_total)}</td>"
+                    html_orc_det += f"<td style='font-size:11px;font-weight:600;color:#64748b'>{formatar_moeda(val_sub_total)}</td>"
                     for m_num in range(1, 13):
                         val_m_sub = row.get(m_num, 0.0) / num_fases if num_fases > 0 else 0
-                        v_str_sub = formatar_moeda(val_m_sub) if val_m_sub > 0 else "-"
-                        html_orc_det += f"<td style='text-align:right;font-size:11px;color:#8fa3c4'>{v_str_sub}</td>"
+                        html_orc_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(val_m_sub) if val_m_sub > 0 else '-'}</td>"
                     html_orc_det += "</tr>"
             html_orc_det += "</tbody>"
 
         html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
-        html_orc_det += f"<td style='text-align:right;font-weight:900;color:{AZUL}'>{formatar_moeda(total_geral_orc)}</td>"
+        html_orc_det += f"<td style='font-weight:900;color:{AZUL}'>{formatar_moeda(total_geral_orc)}</td>"
         for m_num in range(1, 13):
             t_col = totais_col_orc[m_num]
-            val_col_str = formatar_moeda(t_col) if t_col > 0 else "-"
-            html_orc_det += f"<td style='text-align:right;font-weight:900'>{val_col_str}</td>"
+            html_orc_det += f"<td style='font-weight:900'>{formatar_moeda(t_col) if t_col > 0 else '-'}</td>"
         html_orc_det += "</tr></table></div>"
         st.markdown(html_orc_det, unsafe_allow_html=True)
 
 # ==============================================================================
-# 8. TABELA DETALHADA DE PAGAMENTOS REALIZADOS
+# DETALHAMENTO PAGAMENTOS (valores à esquerda)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de pagamentos realizados</div>", unsafe_allow_html=True)
 
@@ -781,20 +772,15 @@ if not df_real_filtrado.empty:
     if not df_real_tab.empty:
         orc_obra_mes, orc_obra_tot = {}, {}
         orc_mes_tot = {m: 0.0 for m in range(1, 13)}
-
         if not df_orc_tab.empty:
             df_orc_grp = df_orc_tab.groupby(['Obra', 'Mes'])['Valor_Orcado'].sum().reset_index()
             for _, r in df_orc_grp.iterrows():
                 orc_obra_mes[(r['Obra'], r['Mes'])] = r['Valor_Orcado']
                 orc_obra_tot[r['Obra']] = orc_obra_tot.get(r['Obra'], 0.0) + r['Valor_Orcado']
                 orc_mes_tot[r['Mes']] = orc_mes_tot.get(r['Mes'], 0.0) + r['Valor_Orcado']
-
         total_orcado_geral = sum(orc_mes_tot.values())
 
-        pivot_real = pd.pivot_table(
-            df_real_tab, index='Obra', columns='Mes', values='Valor_Realizado',
-            aggfunc='sum', fill_value=0.0,
-        )
+        pivot_real = pd.pivot_table(df_real_tab, index='Obra', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
         for m in range(1, 13):
             if m not in pivot_real.columns:
                 pivot_real[m] = 0.0
@@ -803,9 +789,9 @@ if not df_real_filtrado.empty:
         pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
 
         html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
-        html_real_det += "<th style='text-align:right'>TOTAL</th>"
+        html_real_det += "<th>TOTAL</th>"
         for m_num in range(1, 13):
-            html_real_det += f"<th style='text-align:right'>{meses_nomes[m_num].upper()}</th>"
+            html_real_det += f"<th>{meses_nomes[m_num].upper()}</th>"
         html_real_det += "</tr></thead>"
 
         totais_col_real = {m: 0.0 for m in range(1, 13)}
@@ -813,10 +799,7 @@ if not df_real_filtrado.empty:
 
         for obra_name, row in pivot_real.iterrows():
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
-            pivot_sub = pd.pivot_table(
-                sub_df, index='Fornecedor', columns='Mes', values='Valor_Realizado',
-                aggfunc='sum', fill_value=0.0,
-            )
+            pivot_sub = pd.pivot_table(sub_df, index='Fornecedor', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
             for m in range(1, 13):
                 if m not in pivot_sub.columns:
                     pivot_sub[m] = 0.0
@@ -827,7 +810,6 @@ if not df_real_filtrado.empty:
             tot_obra_real = row['Total_Geral']
             tot_obra_orc = orc_obra_tot.get(obra_name, 0.0)
             totais_geral_real += tot_obra_real
-
             cor_tot_obra = VERDE if (tot_obra_orc > 0 and tot_obra_real <= tot_obra_orc) else (VERMELHO if tot_obra_orc > 0 else TXT)
             str_orc_tot_obra = f"Orç: {formatar_moeda_curta(tot_obra_orc)}" if tot_obra_orc > 0 else "Orç: -"
 
@@ -837,25 +819,21 @@ if not df_real_filtrado.empty:
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
             html_real_det += (
-                f"<td style='text-align:right'><span style='font-weight:800;color:{cor_tot_obra}'>"
-                f"{formatar_moeda(tot_obra_real)}</span>"
+                f"<td><span style='font-weight:800;color:{cor_tot_obra}'>{formatar_moeda(tot_obra_real)}</span>"
                 f"<span class='orcado-indicator'>{str_orc_tot_obra}</span></td>"
             )
-
             for m_num in range(1, 13):
                 val_m_real = row.get(m_num, 0.0)
                 totais_col_real[m_num] += val_m_real
                 val_m_orc = orc_obra_mes.get((obra_name, m_num), 0.0)
-
                 if val_m_real > 0 and val_m_orc > 0:
                     cor_m = VERDE if val_m_real <= val_m_orc else VERMELHO
                 else:
                     cor_m = TXT
-
                 val_str = formatar_moeda(val_m_real) if val_m_real > 0 else "-"
                 str_orc_m = f"Orç: {formatar_moeda_curta(val_m_orc)}" if val_m_orc > 0 else "Orç: -"
                 html_real_det += (
-                    f"<td style='text-align:right'><span style='font-weight:800;color:{cor_m}'>{val_str}</span>"
+                    f"<td><span style='font-weight:800;color:{cor_m}'>{val_str}</span>"
                     f"<span class='orcado-indicator'>{str_orc_m}</span></td>"
                 )
             html_real_det += "</tr>"
@@ -864,39 +842,34 @@ if not df_real_filtrado.empty:
                 tot_sub_geral = sub_row['Total_Geral']
                 html_real_det += "<tr class='sub-row'>"
                 html_real_det += (
-                    f"<td title='↳ {forn_name}' style='padding-left:30px;font-size:11px;color:#8fa3c4;"
-                    f"border-right:2px solid #1c2a47;overflow:hidden;text-overflow:ellipsis;"
+                    f"<td title='↳ {forn_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
+                    f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
                     f"white-space:nowrap'>↳ {forn_name}</td>"
                 )
-                html_real_det += f"<td style='text-align:right;font-size:11px;font-weight:700'>{formatar_moeda(tot_sub_geral)}</td>"
+                html_real_det += f"<td style='font-size:11px;font-weight:700'>{formatar_moeda(tot_sub_geral)}</td>"
                 for m_num in range(1, 13):
                     v_sub = sub_row.get(m_num, 0.0)
-                    v_str_sub = formatar_moeda(v_sub) if v_sub > 0 else "-"
-                    html_real_det += f"<td style='text-align:right;font-size:11px;color:#8fa3c4'>{v_str_sub}</td>"
+                    html_real_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(v_sub) if v_sub > 0 else '-'}</td>"
                 html_real_det += "</tr>"
             html_real_det += "</tbody>"
 
         str_orc_tot_geral = f"Orç: {formatar_moeda_curta(total_orcado_geral)}" if total_orcado_geral > 0 else "Orç: -"
         html_real_det += "<tr class='total-geral-row'><td>TOTAL GERAL</td>"
         html_real_det += (
-            f"<td style='text-align:right'><span style='font-weight:900'>{formatar_moeda(totais_geral_real)}</span>"
+            f"<td><span style='font-weight:900'>{formatar_moeda(totais_geral_real)}</span>"
             f"<span class='orcado-indicator'>{str_orc_tot_geral}</span></td>"
         )
         for m_num in range(1, 13):
             t_col_real = totais_col_real[m_num]
             t_col_orc = orc_mes_tot.get(m_num, 0.0)
             str_orc_col = f"Orç: {formatar_moeda_curta(t_col_orc)}" if t_col_orc > 0 else "Orç: -"
-            val_col_str = formatar_moeda(t_col_real) if t_col_real > 0 else "-"
             html_real_det += (
-                f"<td style='text-align:right'><span style='font-weight:900'>{val_col_str}</span>"
+                f"<td><span style='font-weight:900'>{formatar_moeda(t_col_real) if t_col_real > 0 else '-'}</span>"
                 f"<span class='orcado-indicator'>{str_orc_col}</span></td>"
             )
         html_real_det += "</tr></table></div>"
         st.markdown(html_real_det, unsafe_allow_html=True)
 
-# ==============================================================================
-# RODAPÉ SIDEBAR
-# ==============================================================================
 with st.sidebar:
     st.markdown(
         f"<div class='side-card'><small>Filtro atual</small><b>{txt_mes} · {txt_obra}</b></div>"
