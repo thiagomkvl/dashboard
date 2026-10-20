@@ -43,6 +43,7 @@ ABA_BORDERO = "Fluxo_Despesas_Borderô"
 ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
 ABA_CLASSIF = "Classificacao_FCx"
+ABA_SALDO = "Saldo_FCx"
 
 FLUXO_OP = "Fluxo de Caixa Operacional"
 FLUXO_INV = "Fluxo de Caixa de Investimentos"
@@ -52,7 +53,7 @@ TRANSACOES_DESPESAS = {
     "despesas administrativas", "despesas financeiras", "despesas judiciais",
     "devolucao adiantamento particular", "honorarios medicos", "iptu",
     "outras despesas", "parcelamento impostos", "pessoal", "pmts",
-    "tributos correntes", "juros fornecedor", "seguros", "iof", "Tributos S/ Empréstimos",
+    "tributos correntes", "juros fornecedor", "seguros", "iof", "tributos s emprestimos",
 }
 
 CORES_CAT = [
@@ -147,7 +148,7 @@ css = """
     .pill small { display: block; font-size: 10px; color: #64748b; }
     .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
     .kpi {
         padding: 12px 14px; border-radius: 12px; min-height: 100px;
         background: #ffffff; border: 1px solid #e2e8f0;
@@ -158,6 +159,7 @@ css = """
     .kpi.red { border-left-color: #dc2626; }
     .kpi.amber { border-left-color: #d97706; }
     .kpi.purple { border-left-color: #7c3aed; }
+    .kpi.blue { border-left-color: #2563eb; }
     .kpi-t {
         font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
         text-transform: uppercase; color: #64748b;
@@ -200,6 +202,9 @@ css = """
     }
     .tbl tr.res td {
         font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
+    }
+    .tbl tr.saldo td {
+        font-weight: 800; background: #ecfdf5; border-top: 2px solid #a7f3d0;
     }
     .tbl tr.sub-row td { background: #fafbfc; color: #64748b; font-size: 11px; }
     .tbl tr.sub-row td:first-child { padding-left: 28px; }
@@ -468,7 +473,133 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 
 # ==============================================================================
-# DE-PARA  (prioridade absoluta da aba Classificacao_FCx)
+# SALDO INICIAL (aba Saldo_FCx)
+# ==============================================================================
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_saldo_inicial(ano_ref=None):
+    """
+    Lê a aba Saldo_FCx.
+    Estrutura esperada (flexível):
+      - Linha de cabeçalho com meses (Jan, Fev, … ou 1..12)
+      - Linha com rótulo "Saldo inicial" (ou 2ª linha de dados) e valores por mês
+      - Coluna B costuma ser a de rótulos
+    Retorna dict {Timestamp(mês): float}
+    """
+    ano = ano_ref or ANO_REF
+    out = {}
+    try:
+        conn = conectar_sheets()
+        if conn is None:
+            return out
+        raw = conn.read(worksheet=ABA_SALDO, ttl=0)
+    except Exception:
+        return out
+
+    if raw is None or raw.empty:
+        return out
+
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols == 0:
+        return out
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def mapa_mes_linha(row, start_j=0):
+        m = {}
+        for j in range(start_j, n_cols):
+            h = row[j] if j < len(row) else None
+            nt = normalizar(h) if h is not None else ""
+            if not nt or "total" in nt or nt in SKIP_HEADER:
+                continue
+            ref = parse_mes_header(h, ano)
+            if ref is not None:
+                m[j] = ref
+        return m
+
+    # 1) acha a melhor linha de cabeçalho de meses
+    hr, best = 0, 0
+    for i in range(min(6, n_rows)):
+        # tenta a partir da col B (índice 1) e também da 0
+        s = max(len(mapa_mes_linha(grid[i], 0)), len(mapa_mes_linha(grid[i], 1)))
+        if s > best:
+            best, hr = s, i
+    if best == 0:
+        return out
+
+    mapa = mapa_mes_linha(grid[hr], 0)
+    if len(mapa) < best:
+        mapa = mapa_mes_linha(grid[hr], 1)
+    if not mapa:
+        return out
+
+    # 2) acha a linha "saldo inicial"
+    row_saldo = None
+    for i in range(hr + 1, min(hr + 8, n_rows)):
+        # confere colunas A e B (rótulos)
+        for j in (0, 1):
+            if j >= n_cols:
+                continue
+            lab = normalizar(grid[i][j])
+            if "saldo" in lab and "inicial" in lab:
+                row_saldo = i
+                break
+            if lab in ("saldo inicial", "saldo de caixa", "saldo caixa", "caixa inicial"):
+                row_saldo = i
+                break
+        if row_saldo is not None:
+            break
+
+    # fallback: linha imediatamente abaixo do cabeçalho
+    if row_saldo is None and hr + 1 < n_rows:
+        row_saldo = hr + 1
+
+    if row_saldo is None:
+        return out
+
+    for j, ref in mapa.items():
+        val = limpa_valor(grid[row_saldo][j] if j < len(grid[row_saldo]) else 0)
+        out[ref] = float(val)
+
+    return out
+
+
+def montar_serie_saldo(refs, s_variacao, mapa_saldo_ini):
+    """
+    Para cada mês do período:
+      - Saldo inicial = valor da aba (se existir) senão saldo final do mês anterior
+      - Saldo final   = saldo inicial + variação líquida do mês
+    """
+    s_ini = pd.Series(0.0, index=refs, dtype=float)
+    s_fim = pd.Series(0.0, index=refs, dtype=float)
+    prev_fim = None
+
+    for m in refs:
+        if m in mapa_saldo_ini and abs(mapa_saldo_ini[m]) > 0.005:
+            ini = float(mapa_saldo_ini[m])
+        elif prev_fim is not None:
+            ini = float(prev_fim)
+        else:
+            # tenta qualquer saldo anterior na aba (mês mais próximo antes de m)
+            ant = [k for k in sorted(mapa_saldo_ini.keys()) if k < m]
+            ini = float(mapa_saldo_ini[ant[-1]]) if ant else 0.0
+
+        var = float(s_variacao.get(m, 0.0))
+        fim = ini + var
+        s_ini[m] = ini
+        s_fim[m] = fim
+        prev_fim = fim
+
+    return s_ini, s_fim
+
+
+# ==============================================================================
+# DE-PARA
 # ==============================================================================
 def _mapa_de_dataframe(df_map):
     if df_map is None or df_map.empty:
@@ -552,7 +683,6 @@ def eh_juros_fornecedor(nome):
 
 
 def eh_juros_financiamento(nome):
-    """Juros de empréstimo/banco — FCF. Exclui juros de fornecedor."""
     n = normalizar_chave(nome)
     if "juros" not in n or "fornecedor" in n:
         return False
@@ -585,21 +715,14 @@ def eh_captacao(nome):
 
 
 def aplicar_classificacao(categoria, mapa):
-    """
-    Prioridade:
-      1) De-para da aba Classificacao_FCx (Classificação + Fluxo)
-      2) Fallbacks só se não houver match
-    """
     n = normalizar_chave(categoria)
     if not n:
         return "Não classificado", FLUXO_OP, categoria
 
-    # 1) Match exato
     if n in mapa:
         cls, flx = mapa[n]
         return cls, flx, categoria
 
-    # 2) Match fuzzy
     cand = []
     for k, (cls, flx) in mapa.items():
         if len(k) >= 6 and (k in n or n in k):
@@ -608,7 +731,6 @@ def aplicar_classificacao(categoria, mapa):
         cand.sort(reverse=True)
         return cand[0][1], cand[0][2], categoria
 
-    # 3) Fallbacks
     if eh_captacao(categoria):
         return "Captações", FLUXO_FIN, categoria
     if eh_amortizacao(categoria):
@@ -617,7 +739,6 @@ def aplicar_classificacao(categoria, mapa):
         return "Juros Fornecedor", FLUXO_OP, categoria
     if eh_juros_financiamento(categoria):
         return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
-    # juros genérico sem "fornecedor" e sem indício de empréstimo → operacional
     if eh_juros(categoria):
         return "Juros Fornecedor", FLUXO_OP, categoria
 
@@ -625,18 +746,12 @@ def aplicar_classificacao(categoria, mapa):
 
 
 def papel_classif(classif, fluxo=""):
-    """
-    Papel para fórmulas FCO / FCI / FCF.
-    Respeita o bloco de Fluxo vindo do de-para.
-    """
     n = normalizar(classif)
     nf = normalizar(fluxo)
 
-    # ----- Investimentos -----
     if "invest" in nf:
         return "capex"
 
-    # ----- Financiamento -----
     if "financ" in nf:
         if "captac" in n or (
             "emprestimo" in n and "amortiza" not in n and "juros" not in n
@@ -648,12 +763,10 @@ def papel_classif(classif, fluxo=""):
             return "juros"
         return "outros"
 
-    # ----- Operacional -----
     if any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
         return "receita_op"
     if "imposto" in n or "tributo" in n:
         return "imposto"
-    # juros de fornecedor (ou juros com fluxo operacional) → custo op
     if "juros" in n:
         if "fornecedor" in n or "operac" in nf:
             return "custo_op"
@@ -668,7 +781,7 @@ def papel_classif(classif, fluxo=""):
         return "amortizacao"
     if any(x in n for x in (
         "pessoal", "honorario", "terceiros", "utilidade", "opme",
-        "administrativ", "bancari", "outras despesas", "fornecedor",
+        "administrativ", "bancari", "outras despesas", "fornecedor", "seguro", "iof",
     )):
         return "custo_op"
     return "outros"
@@ -765,6 +878,7 @@ def carregar_fluxo():
 
 base, avisos = carregar_fluxo()
 mapa_cls = carregar_mapa_classificacao()
+mapa_saldo = carregar_saldo_inicial(ANO_REF)
 
 if base.empty:
     for a in avisos:
@@ -796,7 +910,8 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
     st.markdown(
-        f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>",
+        f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>"
+        f"<div class='side-card'><small>Saldo inicial (aba)</small><b>{len(mapa_saldo)} mês(es)</b></div>",
         unsafe_allow_html=True,
     )
 
@@ -826,10 +941,10 @@ custo_op = total_papel(df, "custo_op")
 impostos = total_papel(df, "imposto")
 capex = total_papel(df, "capex")
 amort = total_papel(df, "amortizacao")
-juros = total_papel(df, "juros")          # só FCF
+juros = total_papel(df, "juros")
 captacao = total_papel(df, "captacao", tipo="Entrada")
 
-fco = rec_op - custo_op - impostos        # juros fornecedor entra em custo_op
+fco = rec_op - custo_op - impostos
 fci = -capex
 fcf = captacao - amort - juros
 variacao = fco + fci + fcf
@@ -846,7 +961,7 @@ st.markdown(
     <div class='top'>
         <div>
             <h1>FLUXO DE CAIXA</h1>
-            <p>Visão gerencial · FCO · FCI · FCF · {ANO_REF}</p>
+            <p>Visão gerencial · FCO · FCI · FCF · Saldo de caixa · {ANO_REF}</p>
         </div>
         <div class='pills'>
             <div class='pill'><small>Período</small><b>{txt_per}</b></div>
@@ -859,6 +974,34 @@ st.markdown(
 )
 for a in avisos:
     st.warning(a)
+if not mapa_saldo:
+    st.info("ℹ️ Aba **Saldo_FCx** sem saldo inicial detectado — o saldo começará em zero e rolará pela variação.")
+
+
+def serie(d, papel, sinal=1.0, tipo=None):
+    x = d[d["Papel"] == papel]
+    if tipo:
+        x = x[x["Tipo"] == tipo]
+    s = x.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
+    return s * sinal
+
+
+# séries mensais (precisam existir antes do saldo)
+s_rec = serie(df, "receita_op")
+s_cus = serie(df, "custo_op")
+s_imp = serie(df, "imposto")
+s_fco = s_rec - s_cus - s_imp
+s_cap = serie(df, "capex")
+s_fci = -s_cap
+s_cpt = serie(df, "captacao", tipo="Entrada")
+s_amo = serie(df, "amortizacao")
+s_jur = serie(df, "juros")
+s_fcf = s_cpt - s_amo - s_jur
+s_var = s_fco + s_fci + s_fcf
+
+s_ini, s_fim = montar_serie_saldo(refs_sel, s_var, mapa_saldo)
+saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
+saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
 
 st.markdown(
     f"""
@@ -883,23 +1026,20 @@ st.markdown(
         <div class='kpi-v' style='color:{"#059669" if variacao>=0 else "#dc2626"}'>{moeda(variacao)}</div>
         <div class='kpi-sub'>FCO + FCI + FCF</div>
     </div>
+    <div class='kpi blue'>
+        <div class='kpi-t'>Saldo final de caixa</div>
+        <div class='kpi-v' style='color:{"#059669" if saldo_fim_periodo>=0 else "#dc2626"}'>{moeda(saldo_fim_periodo)}</div>
+        <div class='kpi-sub'>Ini. {moeda_curta(saldo_ini_periodo)} + var. período</div>
+    </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
 st.markdown(
-    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · clique na seta para composição</div>",
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
     unsafe_allow_html=True,
 )
-
-
-def serie(d, papel, sinal=1.0, tipo=None):
-    x = d[d["Papel"] == papel]
-    if tipo:
-        x = x[x["Tipo"] == tipo]
-    s = x.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
-    return s * sinal
 
 
 def linhas_df(x, titulo, uid_prefix):
@@ -957,14 +1097,21 @@ def linhas_df(x, titulo, uid_prefix):
     return rows
 
 
-def linha_tot(label, s, cor):
+def linha_tot(label, s, cor, cls="tot"):
+    # Total da linha de saldo: usa último mês (não soma)
+    tot_val = float(s.iloc[-1]) if len(s) else 0.0
+    if cls == "saldo":
+        tot_html = f"<td><span style='color:{cor}'><b>{moeda(tot_val)}</b></span></td>"
+    else:
+        tot_html = f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td>"
     return (
-        f"<tr class='tot'><td><b>{label}</b></td>"
+        f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
             f"<td><span style='color:{cor}'>{moeda(float(s.get(m, 0)))}</span></td>"
             for m in refs_sel
         )
-        + f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td></tr>"
+        + tot_html
+        + "</tr>"
     )
 
 
@@ -978,18 +1125,14 @@ else:
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
     html.extend(linhas_df(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", "r"))
-    s_rec = serie(df, "receita_op")
     html.append(linha_tot("Total receitas operacionais", s_rec, VERDE))
 
     html.extend(linhas_df(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", "c"))
-    s_cus = serie(df, "custo_op")
     html.append(linha_tot("Total custos e despesas operacionais", s_cus, VERMELHO))
 
     html.extend(linhas_df(df[df["Papel"] == "imposto"], "(−) Impostos", "i"))
-    s_imp = serie(df, "imposto")
     html.append(linha_tot("Total impostos", s_imp, VERMELHO))
 
-    s_fco = s_rec - s_cus - s_imp
     html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
 
     html.append(
@@ -997,8 +1140,6 @@ else:
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
     html.extend(linhas_df(df[df["Papel"] == "capex"], "(−) Desembolsos em CAPEX", "k"))
-    s_cap = serie(df, "capex")
-    s_fci = -s_cap
     html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
 
     html.append(
@@ -1006,21 +1147,16 @@ else:
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
     html.extend(linhas_df(df_captacao, "(+) Novas captações (empréstimos)", "p"))
-    s_cpt = serie(df, "captacao", tipo="Entrada")
     html.append(linha_tot("Total captações", s_cpt, VERDE))
 
     html.extend(linhas_df(df_amort, "(−) Amortizações de empréstimos", "a"))
-    s_amo = serie(df, "amortizacao")
     html.append(linha_tot("Total amortizações", s_amo, VERMELHO))
 
     html.extend(linhas_df(df_juros, "(−) Juros e encargos financeiros", "j"))
-    s_jur = serie(df, "juros")
     html.append(linha_tot("Total juros e encargos", s_jur, VERMELHO))
 
-    s_fcf = s_cpt - s_amo - s_jur
     html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
 
-    s_var = s_fco + s_fci + s_fcf
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
@@ -1030,6 +1166,29 @@ else:
         )
         + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
         f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
+    )
+
+    # ---- SALDO DE CAIXA ----
+    html.append(
+        "<tr class='sec'><td>4. SALDO DE CAIXA</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.append(linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo"))
+    html.append(
+        linha_tot(
+            "(+) Variação líquida do mês",
+            s_var,
+            VERDE if float(s_var.sum()) >= 0 else VERMELHO,
+            cls="tot",
+        )
+    )
+    html.append(
+        linha_tot(
+            "(=) Saldo final de caixa",
+            s_fim,
+            VERDE if saldo_fim_periodo >= 0 else VERMELHO,
+            cls="saldo",
+        )
     )
 
     d_out = df[df["Papel"] == "outros"]
@@ -1056,6 +1215,8 @@ with st.sidebar:
         f"<div class='side-card'><small>FCF</small>"
         f"<b style='color:{'#059669' if fcf >= 0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
         f"<div class='side-card'><small>Captações</small><b style='color:#059669'>{moeda(captacao)}</b></div>"
+        f"<div class='side-card'><small>Saldo final</small>"
+        f"<b style='color:{'#059669' if saldo_fim_periodo >= 0 else '#dc2626'}'>{moeda(saldo_fim_periodo)}</b></div>"
         f"<div class='side-card'><small>Última atualização</small>"
         f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
