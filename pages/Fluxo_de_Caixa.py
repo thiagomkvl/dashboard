@@ -52,7 +52,7 @@ TRANSACOES_DESPESAS = {
     "despesas administrativas", "despesas financeiras", "despesas judiciais",
     "devolucao adiantamento particular", "honorarios medicos", "iptu",
     "outras despesas", "parcelamento impostos", "pessoal", "pmts",
-    "tributos correntes"
+    "tributos correntes", "juros fornecedor",
 
 }
 
