@@ -1406,15 +1406,3 @@ with st.sidebar:
         f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
-
-
-with st.expander("Ajustes de conciliação considerados no fluxo"):
-    st.caption("Aprovações e estornos compõem os cálculos pelo mês e papel definidos no robô. Valores assinados positivos aumentam o caixa; negativos reduzem. O filtro de grupos também se aplica aos ajustes.")
-    if base_ajustes.empty:
-        st.info("Nenhum lançamento de ajuste registrado.")
-    else:
-        eventos_periodo = ledger_ajustes[ledger_ajustes["Mês"].astype(str).isin([pd.Timestamp(m).strftime("%Y-%m") for m in refs_sel])]
-        incluidos = df[df["Grupo"] == "Ajustes aprovados"]
-        efeito_ajustes = float(incluidos["Efeito dashboard"].sum()) if not incluidos.empty else 0.0
-        st.metric("Efeito dos ajustes nos filtros atuais", moeda(efeito_ajustes))
-        st.dataframe(eventos_periodo[["ID", "Mês", "Transação", "Valor assinado", "Classificação FCx", "Evento", "Referência", "Motivo"]], hide_index=True, use_container_width=True)
