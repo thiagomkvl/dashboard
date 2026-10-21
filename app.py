@@ -150,7 +150,7 @@ candidatos = [
         "Dashboard_Saldo",
     ),
     (
-        "pages/painel_pagar.py",
+        "pages/cockpit.py",
         "Despesas Com Obras",
         "Acompanhamento_Obra",
     ),
