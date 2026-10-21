@@ -28,14 +28,14 @@ def _protesto_match(padrao, texto, grupo=1):
 def _protesto_valor(rotulo, texto):
     from decimal import Decimal
     numero = _protesto_match(
-        r"(?:^|\s)(?:" + rotulo + r")\s*:\s*(?:R\$\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})(?!\d)",
+        r"(?:^|\s)(?:" + rotulo + r")\s*:?\s*(?:R\$\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})(?!\d)",
         texto,
     )
     return float(Decimal(numero.replace(".", "").replace(",", "."))) if numero else None
 
 
 def _protesto_data(rotulo, texto):
-    valor = _protesto_match(r"(?:" + rotulo + r")\s*:\s*(\d{2}/\d{2}/\d{4})", texto)
+    valor = _protesto_match(r"(?:" + rotulo + r")\s*:?\s*(\d{2}/\d{2}/\d{4})", texto)
     if valor:
         try:
             datetime.strptime(valor, "%d/%m/%Y")
@@ -53,8 +53,19 @@ def _protesto_nome_documento(texto):
     nome = re.split(r"\s+Documento(?:\s+(?:Sacador|Cedente|Credor))?\s*:", texto, flags=re.I)[0]
     if documento:
         nome = nome.split(documento, 1)[0]
-    nome = re.sub(r"\s+(?:CNPJ|CPF)(?:/CNPJ)?\s*:?\s*$", "", nome, flags=re.I)
+    nome = re.split(r"\s*[-–]?\s*(?:CNPJ/CPF|CPF/CNPJ|CNPJ|CPF)(?:\s+Credor)?\s*:?", nome, flags=re.I)[0]
+    nome = re.sub(r"\s+", " ", nome)
     return nome.strip(" \t-"), documento
+
+
+def _protesto_parte(rotulo, bloco):
+    # Nomes e documentos podem continuar na linha seguinte.
+    import re
+    limites = r"Credor(?:\s+(?:atual|original))?|Sacador|Cedente|Apresentante|Endere[çc]o|T[ií]tulo|N[uú]mero|Protocolo|Vencimento|Esp[ée]cie|Data\s+(?:do\s+)?Protesto|Emolumentos"
+    return _protesto_match(
+        r"^\s*" + rotulo + r"\s*:\s*([\s\S]*?)(?=\n\s*(?:" + limites + r")(?:\s*:|\s+n[º°o]|\.{2,})|\Z)",
+        bloco,
+    )
 
 
 def extrair_dados_protesto_pdf(uploaded_files):
@@ -156,11 +167,14 @@ def extrair_dados_protesto_pdf(uploaded_files):
                 bloco = re.split(r"(?im)^\s*(?:Total\s+de\s+\d+\s+t[ií]tulos?|Total\s+de\s+T[ií]tulos\s+Protestados|O\s+referido|Nada\s+mais\s+consta|Emolumentos\s*:)", bloco)[0]
                 atual = _protesto_match(r"^\s*Credor\s+atual\s*:\s*([^\n]+)", bloco)
                 original = _protesto_match(r"^\s*Credor\s+original\s*:\s*([^\n]+)", bloco)
-                sacador = _protesto_match(r"^\s*Sacador\s*:\s*([^\n]+)", bloco)
+                sacador = _protesto_parte(r"Sacador", bloco)
+                credor_simples = _protesto_parte(r"Credor", bloco)
                 cedente = _protesto_match(r"^\s*Cedente\s*:\s*([^\n]+)", bloco)
                 apresentante = _protesto_match(r"^\s*Apresentante\s*:\s*([^\n]+)", bloco)
-                escolhido = original or sacador or atual or cedente
+                escolhido = original or credor_simples or sacador or atual or cedente
                 credor, documento_credor = _protesto_nome_documento(escolhido)
+                if not documento_credor:
+                    documento_credor = _protesto_nome_documento(sacador or original or atual or cedente)[1]
                 observacoes = []
                 if not credor:
                     credor = "Não identificado"
@@ -174,8 +188,10 @@ def extrair_dados_protesto_pdf(uploaded_files):
                     observacoes.append("Valor não identificado; título preservado para revisão.")
                 titulo = _protesto_match(r"n[º°o]\s*(?:do\s*)?T[ií]tulo\s*:\s*(.*?)(?=\s*-\s*Endosso|$)", bloco)
                 if not titulo:
+                    titulo = _protesto_match(r"T[ií]tulo\s+n[º°o]\s*:?\s*(.*?)(?=\s*-\s*Endosso|$)", bloco)
+                if not titulo:
                     titulo = _protesto_match(r"^\s*N[uú]mero\s*:\s*(.*?)(?=\s+Nosso\s*N[uú]mero\s*:|$)", bloco)
-                especie = _protesto_match(r"Esp[ée]cie(?:\s+do\s+T[ií]tulo)?\s*:\s*(.*?)(?=\s*-\s*n[º°o]|$)", bloco)
+                especie = _protesto_match(r"Esp[ée]cie(?:\s+do\s+T[ií]tulo)?\s*:\s*(.*?)(?=\s*-\s*(?:n[º°o]|Emiss[ãa]o)|$)", bloco)
                 record = {
                     "Cartório/Arquivo": nome, "Protocolo": inicio.group(1),
                     "Credor/Sacador": credor, "CNPJ/CPF Credor": documento_credor,
@@ -185,7 +201,7 @@ def extrair_dados_protesto_pdf(uploaded_files):
                     "Data do Protesto": _protesto_data(r"Data(?:\s+do)?\s+Protesto|Protestado\s+em|Protesto\s+em", bloco),
                     "Título/Número": titulo, "Espécie": especie,
                     "Credor atual": _protesto_nome_documento(atual)[0],
-                    "Credor original": _protesto_nome_documento(original or sacador)[0],
+                    "Credor original": _protesto_nome_documento(original or sacador or credor_simples)[0],
                     "Apresentante": apresentante, "Valor Original": valor_original,
                     "Valor Declarado": valor_declarado, "Saldo": saldo,
                     "Página": bisect.bisect_right(offsets, inicio.start(1)),
