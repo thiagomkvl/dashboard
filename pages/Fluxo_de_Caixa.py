@@ -1013,6 +1013,21 @@ base["Fluxo"] = pares.apply(lambda x: x[1])
 base["Detalhe"] = pares.apply(lambda x: x[2])
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
+# Ajustes aprovados já possuem papel e sinal definidos pelo robô.
+# Ler fora do cache da base permite refletir aprovações e estornos ao abrir a página.
+from modules.ajustes_fcx import carregar_ajustes, linhas_dashboard, ativos
+try:
+    conn_ajustes = conectar_sheets()
+    if conn_ajustes is None:
+        raise RuntimeError("Conexão indisponível para consultar os ajustes aprovados.")
+    ledger_ajustes = carregar_ajustes(conn_ajustes)
+    base_ajustes = linhas_dashboard(ledger_ajustes)
+except Exception as erro_ajustes:
+    st.error(f"Não foi possível validar os ajustes aprovados: {erro_ajustes}")
+    st.stop()
+if not base_ajustes.empty:
+    base = pd.concat([base, base_ajustes], ignore_index=True)
+
 # ==============================================================================
 # SIDEBAR
 # ==============================================================================
@@ -1391,3 +1406,15 @@ with st.sidebar:
         f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
+
+
+with st.expander("Ajustes de conciliação considerados no fluxo"):
+    st.caption("Aprovações e estornos compõem os cálculos pelo mês e papel definidos no robô. Valores assinados positivos aumentam o caixa; negativos reduzem. O filtro de grupos também se aplica aos ajustes.")
+    if base_ajustes.empty:
+        st.info("Nenhum lançamento de ajuste registrado.")
+    else:
+        eventos_periodo = ledger_ajustes[ledger_ajustes["Mês"].astype(str).isin([pd.Timestamp(m).strftime("%Y-%m") for m in refs_sel])]
+        incluidos = df[df["Grupo"] == "Ajustes aprovados"]
+        efeito_ajustes = float(incluidos["Efeito dashboard"].sum()) if not incluidos.empty else 0.0
+        st.metric("Efeito dos ajustes nos filtros atuais", moeda(efeito_ajustes))
+        st.dataframe(eventos_periodo[["ID", "Mês", "Transação", "Valor assinado", "Classificação FCx", "Evento", "Referência", "Motivo"]], hide_index=True, use_container_width=True)
