@@ -5,3 +5,6 @@ openpyxl
 pdfplumber
 xlsxwriter
 html2image
+
+google-auth>=2.0
+requests>=2.31
