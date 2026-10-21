@@ -86,6 +86,7 @@ candidatos = [
     ("pages/Dashboard_Saldo.py", "Saldo Contas Bancárias", "Dashboard_Saldo"),
     ("pages/Acompanhamento_Obra.py", "Despesas Com Obras", "Acompanhamento_Obra"),
     ("pages/Fluxo_de_Caixa.py", "Fluxo de Caixa", "Fluxo_de_Caixa"),
+    ("pages/Conciliador_FCx.py", "Robô Conciliador FCx", "Conciliador_FCx"),
     
     
 ]
