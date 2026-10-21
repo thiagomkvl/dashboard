@@ -1,4 +1,11 @@
 import os
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+APP_VERSION = "2026.10.21-conciliador-lote"
 import streamlit as st
 
 PAGE_TITLE = "Portal Financeiro Executivo"
@@ -75,8 +82,9 @@ if not st.session_state["autenticado"]:
 # 1. NAVEGAÇÃO — sem Home; primeiro dashboard vira o default
 # ==============================================================================
 def _page(path, title, url_path, default=False):
-    if os.path.exists(path):
-        return st.Page(path, title=title, url_path=url_path, default=default)
+    resolved = PROJECT_ROOT / path
+    if resolved.is_file():
+        return st.Page(str(resolved), title=title, url_path=url_path, default=default)
     return None
 
 
@@ -92,13 +100,16 @@ candidatos = [
 ]
 
 pages = []
+missing_pages = []
 for i, (path, title, url) in enumerate(candidatos):
     p = _page(path, title, url, default=(i == 0))
     if p is not None:
         # Garante default só no primeiro arquivo que realmente existe
         if not pages:
-            p = st.Page(path, title=title, url_path=url, default=True)
+            p = st.Page(str(PROJECT_ROOT / path), title=title, url_path=url, default=True)
         pages.append(p)
+    else:
+        missing_pages.append((path, title))
 
 if not pages:
     st.error("Nenhum dashboard encontrado na pasta pages/.")
@@ -107,6 +118,12 @@ if not pages:
 pg = st.navigation({"Módulos Operacionais": pages})
 
 with st.sidebar:
+    robo_path = PROJECT_ROOT / "pages" / "Conciliador_FCx.py"
+    if robo_path.is_file():
+        st.page_link(str(robo_path), label="Abrir Robô Conciliador FCx", icon="🔎")
+    for missing_path, missing_title in missing_pages:
+        st.error(f"Página ausente: {missing_title}. Inclua {missing_path} no projeto publicado.")
+    st.caption(f"Versão: {APP_VERSION}")
     st.markdown("### Minha Sessão")
     if st.button("Sair do Sistema", use_container_width=True):
         st.session_state["autenticado"] = False
