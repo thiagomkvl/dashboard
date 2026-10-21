@@ -1,12 +1,14 @@
-import os
 import sys
 from pathlib import Path
 
+import streamlit as st
+
 PROJECT_ROOT = Path(__file__).resolve().parent
+
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-APP_VERSION = "2026.10.21-conciliador-lote"
-import streamlit as st
+
+APP_VERSION = "2026.10.21-portal-financeiro"
 
 PAGE_TITLE = "Portal Financeiro Executivo"
 PAGE_ICON = "🏢"
@@ -29,14 +31,19 @@ def _obter_senha_mestre():
     try:
         if "PASSWORD" in st.secrets:
             return str(st.secrets["PASSWORD"]).strip()
+
         if "password" in st.secrets:
             return str(st.secrets["password"]).strip()
+
         if "database" in st.secrets and "password" in st.secrets["database"]:
             return str(st.secrets["database"]["password"]).strip()
+
         if "auth" in st.secrets and "senha_mestre" in st.secrets["auth"]:
             return str(st.secrets["auth"]["senha_mestre"]).strip()
+
     except Exception:
         return None
+
     return None
 
 
@@ -45,29 +52,77 @@ if not st.session_state["autenticado"]:
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        html, body, [class*="css"] { font-family: "Inter", sans-serif; }
-        .stApp { background-color: #f4f6f9; }
-        header[data-testid="stHeader"] { display: none !important; }
-        [data-testid="stSidebar"] { display: none !important; }
-        .login-title { font-size: 24px; font-weight: 800; color: #1e40af; margin-bottom: 5px; text-align: center; }
-        .login-subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; font-weight: 500; text-align: center; }
+
+        html, body, [class*="css"] {
+            font-family: "Inter", sans-serif;
+        }
+
+        .stApp {
+            background-color: #f4f6f9;
+        }
+
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+
+        .login-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #1e40af;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .login-subtitle {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 20px;
+            font-weight: 500;
+            text-align: center;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
     c1, c2, c3 = st.columns([1, 1.2, 1])
+
     with c2:
-        st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='height: 80px;'></div>",
+            unsafe_allow_html=True,
+        )
+
         with st.container(border=True):
-            st.markdown("<div class='login-title'>Portal Executivo</div>", unsafe_allow_html=True)
             st.markdown(
-                "<div class='login-subtitle'>S.O.S. Cardio — Insira sua senha para acessar.</div>",
+                "<div class='login-title'>Portal Executivo</div>",
                 unsafe_allow_html=True,
             )
-            senha = st.text_input("Senha de Acesso", type="password", key="login_senha")
-            if st.button("Entrar no Sistema", use_container_width=True, type="primary"):
+
+            st.markdown(
+                "<div class='login-subtitle'>"
+                "S.O.S. Cardio — Insira sua senha para acessar."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            senha = st.text_input(
+                "Senha de Acesso",
+                type="password",
+                key="login_senha",
+            )
+
+            if st.button(
+                "Entrar no Sistema",
+                use_container_width=True,
+                type="primary",
+            ):
                 mestra = _obter_senha_mestre()
+
                 if not mestra:
                     st.error("Nenhuma senha encontrada no secrets.toml")
                 elif senha.strip() == mestra:
@@ -75,38 +130,52 @@ if not st.session_state["autenticado"]:
                     st.rerun()
                 else:
                     st.error("Senha incorreta. Tente novamente.")
+
     st.stop()
 
 
 # ==============================================================================
-# 1. NAVEGAÇÃO — sem Home; primeiro dashboard vira o default
+# 1. NAVEGAÇÃO
+# O primeiro dashboard disponível será a página inicial.
 # ==============================================================================
-def _page(path, title, url_path, default=False):
-    resolved = PROJECT_ROOT / path
-    if resolved.is_file():
-        return st.Page(str(resolved), title=title, url_path=url_path, default=default)
-    return None
-
-
-# Ordem = ordem do menu. O primeiro que existir vira a página inicial.
 candidatos = [
-    ("pages/Análise_Faturamento.py", "Análise Faturamento", "Análise_Faturamento"),
-    ("pages/Dashboard_Saldo.py", "Saldo Contas Bancárias", "Dashboard_Saldo"),
-    ("pages/Acompanhamento_Obra.py", "Despesas Com Obras", "Acompanhamento_Obra"),
-    ("pages/Fluxo_de_Caixa.py", "Fluxo de Caixa", "Fluxo_de_Caixa"),
-    
-    
+    (
+        "pages/Análise_Faturamento.py",
+        "Análise Faturamento",
+        "Análise_Faturamento",
+    ),
+    (
+        "pages/Dashboard_Saldo.py",
+        "Saldo Contas Bancárias",
+        "Dashboard_Saldo",
+    ),
+    (
+        "pages/Acompanhamento_Obra.py",
+        "Despesas Com Obras",
+        "Acompanhamento_Obra",
+    ),
+    (
+        "pages/Fluxo_de_Caixa.py",
+        "Fluxo de Caixa",
+        "Fluxo_de_Caixa",
+    ),
 ]
 
 pages = []
 missing_pages = []
-for i, (path, title, url) in enumerate(candidatos):
-    p = _page(path, title, url, default=(i == 0))
-    if p is not None:
-        # Garante default só no primeiro arquivo que realmente existe
-        if not pages:
-            p = st.Page(str(PROJECT_ROOT / path), title=title, url_path=url, default=True)
-        pages.append(p)
+
+for path, title, url in candidatos:
+    resolved = PROJECT_ROOT / path
+
+    if resolved.is_file():
+        pages.append(
+            st.Page(
+                str(resolved),
+                title=title,
+                url_path=url,
+                default=not pages,
+            )
+        )
     else:
         missing_pages.append((path, title))
 
@@ -116,19 +185,31 @@ if not pages:
 
 pg = st.navigation({"Módulos Operacionais": pages})
 
+
+# ==============================================================================
+# 2. BARRA LATERAL
+# ==============================================================================
 with st.sidebar:
-    robo_path = PROJECT_ROOT / "pages" / "Conciliador_FCx.py"
-    if robo_path.is_file():
-        st.page_link(str(robo_path), label="Abrir Robô Conciliador FCx", icon="🔎")
     for missing_path, missing_title in missing_pages:
-        st.error(f"Página ausente: {missing_title}. Inclua {missing_path} no projeto publicado.")
+        st.error(
+            f"Página ausente: {missing_title}. "
+            f"Inclua {missing_path} no projeto publicado."
+        )
+
     st.caption(f"Versão: {APP_VERSION}")
+
     st.markdown("### Minha Sessão")
+
     if st.button("Sair do Sistema", use_container_width=True):
         st.session_state["autenticado"] = False
         st.rerun()
+
     st.divider()
 
+
+# ==============================================================================
+# 3. EXECUÇÃO DA PÁGINA SELECIONADA
+# ==============================================================================
 try:
     pg.run()
 except Exception as e:
