@@ -44,6 +44,7 @@ ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
 ABA_CLASSIF = "Classificacao_FCx"
 ABA_SALDO = "Saldo_FCx"
+ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
 ABA_DEVOL = "FCx_Devolução_Adiantamento"
 ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"  # fallback sem acento
 
@@ -581,13 +582,75 @@ def carregar_saldo_inicial(ano_ref=None):
     return out
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_saldos_tasy():
+    """Lê somente os totais de cada bloco; não soma bancos e total novamente."""
+    inicial, final, avisos = {}, {}, []
+    try:
+        conn = conectar_sheets()
+        if conn is None:
+            return inicial, final, ["Saldo Tasy: conexão indisponível."]
+        raw = conn.read(worksheet=ABA_SALDO_TASY, ttl=0)
+        if raw is None or raw.empty:
+            return inicial, final, ["Saldo Tasy: aba vazia."]
+        grid = [list(raw.columns)] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+        destino, meses = None, {}
+        for row in grid:
+            label = normalizar(row[0]) if row else ""
+            if label in ("saldo inicial", "saldo final"):
+                destino = inicial if label == "saldo inicial" else final
+                meses = {}
+            elif label == "banco" and destino is not None:
+                meses = {j: ref for j, h in enumerate(row[1:], 1)
+                         if (ref := parse_mes_header(h, ANO_REF)) is not None}
+            elif label == "total geral" and destino is not None:
+                for j, ref in meses.items():
+                    if j < len(row) and row[j] is not None and str(row[j]).strip():
+                        destino[ref] = limpa_valor(row[j])
+        if not inicial or not final:
+            avisos.append("Saldo Tasy: bloco inicial ou final sem totais reconhecidos.")
+    except Exception as e:
+        avisos.append(f"Saldo Tasy: não foi possível carregar a referência ({e}).")
+    return inicial, final, avisos
+
+
+def consolidar_devolucoes(base):
+    """Fonte específica tem prioridade por mês e natureza; fallback sem duplicar."""
+    base = base.copy()
+    mask = base["Categoria"].apply(eh_linha_devolucao)
+    dev = base.loc[mask].copy()
+    if dev.empty:
+        return base
+    def natureza(c):
+        n = normalizar_chave(c)
+        if "fornecedor" in n:
+            return "fornecedor"
+        if "prontuario" in n:
+            return "prontuario"
+        return "paciente"
+    dev["Natureza"] = dev["Categoria"].map(natureza)
+    # Base_Despesas agrupa paciente e prontuário em uma única categoria.
+    # Só substitui esse agregado quando o mês existe na fonte específica.
+    especifica = dev[dev["Grupo"] == "Devolução Adiantamento"]
+    meses_paciente = set(especifica.loc[especifica["Natureza"].isin(["paciente", "prontuario"]), "Ref"])
+    meses_fornecedor = set(especifica.loc[especifica["Natureza"] == "fornecedor", "Ref"])
+    remover = (dev["Grupo"] == "Despesas") & (
+        (dev["Natureza"].isin(["paciente", "prontuario"]) & dev["Ref"].isin(meses_paciente)) |
+        ((dev["Natureza"] == "fornecedor") & dev["Ref"].isin(meses_fornecedor)))
+    dev = dev.loc[~remover].copy()
+    dev["Valor"] = dev.apply(lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]), axis=1)
+    dev["Tipo"] = dev["Categoria"].apply(lambda c: "Entrada" if sinal_devolucao(c) > 0 else "Saída")
+    dev["Grupo"] = "Devolução Adiantamento"
+    return pd.concat([base.loc[~mask], dev[base.columns]], ignore_index=True)
+
+
 def montar_serie_saldo(refs, s_variacao, mapa_saldo_ini):
     s_ini = pd.Series(0.0, index=refs, dtype=float)
     s_fim = pd.Series(0.0, index=refs, dtype=float)
     prev_fim = None
 
     for m in refs:
-        if m in mapa_saldo_ini and abs(mapa_saldo_ini[m]) > 0.005:
+        if m in mapa_saldo_ini:
             ini = float(mapa_saldo_ini[m])
         elif prev_fim is not None:
             ini = float(prev_fim)
@@ -924,7 +987,7 @@ def carregar_fluxo():
 
     if not partes:
         return vazio, avisos or ["Nenhum lançamento."]
-    base = pd.concat(partes, ignore_index=True)
+    base = consolidar_devolucoes(pd.concat(partes, ignore_index=True))
     base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
     base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
     return base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
@@ -933,6 +996,9 @@ def carregar_fluxo():
 base, avisos = carregar_fluxo()
 mapa_cls = carregar_mapa_classificacao()
 mapa_saldo = carregar_saldo_inicial(ANO_REF)
+mapa_tasy_ini, mapa_tasy_fim, avisos_tasy = carregar_saldos_tasy()
+avisos.extend(avisos_tasy)
+mapa_saldo.update(mapa_tasy_ini)
 
 if base.empty:
     for a in avisos:
@@ -1055,9 +1121,21 @@ s_jur = serie(df, "juros")
 s_fcf = s_cpt - s_amo - s_jur
 s_var = s_fco + s_fci + s_fcf
 
-s_ini, s_fim = montar_serie_saldo(refs_sel, s_var, mapa_saldo)
+# Calcula os meses anteriores também, para filtros que começam após janeiro.
+refs_calculo = list(pd.date_range(min(meses_all), max(refs_sel), freq="MS")) if refs_sel else []
+s_var_completo = (base.assign(_sinal=base.apply(
+    lambda r: float(r["Valor"]) * (1 if r["Papel"] in ("receita_op", "captacao", "var_ap") else -1)
+    if r["Papel"] != "outros" else 0.0, axis=1))
+    .groupby("Ref")["_sinal"].sum())
+s_var_completo.update(s_var)
+s_ini_full, s_fim_full = montar_serie_saldo(refs_calculo, s_var_completo, mapa_saldo)
+s_ini, s_fim = s_ini_full.reindex(refs_sel), s_fim_full.reindex(refs_sel)
+s_tasy = pd.Series({m: mapa_tasy_fim.get(m, float("nan")) for m in refs_sel}, dtype=float)
+s_diferenca = s_fim - s_tasy
 saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
+if grupo_sel and set(grupo_sel) != set(grupos_all):
+    st.info("Comparativo Tasy com grupos filtrados: a diferença não representa a conciliação completa.")
 
 st.markdown(
     f"""
@@ -1154,15 +1232,17 @@ def linhas_df(x, titulo, uid_prefix):
 
 
 def linha_tot(label, s, cor, cls="tot"):
-    tot_val = float(s.iloc[-1]) if len(s) else 0.0
+    def fmt(v):
+        return "—" if pd.isna(v) else moeda(float(v))
+    tot_val = float(s.iloc[0] if label == "(+) Saldo inicial" else s.iloc[-1]) if len(s) else 0.0
     if cls == "saldo":
-        tot_html = f"<td><span style='color:{cor}'><b>{moeda(tot_val)}</b></span></td>"
+        tot_html = f"<td><span style='color:{cor}'><b>{fmt(tot_val)}</b></span></td>"
     else:
         tot_html = f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td>"
     return (
         f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
-            f"<td><span style='color:{cor}'>{moeda(float(s.get(m, 0)))}</span></td>"
+            f"<td><span style='color:{cor}'>{fmt(s.get(m, float("nan")))}</span></td>"
             for m in refs_sel
         )
         + tot_html
@@ -1265,6 +1345,9 @@ else:
         )
     )
 
+    html.append(linha_tot("Saldo Tasy", s_tasy, ROXO, cls="saldo"))
+    html.append(linha_tot("Diferença: fluxo − Tasy", s_diferenca, AMBAR, cls="saldo"))
+
     d_out = df[df["Papel"] == "outros"]
     if not d_out.empty:
         html.append(
@@ -1279,6 +1362,18 @@ else:
         f"{''.join(html)}</table></div>",
         unsafe_allow_html=True,
     )
+
+st.caption("Conciliação mensal: saldo final de caixa = saldo inicial do Tasy + variação calculada do mês. "
+           "Diferença = saldo final de caixa − saldo final Tasy; positivo indica fluxo acima do Tasy. "
+           "O total das linhas de saldo e diferença mostra o último mês, sem somar posições mensais. "
+           "Meses sem referência Tasy são exibidos com traço.")
+for mes in refs_sel:
+    anterior = mes - pd.offsets.MonthBegin(1)
+    if mes in mapa_tasy_ini and anterior in mapa_tasy_fim:
+        quebra = mapa_tasy_ini[mes] - mapa_tasy_fim[anterior]
+        if abs(quebra) > 0.01:
+            st.warning(f"Referência Tasy: saldo inicial de {rot_mes(mes)} difere do saldo final "
+                       f"do mês anterior em {moeda(quebra)}. Confira a base de saldos.")
 
 with st.sidebar:
     st.markdown(
