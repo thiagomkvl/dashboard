@@ -83,4 +83,3 @@ def obter_retrato(fresco=False):
 def auditar_atual(fresco=False):
     from modules.conciliador_fcx import auditar
     return auditar(obter_retrato(fresco=fresco))
-leitura_fcx.py
