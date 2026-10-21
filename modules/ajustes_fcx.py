@@ -196,8 +196,8 @@ def guard(key):
 def preparar_lote(store, selecionadas, fresh, responsavel, identificacao='Declarado pelo operador', estornar=False):
     if len(responsavel.strip()) < 3:
         raise ValueError('Informe o responsável pelo lançamento.')
-    if not selecionadas or len(selecionadas) > 50:
-        raise ValueError('Selecione de 1 a 50 ajustes por lote.')
+    if not selecionadas or len(selecionadas) > 1000:
+        raise ValueError('Selecione de 1 a 1000 ajustes por lote.')
     ledger = store.ledger();meta = store.metadata()
     ids = {s['properties']['title']: s['properties']['sheetId'] for s in meta['sheets']}
     if not all(x in ids for x in (ABA_AJUSTES, ABA_LOGS)):
@@ -260,6 +260,8 @@ def preparar_lote(store, selecionadas, fresh, responsavel, identificacao='Declar
     # Ajuste, log e travas participam do mesmo batch: todos gravam ou nenhum grava.
     for aba, cols, rows in ((ABA_AJUSTES,COLUNAS,eventos),(ABA_LOGS,LOG_COLUNAS,logs)):
         requests.append({'appendCells': {'sheetId': ids[aba], 'rows': [{'values': [cell(r[c]) for c in cols]} for r in rows], 'fields': 'userEnteredValue'}})
+    if len(json.dumps({"requests": requests}, ensure_ascii=False).encode("utf-8")) > 1_800_000:
+        raise ValueError("O lote excede o tamanho permitido. Reduza a seleção e tente novamente; nada foi gravado.")
     return requests,eventos
 
 def gravar_lote(store, selecionadas, fresh, responsavel, identificacao='Declarado pelo operador', estornar=False):
