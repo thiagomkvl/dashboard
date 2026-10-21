@@ -479,15 +479,15 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 def sinal_devolucao(categoria):
     """
-    Fornecedores → devolução ENTRA no caixa (+).
+    Fornecedores / Salarial → devolução ENTRA no caixa (+).
     Paciente / Prontuário → devolução SAI do caixa (−).
     """
     n = normalizar_chave(categoria)
-    if "fornecedor" in n:
+    if "fornecedor" in n or "salarial" in n:
         return 1.0
     if "paciente" in n or "prontuario" in n:
         return -1.0
-    # genérico "devolucao adiantamento" sem fornecedor → saída (paciente)
+    # genérico sem fornecedor/salarial → saída (paciente)
     if "devolucao" in n:
         return -1.0
     return 1.0
@@ -625,6 +625,8 @@ def consolidar_devolucoes(base):
         n = normalizar_chave(c)
         if "fornecedor" in n:
             return "fornecedor"
+        if "salarial" in n:
+            return "salarial"
         if "prontuario" in n:
             return "prontuario"
         return "paciente"
@@ -634,9 +636,11 @@ def consolidar_devolucoes(base):
     especifica = dev[dev["Grupo"] == "Devolução Adiantamento"]
     meses_paciente = set(especifica.loc[especifica["Natureza"].isin(["paciente", "prontuario"]), "Ref"])
     meses_fornecedor = set(especifica.loc[especifica["Natureza"] == "fornecedor", "Ref"])
+    meses_salarial = set(especifica.loc[especifica["Natureza"] == "salarial", "Ref"])
     remover = (dev["Grupo"] != "Devolução Adiantamento") & (
         (dev["Natureza"].isin(["paciente", "prontuario"]) & dev["Ref"].isin(meses_paciente)) |
-        ((dev["Natureza"] == "fornecedor") & dev["Ref"].isin(meses_fornecedor)))
+        ((dev["Natureza"] == "fornecedor") & dev["Ref"].isin(meses_fornecedor)) |
+        ((dev["Natureza"] == "salarial") & dev["Ref"].isin(meses_salarial)))
     dev = dev.loc[~remover].copy()
     dev["Valor"] = dev.apply(lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]), axis=1)
     dev["Tipo"] = dev["Categoria"].apply(lambda c: "Entrada" if sinal_devolucao(c) > 0 else "Saída")
@@ -977,7 +981,7 @@ def carregar_fluxo():
             md = melt_matriz(raw_dev, 1, 1, 2, "Entrada", ANO_REF)
         if not md.empty:
             md = md.copy()
-            # aplica sinal gerencial (fornecedor +, paciente/prontuário −)
+            # aplica sinal gerencial (fornecedor/salarial +, paciente/prontuário −)
             md["Valor"] = md.apply(
                 lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]),
                 axis=1,
