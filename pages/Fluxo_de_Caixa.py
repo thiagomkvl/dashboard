@@ -1378,17 +1378,6 @@ else:
         unsafe_allow_html=True,
     )
 
-st.caption("Conciliação mensal: saldo final de caixa = saldo inicial do Tasy + variação calculada do mês. "
-           "Diferença = saldo final de caixa − saldo final Tasy; positivo indica fluxo acima do Tasy. "
-           "O total das linhas de saldo e diferença mostra o último mês, sem somar posições mensais. "
-           "Meses sem referência Tasy são exibidos com traço.")
-for mes in refs_sel:
-    anterior = mes - pd.offsets.MonthBegin(1)
-    if mes in mapa_tasy_ini and anterior in mapa_tasy_fim:
-        quebra = mapa_tasy_ini[mes] - mapa_tasy_fim[anterior]
-        if abs(quebra) > 0.01:
-            st.warning(f"Referência Tasy: saldo inicial de {rot_mes(mes)} difere do saldo final "
-                       f"do mês anterior em {moeda(quebra)}. Confira a base de saldos.")
 
 with st.sidebar:
     st.markdown(
