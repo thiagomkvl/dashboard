@@ -634,7 +634,7 @@ def consolidar_devolucoes(base):
     especifica = dev[dev["Grupo"] == "Devolução Adiantamento"]
     meses_paciente = set(especifica.loc[especifica["Natureza"].isin(["paciente", "prontuario"]), "Ref"])
     meses_fornecedor = set(especifica.loc[especifica["Natureza"] == "fornecedor", "Ref"])
-    remover = (dev["Grupo"] == "Despesas") & (
+    remover = (dev["Grupo"] != "Devolução Adiantamento") & (
         (dev["Natureza"].isin(["paciente", "prontuario"]) & dev["Ref"].isin(meses_paciente)) |
         ((dev["Natureza"] == "fornecedor") & dev["Ref"].isin(meses_fornecedor)))
     dev = dev.loc[~remover].copy()
@@ -895,7 +895,12 @@ def carregar_fluxo():
                 "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
                 "Valor": df[c_val].apply(limpa_valor),
             })
-            tmp = tmp[tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)]
+            # Preservar a natureza da devolução mesmo quando a classificação
+            # contábil da Base_Despesas não contém o nome da transação.
+            devolucoes = tmp["Transação"].map(eh_linha_devolucao)
+            permitidas = tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)
+            tmp.loc[devolucoes, "Categoria"] = tmp.loc[devolucoes, "Transação"]
+            tmp = tmp[permitidas | devolucoes]
             tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
