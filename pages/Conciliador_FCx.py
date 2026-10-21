@@ -3,28 +3,35 @@ st.set_page_config(page_title='Robô Conciliador FCx', page_icon='🔎', layout=
 import io
 import zipfile
 import pandas as pd
-from database import conectar_sheets
-from modules.conciliador_fcx import auditar
+from modules.leitura_fcx import auditar_atual, QuotaLeitura
+import time
 
 st.title('Robô conciliador de fluxo de caixa')
 st.caption('Confere a dinâmica, rastreia as fontes do dashboard e separa o residual entre extrato e saldos Tasy.')
 st.info('A consulta é somente de leitura. Ajustes só são gravados após selecionar e aprovar o lote abaixo.')
-if st.button('Executar conciliação', type='primary'):
-    st.session_state.pop('conciliacao_fcx', None)
-    conn = conectar_sheets()
-    if conn is not None:
-        try:
-            with st.spinner('Conferindo transações e fontes complementares…'):
-                st.session_state['conciliacao_fcx'] = auditar(conn)
-            st.session_state['conciliacao_fcx_em'] = pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d/%m/%Y %H:%M:%S')
-        except Exception as e:
-            st.error(f'Conciliação não concluída: {e}')
-            st.stop()
+aguardar = max(0, int(st.session_state.get('fcx_quota_ate', 0) - time.time()))
+if aguardar:
+    st.warning(f'Limite temporário do Sheets. Aguarde aproximadamente {aguardar} segundos e atualize a página.')
+if st.button('Executar conciliação', type='primary', disabled=aguardar > 0):
+    try:
+        with st.spinner('Lendo as fontes em lote e conferindo as transações…'):
+            novo = auditar_atual()
+        st.session_state['conciliacao_fcx'] = novo
+        st.session_state['conciliacao_fcx_em'] = pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d/%m/%Y %H:%M:%S')
+    except QuotaLeitura as e:
+        st.session_state['fcx_quota_ate'] = time.time() + 60
+        st.warning(str(e))
+        if 'conciliacao_fcx' in st.session_state:
+            st.info('A consulta anterior foi preservada. Não aprove ajustes até concluir uma nova consulta.')
+        st.stop()
+    except Exception as e:
+        st.error(f'Conciliação não concluída: {e}')
+        st.stop()
 if 'conciliacao_fcx' not in st.session_state:
     st.write('Clique em Executar conciliação para consultar as abas usadas no fluxo e as duas abas de validação.')
     st.stop()
 r = st.session_state['conciliacao_fcx']
-st.caption('Consulta realizada em ' + st.session_state['conciliacao_fcx_em'])
+st.caption('Consulta realizada em ' + st.session_state['conciliacao_fcx_em'] + ' · fontes reutilizadas por até 2 minutos; aprovação sempre revalida os dados.')
 for aviso in r['avisos']:
     st.warning(aviso)
 trans = r['transacoes']
@@ -110,11 +117,10 @@ if not propostas_atual.empty:
     if st.button('Aprovar e gravar ajustes selecionados', type='primary', disabled=not escolhas):
         try:
             with st.spinner('Revalidando as fontes e gravando ajuste e log…'):
-                conn = conectar_sheets()
-                fresh = auditar(conn)
+                fresh = auditar_atual(fresco=True)
                 eventos = gravar_lote(SheetsStore.streamlit(), escolhas, fresh, responsavel, identificacao)
                 st.cache_data.clear()
-                st.session_state['conciliacao_fcx'] = auditar(conn)
+                st.session_state['conciliacao_fcx'] = auditar_atual(fresco=True)
                 st.session_state['conciliacao_fcx_em'] = pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d/%m/%Y %H:%M:%S')
             st.success(f'{len(eventos)} ajuste(s) confirmado(s) no Sheets. Atualize a consulta para visualizar os novos valores.')
         except Exception as e:
@@ -131,7 +137,7 @@ if not abertos.empty:
     motivo_estorno = st.text_input('Motivo do estorno')
     if st.button('Estornar selecionados e registrar logs', disabled=not ids_estorno):
         try:
-            fresh = auditar(conectar_sheets())
+            fresh = auditar_atual(fresco=True)
             gravar_lote(SheetsStore.streamlit(), [{'ID': x, 'Motivo': motivo_estorno} for x in ids_estorno],
                         fresh, responsavel, identificacao, estornar=True)
             st.cache_data.clear()
