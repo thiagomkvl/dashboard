@@ -1,46 +1,103 @@
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import re
-import textwrap
-import io
-from datetime import datetime
 
 try:
     st.set_page_config(
-        page_title="Acompanhamento de Obras",
+        page_title="Fluxo de Caixa",
         layout="wide",
-        page_icon="🏗️",
+        page_icon="💵",
         initial_sidebar_state="expanded",
     )
 except Exception:
     pass
 
+import os
+import re
+import textwrap
+import unicodedata
+from datetime import datetime
+
+import pandas as pd
+
 try:
     from database import conectar_sheets
-except Exception as e:
+except Exception as _err:
+    _erro_import_db = str(_err)
+
     def conectar_sheets():
-        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {e}")
+        st.error(f"⚠️ Erro ao carregar 'database.py'. Detalhe: {_erro_import_db}")
         return None
 
 # ==============================================================================
-# PALETA — tema claro
+# CONFIG
 # ==============================================================================
 AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
-AZUL_CLARO, LARANJA, CIANO, ROSA = "#60a5fa", "#ea580c", "#0891b2", "#e11d48"
+ROXO, LARANJA, CIANO, ROSA = "#7c3aed", "#ea580c", "#0891b2", "#e11d48"
 TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 
 ESPACO_ENTRE_BLOCOS = "0.75rem"
 AJUSTE_APOS_KPIS = "0.75rem"
+ANO_REF = 2026
 
-PALETA_OBRAS = [
-    AZUL, VERDE, AMBAR, AZUL_CLARO, LARANJA, CIANO, ROSA, VERMELHO,
-    "#93c5fd", "#34d399", "#fbbf24", "#38bdf8", "#fb923c", "#2dd4bf",
+ABA_DESPESAS = "Base_Despesas"
+ABA_BORDERO = "Fluxo_Despesas_Borderô"
+ABA_ADIANT = "Fluxo_Adiantamentos"
+ABA_RECEITA = "Fluxo_Receita"
+ABA_CLASSIF = "Classificacao_FCx"
+ABA_SALDO = "Saldo_FCx"
+ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
+ABA_DEVOL = "FCx_Devolução_Adiantamento"
+ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"
+ABA_OBRA = "FCx_Obra"
+
+FLUXO_OP = "Fluxo de Caixa Operacional"
+FLUXO_INV = "Fluxo de Caixa de Investimentos"
+FLUXO_FIN = "Fluxo de Caixa de Financiamento"
+
+CLASSIF_VAR_AP = "Variações de Ativos e Passivos"
+
+TRANSACOES_DESPESAS = {
+    "despesas administrativas", "despesas financeiras", "despesas judiciais",
+    "devolucao adiantamento particular", "honorarios medicos", "iptu",
+    "outras despesas", "parcelamento impostos", "pessoal", "pmts",
+    "tributos correntes", "juros fornecedor", "seguros", "iof", "tributos s emprestimos",
+}
+
+CORES_CAT = [
+    AZUL, VERDE, AMBAR, ROXO, LARANJA, CIANO, ROSA, VERMELHO,
+    "#0ea5e9", "#84cc16", "#f43f5e", "#a855f7", "#14b8a6", "#eab308",
 ]
 
+MESES_MAP = {
+    "jan": 1, "janeiro": 1, "fev": 2, "fevereiro": 2,
+    "mar": 3, "marco": 3, "março": 3, "abr": 4, "abril": 4,
+    "mai": 5, "maio": 5, "jun": 6, "junho": 6,
+    "jul": 7, "julho": 7, "ago": 8, "agosto": 8,
+    "set": 9, "setembro": 9, "out": 10, "outubro": 10,
+    "nov": 11, "novembro": 11, "dez": 12, "dezembro": 12,
+}
+MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+               "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+SKIP_LABELS = {
+    "", "nan", "none", "total", "total geral", "soma", "geral",
+    "mes", "mês", "origem", "origem receita",
+    "conta contabil", "conta contábil", "classificacao", "classificação",
+    "transacao", "transação", "sum de vl debito", "sum de vl débito",
+    "adiantamento fornecedores - banco total", "adiantamento fornecedores - banco",
+    "receitas", "saidas", "saídas",
+}
+SKIP_HEADER = {
+    "total", "total geral", "soma", "geral", "data - mes", "data - mês",
+    "sum de vl debito", "sum de vl débito",
+}
+SECAO_LABELS = {
+    "pmts", "captacoes", "captacao", "alugueis", "aluguéis",
+    "outras receitas", "convenio", "convênio", "particular",
+    "receitas", "saidas", "saídas",
+}
+
 # ==============================================================================
-# CSS — identidade branca + Total sticky
+# CSS
 # ==============================================================================
 css = """
 <style>
@@ -49,139 +106,131 @@ css = """
     .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
-    .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
+    .main .block-container { padding: 1.1rem 1.4rem 1.4rem; max-width: 99%; }
     div[data-testid="stVerticalBlock"] { gap: __GAP__; }
     [data-testid="stMarkdownContainer"] { color: #0f172a; }
 
     [data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
     [data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
-    .side-sec { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #64748b; text-transform: uppercase; margin: 6px 0 -2px; }
-    .side-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+    .side-sec {
+        font-size: 10px; font-weight: 800; letter-spacing: 1px;
+        color: #64748b; text-transform: uppercase; margin: 6px 0 -2px;
+    }
+    .side-card {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 10px 12px; margin-top: 8px;
+    }
     .side-card small { display: block; color: #64748b; font-size: 11px; }
     .side-card b { color: #0f172a; font-size: 13px; }
 
-    [data-baseweb="select"] > div { background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+    [data-baseweb="select"] > div {
+        background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important;
+    }
     [data-baseweb="select"] span, [data-baseweb="select"] input { color: #0f172a !important; }
     [data-baseweb="select"] svg { fill: #64748b; }
     [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #ffffff !important; }
     li[role="option"] { color: #0f172a !important; }
     li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
     span[data-baseweb="tag"] { background: #2563eb !important; color: #fff !important; }
-    .stButton > button {
+
+    [data-testid="stSidebar"] .stButton > button {
         background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
         color: #fff !important; border: none !important; border-radius: 10px !important;
         font-weight: 700 !important; padding: 0.55rem 1rem !important;
     }
-    [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
-        color: #fff !important; border: none !important; border-radius: 10px !important;
-        font-weight: 700 !important; height: 36px; font-size: 12px;
-    }
 
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px;
-           padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
+    .top {
+        display: flex; justify-content: space-between; align-items: center; gap: 16px;
+        padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+    }
     .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
     .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
     .pills { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pill { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px 14px; min-width: 120px;
-            box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+    .pill {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 6px 14px; min-width: 120px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
     .pill small { display: block; font-size: 10px; color: #64748b; }
     .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
     .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
-    .kpi { padding: 12px 14px; border-radius: 12px; min-height: 110px; background: #ffffff;
-           border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(15,23,42,0.05); border-left: 3px solid #2563eb; }
+    .kpi {
+        padding: 12px 14px; border-radius: 12px; min-height: 100px;
+        background: #ffffff; border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+        border-left: 3px solid #2563eb;
+    }
     .kpi.green { border-left-color: #059669; }
+    .kpi.red { border-left-color: #dc2626; }
     .kpi.amber { border-left-color: #d97706; }
-    .kpi.purple { border-left-color: #60a5fa; }
-    .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: #64748b; min-height: 22px; }
-    .kpi-v { font-size: 17px; font-weight: 800; color: #0f172a; margin: 6px 0 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .kpi.purple { border-left-color: #7c3aed; }
+    .kpi.blue { border-left-color: #2563eb; }
+    .kpi-t {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+        text-transform: uppercase; color: #64748b;
+    }
+    .kpi-v {
+        font-size: 18px; font-weight: 800; color: #0f172a; margin: 8px 0 4px;
+        font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
     .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
-    .kpi-sub.up { color: #059669; }
-    .kpi-sub.down { color: #dc2626; }
-    .pb { width: 100%; background: #e2e8f0; height: 6px; border-radius: 3px; margin-top: 6px; overflow: hidden; }
-    .pb span { display: block; height: 100%; border-radius: 3px; }
 
     .section-title {
         font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
-        color: #0f172a; margin: 18px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
+        color: #0f172a; margin: 16px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
     }
 
-    .unified-summary-box {
-        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
-        margin-top: 8px; margin-bottom: 16px; overflow: auto;
-        box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+    .tbl-wrap {
+        overflow-x: auto; overflow-y: visible;
+        border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff;
     }
-    .unified-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; color: #334155; }
-    .unified-table th {
-        background: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase;
-        padding: 10px 8px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #f1f5f9; text-align: left;
+    .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
+    .tbl th {
+        background: #f8fafc; color: #64748b; font-weight: 700; font-size: 11px;
+        text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap; text-transform: uppercase;
     }
-    .unified-table th:last-child { border-right: none; }
-    .unified-table td {
-        padding: 10px 8px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9;
-        background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
+    .tbl td {
+        padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
+        font-variant-numeric: tabular-nums;
     }
-    .unified-table td:last-child { border-right: none; }
-    .unified-table th.col-total,
-    .unified-table td.col-total {
-        position: sticky; right: 0; z-index: 5; background: #f1f5f9 !important;
-        font-weight: 800; border-left: 2px solid #e2e8f0; min-width: 90px;
-        box-shadow: -4px 0 8px rgba(15,23,42,0.04);
+    .tbl tbody tr:hover td { background: #f8fafc; }
+    .tbl tr.tot td {
+        font-weight: 800; color: #0f172a; background: #f1f5f9; border-top: 1px solid #e2e8f0;
     }
-    .unified-table th.col-total { z-index: 6; }
-    .row-label {
-        text-align: left; padding-left: 14px !important; font-weight: 700; color: #64748b;
-        background: #f8fafc !important; width: 170px; border-right: 2px solid #e2e8f0 !important;
-        position: sticky; left: 0; z-index: 4;
+    .tbl tr.sec td {
+        font-weight: 800; color: #0f172a; background: #eef2ff;
+        border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
     }
-    .val-real { font-weight: 800; color: #059669; }
-    .val-orc { font-weight: 800; color: #2563eb; }
-
-    .fases-table-container {
-        max-height: 500px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px;
-        background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+    .tbl tr.subsec td {
+        font-weight: 700; color: #334155; background: #f8fafc; font-size: 11px;
     }
-    .fases-table {
-        width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
-        background: #ffffff; table-layout: fixed; color: #334155;
+    .tbl tr.res td {
+        font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
     }
-    .fases-table thead { position: sticky; top: 0; z-index: 15; }
-    .fases-table th {
-        background: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase;
-        padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: left;
-        position: sticky; top: 0; z-index: 15;
+    .tbl tr.saldo td {
+        font-weight: 800; background: #ecfdf5; border-top: 2px solid #a7f3d0;
     }
-    .fases-table td {
-        padding: 10px; border-bottom: 1px solid #f1f5f9; color: #334155;
-        background: #ffffff; text-align: left;
+    .tbl tr.sub-row td { background: #fafbfc; color: #64748b; font-size: 11px; }
+    .tbl tr.sub-row td:first-child { padding-left: 28px; }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        margin-right: 8px; vertical-align: middle;
     }
-    .fases-table th:nth-child(1), .fases-table td:nth-child(1) {
-        width: 300px; min-width: 300px; max-width: 300px; position: sticky; left: 0; z-index: 10;
-        background: #ffffff; border-right: 2px solid #e2e8f0; overflow: hidden; text-overflow: ellipsis;
+    .drill-label {
+        cursor: pointer; display: flex; align-items: center; gap: 6px;
+        margin: 0; font-weight: 700; color: #0f172a; user-select: none;
     }
-    .fases-table th:nth-child(1) { z-index: 20; background: #f8fafc; }
-    .fases-table th:nth-child(2), .fases-table td:nth-child(2) { width: 140px; min-width: 140px; max-width: 140px; }
-    .fases-table th:nth-child(n+3), .fases-table td:nth-child(n+3) { width: 110px; min-width: 110px; max-width: 110px; }
-    .fases-table tr:hover td { background: #f8fafc; }
-    .total-geral-row td {
-        font-weight: 900; background: #f1f5f9 !important; border-top: 1px solid #e2e8f0; color: #0f172a;
-    }
-
-    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; color: #0f172a; user-select: none; }
     .toggle-checkbox { display: none; }
-    .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #2563eb; }
-    .obra-group .sub-row { display: none; }
-    .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
-    .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
-    .orcado-indicator { display: block; font-size: 9px; color: #64748b; margin-top: 3px; font-weight: 600; }
-
-    .fases-table-container::-webkit-scrollbar,
-    .unified-summary-box::-webkit-scrollbar { height: 6px; width: 6px; }
-    .fases-table-container::-webkit-scrollbar-thumb,
-    .unified-summary-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-
-    hr { border: none !important; border-top: 1px solid #e2e8f0 !important; margin: 20px 0 !important; }
+    .indicator {
+        display: inline-block; font-size: 10px; color: #2563eb;
+        transition: transform 0.15s ease; width: 12px;
+    }
+    .grp .sub-row { display: none; }
+    .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+    .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """
 st.markdown(
@@ -192,705 +241,1272 @@ st.markdown(
 # ==============================================================================
 # HELPERS
 # ==============================================================================
-def limpa_valor(valor):
+def normalizar(txt):
+    if txt is None or (isinstance(txt, float) and pd.isna(txt)):
+        return ""
+    s = unicodedata.normalize("NFKD", str(txt)).encode("ASCII", "ignore").decode("utf-8")
+    s = s.lower().strip()
+    s = re.sub(r"[.\-_/]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def normalizar_chave(txt):
+    if txt is None or (isinstance(txt, float) and pd.isna(txt)):
+        return ""
+    s = unicodedata.normalize("NFKD", str(txt)).encode("ASCII", "ignore").decode("utf-8")
+    s = s.lower().strip()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def limpa_valor(v):
     try:
-        if pd.isna(valor):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
             return 0.0
-        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
-            return float(valor)
-        v_str = str(valor).strip()
-        if v_str in ["", "-", "nan", "None", "NaN"]:
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v)
+        s = str(v).strip().replace("R$", "").replace(" ", "")
+        if s in ("", "-", "nan", "None", "NaN"):
             return 0.0
-        v_str = v_str.replace("R$", "").replace(" ", "")
-        v_str = re.sub(r'^\s*\((.*?)\)\s*$', r'-\1', v_str)
-        if "," in v_str:
-            v_str = v_str.replace(".", "").replace(",", ".")
-        else:
-            v_str = v_str.replace(",", "")
-        return float(v_str)
+        neg = (s.startswith("(") and s.endswith(")")) or s.startswith("-")
+        s = s.strip("()-")
+        if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+            s = s.replace(".", "")
+        r = float(s)
+        return -r if neg else r
     except Exception:
         return 0.0
 
 
-def formatar_moeda(valor):
+def parse_data(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return pd.NaT
+    if isinstance(v, (pd.Timestamp, datetime)):
+        return pd.Timestamp(v).normalize()
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        n = float(v)
+        if 20000 < n < 80000:
+            return (pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)).normalize()
     try:
-        val = float(valor)
-        if val == 0:
-            return "-"
-        return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        return pd.to_datetime(v, dayfirst=True, errors="coerce").normalize()
     except Exception:
-        return "-"
+        return pd.NaT
 
 
-def formatar_moeda_curta(valor):
-    try:
-        val = float(valor)
-        if val == 0 or pd.isna(val):
-            return "-"
-        if abs(val) >= 1_000_000:
-            return f"R$ {val/1_000_000:.1f}M".replace('.', ',')
-        if abs(val) >= 1_000:
-            return f"R$ {val/1_000:.0f}K".replace('.', ',')
-        return f"R$ {val:.0f}"
-    except Exception:
-        return "-"
+def parse_mes_header(h, ano_ref=None):
+    if h is None or (isinstance(h, float) and pd.isna(h)):
+        return None
+    if isinstance(h, (pd.Timestamp, datetime)):
+        return pd.Timestamp(ano_ref or ANO_REF, h.month, 1)
+    if isinstance(h, (int, float)) and not isinstance(h, bool):
+        val_f = float(h)
+        if 2020 <= val_f <= 2050:
+            ano = int(val_f)
+            mes = int(round((val_f - ano) * 100))
+            if 1 <= mes <= 12:
+                return pd.Timestamp(ano, mes, 1)
+        if 1 <= val_f <= 12:
+            return pd.Timestamp(ano_ref or ANO_REF, int(val_f), 1)
+        if 20000 < val_f < 80000:
+            d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=val_f)
+            return pd.Timestamp(ano_ref or ANO_REF, d.month, 1)
+    t = normalizar(h)
+    if not t or t in SKIP_HEADER or "total" in t:
+        return None
+    m = re.match(r"^(\d{4})[.\-_/](\d{1,2})$", t)
+    if m:
+        ano, mes = int(m.group(1)), int(m.group(2))
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    m = re.match(r"^(\d{4})\s+(\d{1,2})$", t)
+    if m:
+        ano, mes = int(m.group(1)), int(m.group(2))
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    m = re.match(r"^([a-z]{3,9})(?:\s+(\d{2,4}))?$", t)
+    if m:
+        chave = m.group(1)
+        mes = MESES_MAP.get(chave) or MESES_MAP.get(chave[:3])
+        if mes:
+            ano = ano_ref or ANO_REF
+            if m.group(2):
+                ano = int(m.group(2))
+                if ano < 100:
+                    ano += 2000
+            return pd.Timestamp(ano, mes, 1)
+    m = re.match(r"^(\d{1,2})\s+(\d{2,4})$", t)
+    if m:
+        mes, ano = int(m.group(1)), int(m.group(2))
+        if ano < 100:
+            ano += 2000
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    return None
 
 
-def extract_month(m):
-    try:
-        s = str(m).strip()
-        if '.' in s:
-            return int(float(s.split('.')[-1]))
-        return int(float(s))
-    except Exception:
-        return 0
+def _br(v, casas=2):
+    return f"{v:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def mapa_cores_obras(lista):
-    ordenadas = sorted([str(o) for o in lista if o])
-    return {obra: PALETA_OBRAS[i % len(PALETA_OBRAS)] for i, obra in enumerate(ordenadas)}
+def moeda(v, casas=2):
+    if abs(v) < 0.005:
+        return "—"
+    return "R$ " + _br(v, casas)
 
 
-def layout_fig(fig, h=280, legenda=True):
-    fig.update_layout(
-        height=h,
-        margin=dict(l=0, r=0, t=36 if legenda else 8, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Segoe UI, sans-serif", size=11, color=MUTED),
-        separators=",.",
-        showlegend=legenda,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11, color=TXT), bgcolor="rgba(0,0,0,0)"),
-        hoverlabel=dict(bgcolor="#ffffff", font_color=TXT, bordercolor=BORDA),
+def moeda_curta(v):
+    a = abs(v)
+    if a < 0.005:
+        return "—"
+    if a >= 1e6:
+        return f"R$ {_br(v / 1e6, 1)}M"
+    if a >= 1e3:
+        return f"R$ {_br(v / 1e3, 1)}K"
+    return f"R$ {_br(v, 0)}"
+
+
+def rot_mes(ts):
+    return f"{MESES_ABREV[ts.month - 1]}/{str(ts.year)[2:]}"
+
+
+def col_por_letra(df, letra):
+    idx = ord(letra.upper()) - ord("A")
+    if 0 <= idx < len(df.columns):
+        return df.columns[idx]
+    return None
+
+
+def col_por_nomes(df, nomes):
+    mapa = {normalizar(c): c for c in df.columns}
+    for n in nomes:
+        if normalizar(n) in mapa:
+            return mapa[normalizar(n)]
+    return None
+
+
+def cor_cat(nome, mapa):
+    if nome not in mapa:
+        mapa[nome] = CORES_CAT[len(mapa) % len(CORES_CAT)]
+    return mapa[nome]
+
+
+def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Detalhe"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols_out)
+
+    ano = ano_ref or ANO_REF
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols == 0:
+        return pd.DataFrame(columns=cols_out)
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def montar_mapa_mes(header_row):
+        m = {}
+        for j in range(start_col_idx, n_cols):
+            h = header_row[j] if j < len(header_row) else None
+            nt = normalizar(h) if h is not None else ""
+            if not nt or "total" in nt or nt in SKIP_HEADER:
+                continue
+            ref = parse_mes_header(h, ano)
+            if ref is not None:
+                m[j] = ref
+        return m
+
+    def score_header(row):
+        return len(montar_mapa_mes(row))
+
+    hr0, best_s = 0, score_header(grid[0])
+    for i in range(min(8, n_rows)):
+        s = score_header(grid[i])
+        if s > best_s:
+            hr0, best_s = i, s
+    if 0 <= header_row_idx < n_rows:
+        s_c = score_header(grid[header_row_idx])
+        if s_c >= best_s and s_c >= 2:
+            hr0 = header_row_idx
+
+    mapa_atual = montar_mapa_mes(grid[hr0])
+    if not mapa_atual:
+        return pd.DataFrame(columns=cols_out)
+
+    li = col_label_idx if 0 <= col_label_idx < n_cols else 0
+    reg = []
+
+    for i in range(hr0 + 1, n_rows):
+        row = grid[i]
+        s_local = score_header(row)
+        if s_local >= 1:
+            cat_test = row[li] if li < len(row) else None
+            ncat_test = normalizar(cat_test) if cat_test is not None else ""
+            parece_cabecalho = (
+                not ncat_test
+                or ncat_test in ("mes", "mês")
+                or ncat_test in SECAO_LABELS
+                or ncat_test in SKIP_LABELS
+                or parse_mes_header(cat_test, ano) is not None
+            )
+            if s_local >= 1 and parece_cabecalho:
+                novo = montar_mapa_mes(row)
+                if novo:
+                    mapa_atual = novo
+                continue
+
+        cat = row[li] if li < len(row) else None
+        if cat is None or (isinstance(cat, float) and pd.isna(cat)):
+            continue
+        cat_s = str(cat).strip()
+        ncat = normalizar(cat_s)
+        if not ncat or ncat in SKIP_LABELS or ncat.startswith("total"):
+            continue
+        if "adiantamento fornecedores" in ncat and "total" in ncat:
+            continue
+
+        tem_valor = any(
+            abs(limpa_valor(row[j] if j < len(row) else 0)) > 0.005
+            for j in mapa_atual
+        )
+        if ncat in SECAO_LABELS and not tem_valor:
+            continue
+        if not tem_valor:
+            continue
+
+        for j, ref in mapa_atual.items():
+            val = limpa_valor(row[j] if j < len(row) else 0)
+            if abs(val) <= 0.005:
+                continue
+            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo, "Detalhe": cat_s})
+
+    if not reg:
+        return pd.DataFrame(columns=cols_out)
+    return pd.DataFrame(reg)[cols_out]
+
+
+def parse_fcx_obra(raw, ano_ref=None):
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols_out)
+
+    ano = ano_ref or ANO_REF
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols < 3:
+        return pd.DataFrame(columns=cols_out)
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def montar_mapa_mes(header_row):
+        m = {}
+        for j in range(2, n_cols):
+            h = header_row[j] if j < len(header_row) else None
+            ref = parse_mes_header(h, ano)
+            if ref is not None:
+                m[j] = ref
+        return m
+
+    hr0, best_s = 0, 0
+    for i in range(min(8, n_rows)):
+        s = len(montar_mapa_mes(grid[i]))
+        if s > best_s:
+            hr0, best_s = i, s
+
+    mapa_atual = montar_mapa_mes(grid[hr0])
+    if not mapa_atual:
+        return pd.DataFrame(columns=cols_out)
+
+    reg = []
+    current_obra = ""
+
+    for i in range(hr0 + 1, n_rows):
+        row = grid[i]
+        col0_val = row[0] if len(row) > 0 else None
+        col1_val = row[1] if len(row) > 1 else None
+
+        n_col0 = normalizar(col0_val)
+        n_col1 = normalizar(col1_val)
+
+        if "total" in n_col0 or "total" in n_col1:
+            continue
+
+        if col0_val is not None and str(col0_val).strip() != "":
+            current_obra = str(col0_val).strip()
+
+        conta = col1_val if col1_val is not None else col0_val
+        if conta is None or (isinstance(conta, float) and pd.isna(conta)):
+            continue
+        conta_s = str(conta).strip()
+        nconta = normalizar(conta_s)
+        if not nconta or nconta in SKIP_LABELS or "total" in nconta:
+            continue
+
+        for j, ref in mapa_atual.items():
+            val = limpa_valor(row[j] if j < len(row) else 0)
+            if abs(val) <= 0.005:
+                continue
+
+            # 1. Abatimento proporcional no FCO na mesma conta contábil
+            reg.append({
+                "Ref": ref,
+                "Categoria": conta_s,
+                "Valor": -val,
+                "Tipo": "Saída",
+                "Grupo": "FCx_Obra (Redução FCO)",
+                "Detalhe": conta_s,
+            })
+            # 2. Realocação no FCI agrupado sob "Investimentos / CAPEX" com sub-detalhe da Obra e Conta
+            nome_obra = current_obra if current_obra else "Diversas"
+            reg.append({
+                "Ref": ref,
+                "Categoria": "Investimentos / CAPEX",
+                "Valor": val,
+                "Tipo": "Saída",
+                "Grupo": f"FCx_Obra - {nome_obra}",
+                "Detalhe": f"{nome_obra} · {conta_s}",
+            })
+
+    if not reg:
+        return pd.DataFrame(columns=cols_out)
+    return pd.DataFrame(reg)
+
+
+def sinal_devolucao(categoria):
+    n = normalizar_chave(categoria)
+    if "fornecedor" in n or "salarial" in n:
+        return 1.0
+    if "paciente" in n or "prontuario" in n:
+        return -1.0
+    if "devolucao" in n:
+        return -1.0
+    return 1.0
+
+
+def eh_linha_devolucao(categoria):
+    n = normalizar_chave(categoria)
+    return "devolucao" in n and (
+        "adiantamento" in n or "prontuario" in n or "fornecedor" in n or "paciente" in n
     )
-    fig.update_xaxes(showgrid=False, linecolor=BORDA, tickfont=dict(size=10, color=MUTED))
-    fig.update_yaxes(
-        gridcolor="rgba(148,163,184,0.25)", zeroline=False,
-        tickprefix="R$ ", tickformat=".2s", tickfont=dict(size=10, color=MUTED),
-    )
-    return fig
+
+
+# ==============================================================================
+# SALDO INICIAL
+# ==============================================================================
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_saldo_inicial(ano_ref=None):
+    ano = ano_ref or ANO_REF
+    out = {}
+    try:
+        conn = conectar_sheets()
+        if conn is None:
+            return out
+        raw = conn.read(worksheet=ABA_SALDO, ttl=0)
+    except Exception:
+        return out
+
+    if raw is None or raw.empty:
+        return out
+
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols == 0:
+        return out
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def mapa_mes_linha(row, start_j=0):
+        m = {}
+        for j in range(start_j, n_cols):
+            h = row[j] if j < len(row) else None
+            nt = normalizar(h) if h is not None else ""
+            if not nt or "total" in nt or nt in SKIP_HEADER:
+                continue
+            ref = parse_mes_header(h, ano)
+            if ref is not None:
+                m[j] = ref
+        return m
+
+    hr, best = 0, 0
+    for i in range(min(6, n_rows)):
+        s = max(len(mapa_mes_linha(grid[i], 0)), len(mapa_mes_linha(grid[i], 1)))
+        if s > best:
+            best, hr = s, i
+    if best == 0:
+        return out
+
+    mapa = mapa_mes_linha(grid[hr], 0)
+    if len(mapa) < best:
+        mapa = mapa_mes_linha(grid[hr], 1)
+    if not mapa:
+        return out
+
+    row_saldo = None
+    for i in range(hr + 1, min(hr + 8, n_rows)):
+        for j in (0, 1):
+            if j >= n_cols:
+                continue
+            lab = normalizar(grid[i][j])
+            if "saldo" in lab and "inicial" in lab:
+                row_saldo = i
+                break
+            if lab in ("saldo inicial", "saldo de caixa", "saldo caixa", "caixa inicial"):
+                row_saldo = i
+                break
+        if row_saldo is not None:
+            break
+
+    if row_saldo is None and hr + 1 < n_rows:
+        row_saldo = hr + 1
+    if row_saldo is None:
+        return out
+
+    for j, ref in mapa.items():
+        val = limpa_valor(grid[row_saldo][j] if j < len(grid[row_saldo]) else 0)
+        out[ref] = float(val)
+    return out
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_saldos_tasy():
+    inicial, final, avisos = {}, {}, []
+    try:
+        conn = conectar_sheets()
+        if conn is None:
+            return inicial, final, ["Saldo Tasy: conexão indisponível."]
+        raw = conn.read(worksheet=ABA_SALDO_TASY, ttl=0)
+        if raw is None or raw.empty:
+            return inicial, final, ["Saldo Tasy: aba vazia."]
+        grid = [list(raw.columns)] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+        destino, meses = None, {}
+        for row in grid:
+            label = normalizar(row[0]) if row else ""
+            if label in ("saldo inicial", "saldo final"):
+                destino = inicial if label == "saldo inicial" else final
+                meses = {}
+            elif label == "banco" and destino is not None:
+                meses = {j: ref for j, h in enumerate(row[1:], 1)
+                         if (ref := parse_mes_header(h, ANO_REF)) is not None}
+            elif label == "total geral" and destino is not None:
+                for j, ref in meses.items():
+                    if j < len(row) and row[j] is not None and str(row[j]).strip():
+                        destino[ref] = limpa_valor(row[j])
+        if not inicial or not final:
+            avisos.append("Saldo Tasy: bloco inicial ou final sem totais reconhecidos.")
+    except Exception as e:
+        avisos.append(f"Saldo Tasy: não foi possível carregar a referência ({e}).")
+    return inicial, final, avisos
+
+
+def consolidar_devolucoes(base):
+    base = base.copy()
+    mask = base["Categoria"].apply(eh_linha_devolucao)
+    dev = base.loc[mask].copy()
+    if dev.empty:
+        return base
+    def natureza(c):
+        n = normalizar_chave(c)
+        if "fornecedor" in n:
+            return "fornecedor"
+        if "salarial" in n:
+            return "salarial"
+        if "prontuario" in n:
+            return "prontuario"
+        return "paciente"
+    dev["Natureza"] = dev["Categoria"].map(natureza)
+    especifica = dev[dev["Grupo"] == "Devolução Adiantamento"]
+    meses_paciente = set(especifica.loc[especifica["Natureza"].isin(["paciente", "prontuario"]), "Ref"])
+    meses_fornecedor = set(especifica.loc[especifica["Natureza"] == "fornecedor", "Ref"])
+    meses_salarial = set(especifica.loc[especifica["Natureza"] == "salarial", "Ref"])
+    remover = (dev["Grupo"] != "Devolução Adiantamento") & (
+        (dev["Natureza"].isin(["paciente", "prontuario"]) & dev["Ref"].isin(meses_paciente)) |
+        ((dev["Natureza"] == "fornecedor") & dev["Ref"].isin(meses_fornecedor)) |
+        ((dev["Natureza"] == "salarial") & dev["Ref"].isin(meses_salarial)))
+    dev = dev.loc[~remover].copy()
+    dev["Valor"] = dev.apply(lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]), axis=1)
+    dev["Tipo"] = dev["Categoria"].apply(lambda c: "Entrada" if sinal_devolucao(c) > 0 else "Saída")
+    dev["Grupo"] = "Devolução Adiantamento"
+    return pd.concat([base.loc[~mask], dev[base.columns]], ignore_index=True)
+
+
+def montar_serie_saldo(refs, s_variacao, mapa_saldo_ini):
+    s_ini = pd.Series(0.0, index=refs, dtype=float)
+    s_fim = pd.Series(0.0, index=refs, dtype=float)
+    prev_fim = None
+
+    for m in refs:
+        if m in mapa_saldo_ini:
+            ini = float(mapa_saldo_ini[m])
+        elif prev_fim is not None:
+            ini = float(prev_fim)
+        else:
+            ant = [k for k in sorted(mapa_saldo_ini.keys()) if k < m]
+            ini = float(mapa_saldo_ini[ant[-1]]) if ant else 0.0
+
+        var = float(s_variacao.get(m, 0.0))
+        fim = ini + var
+        s_ini[m] = ini
+        s_fim[m] = fim
+        prev_fim = fim
+
+    return s_ini, s_fim
+
+
+# ==============================================================================
+# DE-PARA
+# ==============================================================================
+def _mapa_de_dataframe(df_map):
+    if df_map is None or df_map.empty:
+        return {}
+    cols = list(df_map.columns)
+    c_desc = c_cls = c_flx = None
+    for c in cols:
+        n = normalizar(c)
+        if n in ("descricao", "descrição", "conta contabil", "conta contábil", "categoria"):
+            c_desc = c
+        if ("classific" in n) and ("fluxo" not in n):
+            c_cls = c
+        if "fluxo" in n:
+            c_flx = c
+    if c_desc is None:
+        c_desc = cols[0]
+    if c_cls is None and len(cols) > 1:
+        c_cls = cols[1]
+    if c_flx is None and len(cols) > 2:
+        c_flx = cols[2]
+    if not c_desc or not c_cls:
+        return {}
+
+    out = {}
+    for _, r in df_map.iterrows():
+        d = str(r[c_desc]).strip() if pd.notna(r[c_desc]) else ""
+        c = str(r[c_cls]).strip() if pd.notna(r[c_cls]) else ""
+        f = str(r[c_flx]).strip() if (c_flx and pd.notna(r[c_flx])) else ""
+        nd = normalizar_chave(d)
+        if not nd or nd in SKIP_LABELS:
+            continue
+        if not c or normalizar(c) in SKIP_LABELS:
+            continue
+        nf = normalizar(f)
+        if "invest" in nf:
+            fluxo = FLUXO_INV
+        elif "financ" in nf:
+            fluxo = FLUXO_FIN
+        else:
+            fluxo = FLUXO_OP
+        out[nd] = (c, fluxo)
+    return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def carregar_mapa_classificacao():
+    try:
+        conn = conectar_sheets()
+        if conn is not None:
+            try:
+                raw = conn.read(worksheet=ABA_CLASSIF, ttl=0)
+                m = _mapa_de_dataframe(raw)
+                if m:
+                    return m
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for path in [
+        "RegraFCx_Ajustado.xlsx",
+        "/home/workdir/attachments/RegraFCx_Ajustado.xlsx",
+        "Classificacao_FCx_Concluida.xlsx",
+    ]:
+        if os.path.isfile(path):
+            try:
+                m = _mapa_de_dataframe(pd.read_excel(path))
+                if m:
+                    return m
+            except Exception:
+                continue
+    return {}
+
+
+def eh_juros(nome):
+    return "juros" in normalizar_chave(nome)
+
+
+def eh_juros_fornecedor(nome):
+    n = normalizar_chave(nome)
+    return "juros" in n and "fornecedor" in n
+
+
+def eh_juros_financiamento(nome):
+    n = normalizar_chave(nome)
+    if "juros" not in n or "fornecedor" in n:
+        return False
+    return any(x in n for x in (
+        "emprestimo", "financiament", "banco", "unicred", "encarg",
+        "capital de giro", "cdc", "leasing",
+    ))
+
+
+def eh_amortizacao(nome):
+    return "amortiza" in normalizar_chave(nome)
+
+
+def eh_captacao(nome):
+    n = normalizar_chave(nome)
+    if not n:
+        return False
+    if "juros" in n or "amortiza" in n or "encargo" in n:
+        return False
+    if "captacao" in n or "captacoes" in n:
+        return True
+    if "emprestimo" in n and (
+        "banco" in n or "unicred" in n or "bradesc" in n
+        or "itau" in n or "santander" in n or "outros" in n
+    ):
+        return True
+    if n.startswith("emprestimo"):
+        return True
+    return False
+
+
+def aplicar_classificacao(categoria, mapa):
+    n = normalizar_chave(categoria)
+    if not n:
+        return "Não classificado", FLUXO_OP, categoria
+
+    if eh_linha_devolucao(categoria):
+        return CLASSIF_VAR_AP, FLUXO_OP, categoria
+
+    if n in mapa:
+        cls, flx = mapa[n]
+        return cls, flx, categoria
+
+    cand = []
+    for k, (cls, flx) in mapa.items():
+        if len(k) >= 6 and (k in n or n in k):
+            cand.append((len(k), cls, flx))
+    if cand:
+        cand.sort(reverse=True)
+        return cand[0][1], cand[0][2], categoria
+
+    if eh_captacao(categoria):
+        return "Captações", FLUXO_FIN, categoria
+    if eh_amortizacao(categoria):
+        return "Amortização de Empréstimos", FLUXO_FIN, categoria
+    if eh_juros_fornecedor(categoria):
+        return "Juros Fornecedor", FLUXO_OP, categoria
+    if eh_juros_financiamento(categoria):
+        return "Juros e Encargos Financeiros", FLUXO_FIN, categoria
+    if eh_juros(categoria):
+        return "Juros Fornecedor", FLUXO_OP, categoria
+
+    return "Não classificado", FLUXO_OP, categoria
+
+
+def papel_classif(classif, fluxo=""):
+    n = normalizar(classif)
+    nf = normalizar(fluxo)
+
+    if "variacoes de ativos" in n or "variações de ativos" in n or n == normalizar(CLASSIF_VAR_AP):
+        return "var_ap"
+
+    if "invest" in nf:
+        return "capex"
+
+    if "financ" in nf:
+        if "captac" in n or (
+            "emprestimo" in n and "amortiza" not in n and "juros" not in n
+        ):
+            return "captacao"
+        if "amortiza" in n:
+            return "amortizacao"
+        if "juros" in n:
+            return "juros"
+        return "outros"
+
+    if any(x in n for x in ("alugue", "convenio", "particular", "outras receitas")):
+        return "receita_op"
+    if "imposto" in n or "tributo" in n:
+        return "imposto"
+    if "juros" in n:
+        if "fornecedor" in n or "operac" in nf:
+            return "custo_op"
+        if any(x in n for x in ("emprestimo", "banco", "financiament", "encarg")):
+            return "juros"
+        return "custo_op"
+    if "capex" in n or "investimento" in n:
+        return "capex"
+    if "captac" in n:
+        return "captacao"
+    if "amortiza" in n:
+        return "amortizacao"
+    if any(x in n for x in (
+        "pessoal", "honorario", "terceiros", "utilidade", "opme",
+        "administrativ", "bancari", "outras despesas", "fornecedor", "seguro", "iof",
+    )):
+        return "custo_op"
+    return "outros"
 
 
 # ==============================================================================
 # CARGA
 # ==============================================================================
-@st.cache_data(ttl=60, show_spinner="Carregando dados…")
-def carregar_dados_obras_detalhado():
+@st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
+def carregar_fluxo():
+    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    vazio = pd.DataFrame(columns=cols)
+    avisos = []
     conn = conectar_sheets()
-    if not conn:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    if conn is None:
+        return vazio, ["Conexão indisponível."]
+    partes = []
+
+    # Base_Despesas
     try:
-        df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
-        df_orc.columns = [str(c).strip() for c in df_orc.columns]
-
-        map_meses = {
-            'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'MARCO': 3,
-            'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6, 'JULHO': 7,
-            'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
-        }
-        meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
-        col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
-        col_item = next((c for c in df_orc.columns if c.upper() in [
-            'CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA', 'CONTA CONTABIL', 'CONTA CONTÁBIL'
-        ]), None)
-
-        df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
-        df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
-
-        if col_item and col_item != col_resumo:
-            df_orc['Item'] = df_orc[col_item].fillna('GERAL').astype(str).str.strip().str.upper()
-            id_vars = ['Obra', 'Item']
-        else:
-            outras_cols = [c for c in df_orc.columns if c.upper() not in map_meses and c != col_resumo and c.upper() != 'OBRA']
-            if outras_cols:
-                df_orc['Item'] = df_orc[outras_cols[0]].fillna('GERAL').astype(str).str.strip().str.upper()
-                id_vars = ['Obra', 'Item']
-            else:
-                df_orc['Item'] = df_orc['Obra']
-                id_vars = ['Obra', 'Item']
-
-        df_orc_melt = df_orc.melt(id_vars=id_vars, value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
-        df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
-        df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
-
-        df_fases = pd.DataFrame()
-        try:
-            df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
-            valid_cols = [c for c in df_fases_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
-            df_fases = df_fases_raw[valid_cols].copy()
-            df_fases = df_fases.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
-            if not df_fases.empty and len(df_fases.columns) >= 2:
-                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
-                df_fases['Fase_Tarefa'] = df_fases[df_fases.columns[1]].fillna('').astype(str).str.strip().str.upper()
-            elif not df_fases.empty and len(df_fases.columns) == 1:
-                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
-                df_fases['Fase_Tarefa'] = "GERAL"
-        except Exception:
-            df_fases = pd.DataFrame()
-
-        df_recursos = pd.DataFrame()
-        try:
-            df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
-            valid_cols_rec = [c for c in df_recursos_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
-            df_recursos = df_recursos_raw[valid_cols_rec].copy()
-        except Exception:
-            df_recursos = pd.DataFrame()
-
-        df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
-        df_real.columns = [str(c).strip() for c in df_real.columns]
-        df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
-        df_real['Mes'] = df_real['MÊS'].apply(extract_month)
-        df_real['Valor_Realizado'] = df_real['Valor'].apply(limpa_valor)
-        
-        # Identificação de Conta Contábil / Descrição / Fornecedor
-        col_conta = next((c for c in df_real.columns if any(k in c.lower() for k in ['conta', 'classif', 'item', 'descri', 'servico'])), None)
-        col_forn = next((c for c in df_real.columns if 'forn' in c.lower()), 'Fornecedor')
-        col_nf = next((c for c in df_real.columns if 'nf' in c.lower()), 'NF')
-        col_data = next((c for c in df_real.columns if 'data' in c.lower()), 'DATA PGTO')
-        
-        df_real['Conta_Contabil'] = df_real[col_conta].fillna('OUTRAS DESPESAS').astype(str).str.strip().str.upper() if col_conta else df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
-        df_real['Fornecedor'] = df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.upper()
-        df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
-        df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
-        return df_orc_melt, df_real, df_fases, df_recursos
+        raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
     except Exception as e:
-        st.error(f"Erro ao processar dados de obras: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        raw_d = None
+        avisos.append(f"Despesas: {e}")
+    if raw_d is not None and not raw_d.empty:
+        df = raw_d.copy()
+        c_data = col_por_letra(df, "B") or col_por_nomes(df, ["Data"])
+        c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx"])
+        c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx"])
+        c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor"])
+        if all([c_data, c_trans, c_clas, c_val]):
+            tmp = pd.DataFrame({
+                "Data": df[c_data].apply(parse_data),
+                "Transação": df[c_trans].fillna("").astype(str).str.strip(),
+                "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
+                "Valor": df[c_val].apply(limpa_valor),
+            })
+            devolucoes = tmp["Transação"].map(eh_linha_devolucao)
+            permitidas = tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)
+            tmp.loc[devolucoes, "Categoria"] = tmp.loc[devolucoes, "Transação"]
+            tmp = tmp[permitidas | devolucoes]
+            tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
+            if not tmp.empty:
+                tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
+                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                g["Tipo"], g["Grupo"] = "Saída", "Despesas"
+                g["Detalhe"] = g["Categoria"]
+                partes.append(g[cols])
+
+    # Borderô
+    try:
+        raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
+    except Exception as e:
+        raw_b = None
+        avisos.append(f"Borderô: {e}")
+    if raw_b is not None and not raw_b.empty:
+        mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
+        if mb.empty:
+            mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF)
+        if not mb.empty:
+            mb = mb.copy()
+            mb["Grupo"] = "Borderô"
+            partes.append(mb[cols])
+
+    # Adiantamentos
+    try:
+        raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
+    except Exception as e:
+        raw_a = None
+        avisos.append(f"Adiantamentos: {e}")
+    if raw_a is not None and not raw_a.empty:
+        ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
+        if ma.empty:
+            ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF)
+        if not ma.empty:
+            ma = ma.copy()
+            ma["Grupo"] = "Adiantamentos"
+            partes.append(ma[cols])
+
+    # Receita
+    try:
+        raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
+    except Exception as e:
+        raw_r = None
+        avisos.append(f"Receita: {e}")
+    if raw_r is not None and not raw_r.empty:
+        mr = melt_matriz(raw_r, 0, 0, 1, "Entrada", ANO_REF)
+        if mr.empty:
+            mr = melt_matriz(raw_r, 0, 1, 1, "Entrada", ANO_REF)
+        if not mr.empty:
+            mr = mr.copy()
+            mr["Grupo"] = "Receita"
+            partes.append(mr[cols])
+
+    # Devoluções de adiantamento
+    raw_dev = None
+    for nome_aba in (ABA_DEVOL, ABA_DEVOL_ALT):
+        try:
+            raw_dev = conn.read(worksheet=nome_aba, ttl=0)
+            if raw_dev is not None and not raw_dev.empty:
+                break
+        except Exception:
+            raw_dev = None
+    if raw_dev is not None and not raw_dev.empty:
+        md = melt_matriz(raw_dev, 0, 0, 1, "Entrada", ANO_REF)
+        if md.empty:
+            md = melt_matriz(raw_dev, 1, 0, 2, "Entrada", ANO_REF)
+        if md.empty:
+            md = melt_matriz(raw_dev, 0, 1, 1, "Entrada", ANO_REF)
+        if md.empty:
+            md = melt_matriz(raw_dev, 1, 1, 2, "Entrada", ANO_REF)
+        if not md.empty:
+            md = md.copy()
+            md["Valor"] = md.apply(
+                lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]),
+                axis=1,
+            )
+            md["Tipo"] = md["Categoria"].apply(
+                lambda c: "Entrada" if sinal_devolucao(c) > 0 else "Saída"
+            )
+            md["Grupo"] = "Devolução Adiantamento"
+            partes.append(md[cols])
+
+    # FCx_Obra
+    try:
+        raw_obra = conn.read(worksheet=ABA_OBRA, ttl=0)
+    except Exception as e:
+        raw_obra = None
+        avisos.append(f"FCx_Obra: {e}")
+    if raw_obra is not None and not raw_obra.empty:
+        mobra = parse_fcx_obra(raw_obra, ANO_REF)
+        if not mobra.empty:
+            partes.append(mobra[cols])
+
+    if not partes:
+        return vazio, avisos or ["Nenhum lançamento."]
+    
+    base_full = pd.concat(partes, ignore_index=True)
+    base_full = consolidar_devolucoes(base_full)
+    base_full["Categoria"] = base_full["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
+    
+    base_grouped = base_full.groupby(
+        ["Ref", "Categoria", "Tipo", "Grupo", "Detalhe"],
+        as_index=False
+    )["Valor"].sum()
+    
+    return base_grouped.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
 
 
-df_orcado, df_realizado, df_fases, df_recursos = carregar_dados_obras_detalhado()
-if df_orcado.empty and df_realizado.empty:
-    st.warning("Nenhum dado encontrado nas abas do banco de dados.")
+base, avisos = carregar_fluxo()
+mapa_cls = carregar_mapa_classificacao()
+mapa_saldo = carregar_saldo_inicial(ANO_REF)
+mapa_tasy_ini, mapa_tasy_fim, avisos_tasy = carregar_saldos_tasy()
+avisos.extend(avisos_tasy)
+mapa_saldo.update(mapa_tasy_ini)
+
+if base.empty:
+    for a in avisos:
+        st.warning(a)
+    st.warning("⚠️ Nenhum dado disponível.")
     st.stop()
 
-obras_orcadas = df_orcado['Obra'].dropna().astype(str).unique().tolist() if not df_orcado.empty else []
-obras_realizadas = df_realizado['Obra'].dropna().astype(str).unique().tolist() if not df_realizado.empty else []
-todas_obras = set(obras_orcadas) | set(obras_realizadas)
-lista_obras = sorted([o for o in todas_obras if o.strip() not in ['NAN', '0', '', 'DIVERSAS', 'SEGUROS']])
-CORES_OBRA = mapa_cores_obras(lista_obras)
+base = base.copy()
+pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
+base["Classif"] = pares.apply(lambda x: x[0])
+base["Fluxo"] = pares.apply(lambda x: x[1])
+
+# Forçar o agrupamento central sob "Investimentos / CAPEX" no FCI para obras
+mask_obra_fci = base["Grupo"].str.startswith("FCx_Obra -", na=False)
+base.loc[mask_obra_fci, "Classif"] = "Investimentos / CAPEX"
+base.loc[mask_obra_fci, "Fluxo"] = FLUXO_INV
+
+base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
+
+from modules.ajustes_fcx import carregar_ajustes, linhas_dashboard, ativos
+try:
+    conn_ajustes = conectar_sheets()
+    if conn_ajustes is None:
+        raise RuntimeError("Conexão indisponível para consultar os ajustes aprovados.")
+    ledger_ajustes = carregar_ajustes(conn_ajustes)
+    base_ajustes = linhas_dashboard(ledger_ajustes)
+except Exception as erro_ajustes:
+    st.error(f"Não foi possível validar os ajustes aprovados: {erro_ajustes}")
+    st.stop()
+if not base_ajustes.empty:
+    base = pd.concat([base, base_ajustes], ignore_index=True)
 
 # ==============================================================================
-# FILTROS
+# SIDEBAR
 # ==============================================================================
-df_orc_filtrado = df_orcado.copy()
-df_real_filtrado = df_realizado.copy()
-df_fases_filtrado = df_fases.copy()
+meses_all = sorted(base["Ref"].unique())
+rot = {m: rot_mes(m) for m in meses_all}
 
 with st.sidebar:
     st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
-    mes_selecionado = st.selectbox(
-        "Mês de Análise (Acumulado)",
-        options=["Todos"] + list(range(1, 13)),
-        format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x,
-    )
-    obra_selecionada = st.selectbox("Empreendimento / Obra", ["Todas"] + lista_obras)
-    if st.button("↻ Limpar filtros", use_container_width=True):
+    c_a, c_b = st.columns(2)
+    ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
+    fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
+    grupos_all = sorted(base["Grupo"].unique().tolist())
+    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all)
+    if st.button("↻ Atualizar dados", use_container_width=True):
+        st.cache_data.clear()
         st.rerun()
-
-    if mes_selecionado != "Todos":
-        df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
-        df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
-    if obra_selecionada != "Todas":
-        df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
-        df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
-        if not df_fases_filtrado.empty and 'Obra' in df_fases_filtrado.columns:
-            df_fases_filtrado = df_fases_filtrado[df_fases_filtrado['Obra'] == obra_selecionada]
-
-    st.markdown("<div class='side-sec' style='margin-top:14px'>Relatórios</div>", unsafe_allow_html=True)
-    df_real_detalhe_exp = df_real_filtrado.copy()
-    if not df_real_detalhe_exp.empty:
-        df_real_detalhe_exp['Valor_Realizado'] = df_real_detalhe_exp['Valor_Realizado'].apply(limpa_valor)
-
-    output_excel = io.BytesIO()
-    with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
-        if not df_fases_filtrado.empty:
-            df_fases_filtrado.to_excel(writer, sheet_name='Fases_Obra', index=False)
-        if not df_real_detalhe_exp.empty:
-            df_real_detalhe_exp.to_excel(writer, sheet_name='Transacoes_Realizadas', index=False)
-        if not df_orc_filtrado.empty:
-            df_orc_filtrado.to_excel(writer, sheet_name='Orcado_Mensal', index=False)
-        if not df_recursos.empty:
-            df_recursos.to_excel(writer, sheet_name='Recursos_Obra', index=False)
-    st.download_button(
-        label="📥 Baixar Relatório Completo",
-        data=output_excel.getvalue(),
-        file_name="relatorio_detalhado_obras.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+    st.markdown(
+        f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>"
+        f"<div class='side-card'><small>Saldo inicial (aba)</small><b>{len(mapa_saldo)} mês(es)</b></div>",
+        unsafe_allow_html=True,
     )
 
-# ==============================================================================
-# CÁLCULOS
-# ==============================================================================
-total_orcado = df_orc_filtrado['Valor_Orcado'].sum()
-total_realizado = df_real_filtrado['Valor_Realizado'].sum()
-saldo_orcamento = total_orcado - total_realizado
-consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
+if ini > fim:
+    ini, fim = fim, ini
+refs_sel = [m for m in meses_all if ini <= m <= fim]
+df = base[base["Ref"].isin(refs_sel)].copy()
+if grupo_sel:
+    df = df[df["Grupo"].isin(grupo_sel)]
 
-caixa_inicial_base = 10_000_000.0
-if not df_recursos.empty:
-    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
-    if col_rec:
-        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
-        if val_rec > 0:
-            caixa_inicial_base = val_rec
-
-caixa_disponivel = caixa_inicial_base - total_realizado
-mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_realizado['Mes'].max()) if not df_realizado.empty else 0)
-mes_anterior = mes_atual - 1
-
-df_real_mom = df_realizado.copy()
-if obra_selecionada != "Todas":
-    df_real_mom = df_real_mom[df_real_mom['Obra'] == obra_selecionada]
-
-realizado_atual = df_real_mom[df_real_mom['Mes'] == mes_atual]['Valor_Realizado'].sum()
-realizado_anterior = df_real_mom[df_real_mom['Mes'] == mes_anterior]['Valor_Realizado'].sum()
-if realizado_anterior > 0:
-    mom_pct = ((realizado_atual / realizado_anterior) - 1) * 100
-else:
-    mom_pct = 100 if realizado_atual > 0 else 0
-
-if mom_pct > 0:
-    mom_str, mom_cls = f"↗ +{mom_pct:.1f}% vs Mês {mes_anterior:02d}", "down"
-elif mom_pct < 0:
-    mom_str, mom_cls = f"↘ {mom_pct:.1f}% vs Mês {mes_anterior:02d}", "up"
-else:
-    mom_str, mom_cls = f"→ 0.0% vs Mês {mes_anterior:02d}", ""
-
-pb_width = min(consumo_geral_perc, 100)
-pb_color = VERMELHO if consumo_geral_perc > 100 else VERDE
-saldo_color = VERMELHO if saldo_orcamento < 0 else TXT
-caixa_disp_color = VERMELHO if caixa_disponivel < 0 else VERDE
-txt_mes = f"Até Mês {mes_selecionado:02d}" if mes_selecionado != "Todos" else "Todos os meses"
-txt_obra = obra_selecionada if obra_selecionada != "Todas" else "Todas"
+df_captacao = df[(df["Papel"] == "captacao") & (df["Tipo"] == "Entrada")].copy()
+df_juros = df[df["Papel"] == "juros"].copy()
+df_amort = df[df["Papel"] == "amortizacao"].copy()
+df_var_ap = df[df["Papel"] == "var_ap"].copy()
 
 # ==============================================================================
-# CABEÇALHO + KPIS
+# FÓRMULAS
+# ==============================================================================
+def total_papel(d, papel, tipo=None):
+    m = d["Papel"] == papel
+    if tipo:
+        m = m & (d["Tipo"] == tipo)
+    return float(d.loc[m, "Valor"].sum())
+
+
+rec_op = total_papel(df, "receita_op")
+custo_op = total_papel(df, "custo_op")
+impostos = total_papel(df, "imposto")
+var_ap = total_papel(df, "var_ap")
+capex = total_papel(df, "capex")
+amort = total_papel(df, "amortizacao")
+juros = total_papel(df, "juros")
+captacao = total_papel(df, "captacao", tipo="Entrada")
+
+fco = rec_op - custo_op - impostos + var_ap
+fci = -capex
+fcf = captacao - amort - juros
+variacao = fco + fci + fcf
+
+mapa_cores = {}
+txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
+x_lab = [rot[m] for m in refs_sel]
+
+# ==============================================================================
+# UI
 # ==============================================================================
 st.markdown(
     f"""
     <div class='top'>
         <div>
-            <h1>ACOMPANHAMENTO DE OBRAS</h1>
-            <p>Gestão analítica e execução orçamentária</p>
+            <h1>FLUXO DE CAIXA</h1>
+            <p>Visão gerencial · FCO · FCI · FCF · Saldo de caixa · {ANO_REF}</p>
         </div>
         <div class='pills'>
-            <div class='pill'><small>Período</small><b>{txt_mes}</b></div>
-            <div class='pill'><small>Obra</small><b>{txt_obra}</b></div>
+            <div class='pill'><small>Período</small><b>{txt_per}</b></div>
+            <div class='pill'><small>Variação líquida</small>
+                <b style="color:{'#059669' if variacao>=0 else '#dc2626'}">{moeda_curta(variacao)}</b></div>
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
+for a in avisos:
+    st.warning(a)
+if not mapa_saldo:
+    st.info("ℹ️ Aba **Saldo_FCx** sem saldo inicial detectado — o saldo começará em zero e rolará pela variação.")
 
-st.markdown(f"""
+
+def serie(d, papel, sinal=1.0, tipo=None):
+    x = d[d["Papel"] == papel]
+    if tipo:
+        x = x[x["Tipo"] == tipo]
+    s = x.groupby("Ref")["Valor"].sum().reindex(refs_sel, fill_value=0.0)
+    return s * sinal
+
+
+s_rec = serie(df, "receita_op")
+s_cus = serie(df, "custo_op")
+s_imp = serie(df, "imposto")
+s_vap = serie(df, "var_ap")
+s_fco = s_rec - s_cus - s_imp + s_vap
+s_cap = serie(df, "capex")
+s_fci = -s_cap
+s_cpt = serie(df, "captacao", tipo="Entrada")
+s_amo = serie(df, "amortizacao")
+s_jur = serie(df, "juros")
+s_fcf = s_cpt - s_amo - s_jur
+s_var = s_fco + s_fci + s_fcf
+
+refs_calculo = list(pd.date_range(min(meses_all), max(refs_sel), freq="MS")) if refs_sel else []
+s_var_completo = (base.assign(_sinal=base.apply(
+    lambda r: float(r["Valor"]) * (1 if r["Papel"] in ("receita_op", "captacao", "var_ap") else -1)
+    if r["Papel"] != "outros" else 0.0, axis=1))
+    .groupby("Ref")["_sinal"].sum())
+s_var_completo.update(s_var)
+s_ini_full, s_fim_full = montar_serie_saldo(refs_calculo, s_var_completo, mapa_saldo)
+s_ini, s_fim = s_ini_full.reindex(refs_sel), s_fim_full.reindex(refs_sel)
+s_tasy = pd.Series({m: mapa_tasy_fim.get(m, float("nan")) for m in refs_sel}, dtype=float)
+s_diferenca = s_fim - s_tasy
+saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
+saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
+
+st.markdown(
+    f"""
 <div class='kpi-grid'>
-    <div class='kpi'>
-        <div class='kpi-t'>Orçamento total</div>
-        <div class='kpi-v'>{formatar_moeda(total_orcado)}</div>
-        <div class='kpi-sub'>Valor planejado atualizado</div>
-    </div>
-    <div class='kpi purple'>
-        <div class='kpi-t'>Recursos alocados</div>
-        <div class='kpi-v'>{formatar_moeda(caixa_inicial_base)}</div>
-        <div class='kpi-sub'>Capital alocado inicial</div>
-    </div>
     <div class='kpi green'>
-        <div class='kpi-t'>Orçamento utilizado</div>
-        <div class='kpi-v'>{formatar_moeda(total_realizado)}</div>
-        <div class='kpi-sub' style='color:{pb_color}'>{consumo_geral_perc:.1f}% do orçado</div>
-        <div class='pb'><span style='width:{pb_width:.1f}%;background:{pb_color}'></span></div>
+        <div class='kpi-t'>FCO · Operacional</div>
+        <div class='kpi-v' style='color:{"#059669" if fco>=0 else "#dc2626"}'>{moeda(fco)}</div>
+        <div class='kpi-sub'>Rec. − Custos − Imp. ± Var. A/P</div>
     </div>
     <div class='kpi amber'>
-        <div class='kpi-t'>Orçamento restante</div>
-        <div class='kpi-v' style='color:{saldo_color}'>{formatar_moeda(saldo_orcamento)}</div>
-        <div class='kpi-sub'>Para finalização da obra</div>
+        <div class='kpi-t'>FCI · Investimentos</div>
+        <div class='kpi-v' style='color:{"#059669" if fci>=0 else "#dc2626"}'>{moeda(fci)}</div>
+        <div class='kpi-sub'>− CAPEX ({moeda_curta(capex)})</div>
     </div>
-    <div class='kpi'>
-        <div class='kpi-t'>Caixa disponível</div>
-        <div class='kpi-v' style='color:{caixa_disp_color}'>{formatar_moeda(caixa_disponivel)}</div>
-        <div class='kpi-sub {mom_cls}'>{mom_str}</div>
+    <div class='kpi purple'>
+        <div class='kpi-t'>FCF · Financiamento</div>
+        <div class='kpi-v' style='color:{"#059669" if fcf>=0 else "#dc2626"}'>{moeda(fcf)}</div>
+        <div class='kpi-sub'>Captações {moeda_curta(captacao)} − Amort. − Juros</div>
+    </div>
+    <div class='kpi {"green" if variacao>=0 else "red"}'>
+        <div class='kpi-t'>Variação líquida de caixa</div>
+        <div class='kpi-v' style='color:{"#059669" if variacao>=0 else "#dc2626"}'>{moeda(variacao)}</div>
+        <div class='kpi-sub'>FCO + FCI + FCF</div>
+    </div>
+    <div class='kpi blue'>
+        <div class='kpi-t'>Saldo final de caixa</div>
+        <div class='kpi-v' style='color:{"#059669" if saldo_fim_periodo>=0 else "#dc2626"}'>{moeda(saldo_fim_periodo)}</div>
+        <div class='kpi-sub'>Ini. {moeda_curta(saldo_ini_periodo)} + var. período</div>
     </div>
 </div>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# EVOLUÇÃO MENSAL
-# ==============================================================================
-df_orc_m_base = df_orcado.copy()
-df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
-if obra_selecionada != "Todas":
-    df_orc_m_base = df_orc_m_base[df_orc_m_base['Obra'] == obra_selecionada]
-    df_real_m_base = df_real_m_base[df_real_m_base['Obra'] == obra_selecionada]
-
-df_orc_mensal = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().reset_index()
-df_real_mensal = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().reset_index()
-
-df_linha = pd.DataFrame({'Mes': range(1, 13)})
-df_linha = pd.merge(df_linha, df_orc_mensal, on='Mes', how='left').fillna({'Valor_Orcado': 0.0})
-df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
-max_mes_real = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
-df_linha.loc[df_linha['Mes'] > max_mes_real, 'Valor_Realizado'] = None
-
-meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
-               7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
-df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
-
-tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
-tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
-
-st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
-
-fig_linha = go.Figure()
-fig_linha.add_trace(go.Scatter(
-    x=df_linha['Mes_Nome'], y=df_linha['Valor_Orcado'],
-    mode='lines+markers', name='Orçado',
-    line=dict(color=AZUL, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(37,99,235,0.10)',
-    hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>",
-))
-fig_linha.add_trace(go.Scatter(
-    x=df_linha['Mes_Nome'], y=df_linha['Valor_Realizado'],
-    mode='lines+markers', name='Realizado',
-    line=dict(color=VERDE, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(5,150,105,0.12)',
-    connectgaps=False,
-    hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>",
-))
-st.plotly_chart(layout_fig(fig_linha, 260, True), use_container_width=True, config={'displayModeBar': False})
-
-html_unified = (
-    "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
-    "<th class='row-label'>Mês</th>"
+""",
+    unsafe_allow_html=True,
 )
-for _, r in df_linha.iterrows():
-    html_unified += f"<th>{r['Mes_Nome']}</th>"
-html_unified += "<th class='col-total'>Total</th></tr></thead><tbody>"
 
-html_unified += "<tr><td class='row-label'>Realizado</td>"
-for _, r in df_linha.iterrows():
-    val_disp = formatar_moeda_curta(r['Valor_Realizado']) if pd.notna(r['Valor_Realizado']) else '-'
-    html_unified += f"<td class='val-real'>{val_disp}</td>"
-html_unified += f"<td class='col-total val-real'>{formatar_moeda_curta(tot_real_linha)}</td></tr>"
+st.markdown(
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
+    unsafe_allow_html=True,
+)
 
-html_unified += "<tr><td class='row-label'>Orçado</td>"
-for _, r in df_linha.iterrows():
-    html_unified += f"<td class='val-orc'>{formatar_moeda_curta(r['Valor_Orcado'])}</td>"
-html_unified += f"<td class='col-total val-orc'>{formatar_moeda_curta(tot_orc_linha)}</td></tr>"
-html_unified += "</tbody></table></div>"
-st.markdown(html_unified, unsafe_allow_html=True)
 
-# ==============================================================================
-# GRÁFICOS
-# ==============================================================================
-col_g1, col_g2 = st.columns(2, gap="small")
-
-with col_g1:
-    st.markdown("<div class='section-title' style='margin-top:4px'>Distribuição de custo por obra</div>", unsafe_allow_html=True)
-    df_donut = df_real_filtrado.groupby('Obra')['Valor_Realizado'].sum().reset_index().sort_values('Obra')
-    if not df_donut.empty:
-        cores_donut = [CORES_OBRA.get(o, PALETA_OBRAS[i % len(PALETA_OBRAS)]) for i, o in enumerate(df_donut['Obra'])]
-        fig_donut = go.Figure(go.Pie(
-            labels=df_donut['Obra'], values=df_donut['Valor_Realizado'],
-            hole=0.62, textinfo="none", sort=False,
-            marker=dict(colors=cores_donut, line=dict(color="#ffffff", width=2)),
-            hovertemplate="%{label}<br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
-        ))
-        total_d = df_donut['Valor_Realizado'].sum()
-        fig_donut.update_layout(annotations=[dict(
-            text=f"<b>{formatar_moeda_curta(total_d)}</b><br><span style='font-size:10px;color:#64748b'>Total</span>",
-            showarrow=False, font=dict(size=13, color=TXT),
-        )])
-        st.plotly_chart(layout_fig(fig_donut, 300, True), use_container_width=True, config={'displayModeBar': False})
-
-with col_g2:
-    st.markdown("<div class='section-title' style='margin-top:4px'>Consumo de caixa mensal por obra</div>", unsafe_allow_html=True)
-    df_stack = df_real_filtrado.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().reset_index()
-    if not df_stack.empty:
-        df_stack['Mes_Nome'] = df_stack['Mes'].map(meses_nomes)
-        df_stack = df_stack.sort_values(['Mes', 'Obra'])
-        df_stack_tot = df_stack.groupby(['Mes', 'Mes_Nome'])['Valor_Realizado'].sum().reset_index()
-        obras_no_graf = sorted(df_stack['Obra'].unique().tolist())
-        fig_stack = px.bar(
-            df_stack, x='Mes_Nome', y='Valor_Realizado', color='Obra',
-            category_orders={"Obra": obras_no_graf, "Mes_Nome": list(meses_nomes.values())},
-            color_discrete_map=CORES_OBRA,
+def linhas_df(x, titulo, uid_prefix):
+    rows = []
+    if x.empty:
+        return rows
+    if titulo:
+        rows.append(
+            f"<tr class='subsec'><td>{titulo}</td>"
+            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
         )
-        fig_stack.add_trace(go.Scatter(
-            x=df_stack_tot['Mes_Nome'], y=df_stack_tot['Valor_Realizado'],
-            text=df_stack_tot['Valor_Realizado'].apply(formatar_moeda_curta),
-            mode='text', textposition='top center', showlegend=False,
-            textfont=dict(size=10, color=TXT, family='Inter'),
-        ))
-        fig_stack.update_layout(bargap=0.3, xaxis_title=None, yaxis_title=None,
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None))
-        st.plotly_chart(layout_fig(fig_stack, 300, True), use_container_width=True, config={'displayModeBar': False})
+    piv = x.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    piv = piv.reindex(columns=refs_sel, fill_value=0.0)
+    piv["__t__"] = piv.sum(axis=1)
+    piv = piv.sort_values("__t__", ascending=False)
+    det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
+    uid = 0
+    for classif, r in piv.iterrows():
+        uid += 1
+        key = f"{uid_prefix}_{uid}"
+        cor = cor_cat(classif, mapa_cores)
+        sub = det[det["Classif"] == classif]
+        tem = sub["Detalhe"].nunique() > 1 or (
+            sub["Detalhe"].nunique() == 1
+            and normalizar_chave(sub["Detalhe"].iloc[0]) != normalizar_chave(classif)
+        )
+        if tem:
+            label = (
+                f"<label class='drill-label' for='{key}'>"
+                f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
+                f"<span class='indicator'>▶</span>"
+                f"<span class='dot' style='background:{cor}'></span>{classif}</label>"
+            )
+        else:
+            label = f"<span class='dot' style='background:{cor}'></span>{classif}"
+        cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
+        if tem:
+            rows.append(
+                f"<tbody class='grp'><tr><td>{label}</td>"
+                + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            )
+            ps = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+            ps = ps.reindex(columns=refs_sel, fill_value=0.0)
+            ps["__t__"] = ps.sum(axis=1)
+            ps = ps.sort_values("__t__", ascending=False)
+            for dn, rd in ps.iterrows():
+                sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
+                rows.append(
+                    f"<tr class='sub-row'><td>↳ {dn}</td>"
+                    + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
+                )
+            rows.append("</tbody>")
+        else:
+            rows.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+    return rows
 
-# ==============================================================================
-# FLUXO DE CAIXA DA OBRA
-# ==============================================================================
-st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
 
-saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dict()
-saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
-max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
-
-todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
-if not df_orc_m_base.empty:
-    todas_obras_fluxo = todas_obras_fluxo.union(set(df_orc_m_base['Obra'].unique()))
-obras_fluxo = sorted(list(todas_obras_fluxo))
-if obra_selecionada != "Todas":
-    obras_fluxo = [obra_selecionada]
-
-real_por_obra_mes = df_real_m_base.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().to_dict()
-orc_por_obra_mes = df_orc_m_base.groupby(['Mes', 'Obra'])['Valor_Orcado'].sum().to_dict()
-
-s_ini_list, saidas_tot_list, s_fim_list = [], [], []
-curr_saldo = caixa_inicial_base
-for m in range(1, 13):
-    s_ini_list.append(curr_saldo)
-    saida_m = saidas_real_dict.get(m, 0.0) if m <= max_mes_realizado else saidas_orc_dict.get(m, 0.0)
-    saidas_tot_list.append(saida_m)
-    curr_saldo -= saida_m
-    s_fim_list.append(curr_saldo)
-
-html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Fluxo de Caixa</th>"
-for m_num in range(1, 13):
-    html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
-html_fluxo += "</tr></thead><tbody>"
-
-html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
-for val in s_ini_list:
-    html_fluxo += f"<td>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-html_fluxo += "<tbody class='obra-group'><tr>"
-html_fluxo += (
-    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
-    "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
-    "<b>(-) Saídas Totais</b></label></td>"
-)
-for val in saidas_tot_list:
-    html_fluxo += f"<td style='color:#dc2626;font-weight:800'>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-for obra_name in obras_fluxo:
-    html_fluxo += (
-        f"<tr class='sub-row'><td class='row-label' style='padding-left:28px;font-size:10px;"
-        f"font-weight:normal;color:#64748b;border-right:2px solid #e2e8f0'>↳ {obra_name}</td>"
+def linha_tot(label, s, cor, cls="tot"):
+    def fmt(v):
+        return "—" if pd.isna(v) else moeda(float(v))
+    tot_val = float(s.iloc[0] if label == "(+) Saldo inicial" else s.iloc[-1]) if len(s) else 0.0
+    if cls == "saldo":
+        tot_html = f"<td><span style='color:{cor}'><b>{fmt(tot_val)}</b></span></td>"
+    else:
+        tot_html = f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td>"
+    return (
+        f"<tr class='{cls}'><td><b>{label}</b></td>"
+        + "".join(
+            f"<td><span style='color:{cor}'>{fmt(s.get(m, float('nan')))}</span></td>"
+            for m in refs_sel
+        )
+        + tot_html
+        + "</tr>"
     )
-    for m_num in range(1, 13):
-        v_obra = real_por_obra_mes.get((m_num, obra_name), 0.0) if m_num <= max_mes_realizado else orc_por_obra_mes.get((m_num, obra_name), 0.0)
-        html_fluxo += f"<td style='font-size:10px;color:#64748b'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
-    html_fluxo += "</tr>"
-html_fluxo += "</tbody>"
 
-html_fluxo += "<tr><td class='row-label' style='font-weight:800'>(=) Saldo Final</td>"
-for m_num, val in enumerate(s_fim_list, start=1):
-    css_class = "val-real" if m_num <= max_mes_realizado else "val-orc"
-    html_fluxo += f"<td class='{css_class}'><b>{formatar_moeda_curta(val)}</b></td>"
-html_fluxo += "</tr></tbody></table></div>"
-st.markdown(html_fluxo, unsafe_allow_html=True)
 
-# ==============================================================================
-# DETALHAMENTO ORÇAMENTO
-# ==============================================================================
-st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
+if df.empty:
+    st.markdown("<div class='vazio'>Sem dados no período</div>", unsafe_allow_html=True)
+else:
+    html = []
 
-if not df_orc_filtrado.empty:
-    df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy()
-    if not df_orc_tab.empty:
-        pivot_orc = pd.pivot_table(df_orc_tab, index='Obra', columns='Mes', values='Valor_Orcado', aggfunc='sum', fill_value=0.0)
-        for m in range(1, 13):
-            if m not in pivot_orc.columns:
-                pivot_orc[m] = 0.0
-        pivot_orc = pivot_orc[sorted(pivot_orc.columns)]
-        pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
-        pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
+    # ---- 1. FCO ----
+    html.append(
+        "<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.extend(linhas_df(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", "r"))
+    html.append(linha_tot("Total receitas operacionais", s_rec, VERDE))
 
-        html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FASE DA OBRA</th>"
-        html_orc_det += "<th>TOTAL ORÇADO</th>"
-        for m_num in range(1, 13):
-            html_orc_det += f"<th>{meses_nomes[m_num].upper()}</th>"
-        html_orc_det += "</tr></thead>"
+    html.extend(linhas_df(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", "c"))
+    html.append(linha_tot("Total custos e despesas operacionais", s_cus, VERMELHO))
 
-        totais_col_orc = {m: 0.0 for m in range(1, 13)}
-        total_geral_orc = 0.0
-        uid_orc = 0
+    html.extend(linhas_df(df[df["Papel"] == "imposto"], "(−) Impostos", "i"))
+    html.append(linha_tot("Total impostos", s_imp, VERMELHO))
 
-        for obra_name, row in pivot_orc.iterrows():
-            uid_orc += 1
-            key_orc = f"orc_{uid_orc}"
-            tot_obra = row['Total_Geral']
-            total_geral_orc += tot_obra
-
-            fases_lista = []
-            if not df_fases.empty and 'Obra' in df_fases.columns and 'Fase_Tarefa' in df_fases.columns:
-                sub_fases = df_fases[df_fases['Obra'] == obra_name]
-                if not sub_fases.empty:
-                    fases_lista = [f for f in sub_fases['Fase_Tarefa'].dropna().unique().tolist() if f and f != 'NAN']
-            if not fases_lista:
-                sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
-                if 'Item' in sub_df_orc.columns:
-                    fases_lista = sub_df_orc['Item'].dropna().unique().tolist()
-
-            html_orc_det += "<tbody class='obra-group'><tr>"
-            html_orc_det += (
-                f"<td><label class='drilldown-label' for='{key_orc}'>"
-                f"<input type='checkbox' id='{key_orc}' class='toggle-checkbox'>"
-                f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
-            )
-            html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(tot_obra)}</td>"
-            for m_num in range(1, 13):
-                val_m = row.get(m_num, 0.0)
-                totais_col_orc[m_num] += val_m
-                html_orc_det += f"<td style='font-weight:700'>{formatar_moeda(val_m) if val_m > 0 else '-'}</td>"
-            html_orc_det += "</tr>"
-
-            if fases_lista:
-                num_fases = len(fases_lista)
-                for fase_name in fases_lista:
-                    html_orc_det += "<tr class='sub-row'>"
-                    html_orc_det += (
-                        f"<td title='↳ {fase_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
-                        f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
-                        f"white-space:nowrap'>↳ {fase_name}</td>"
-                    )
-                    val_sub_total = tot_obra / num_fases if num_fases > 0 else 0
-                    html_orc_det += f"<td style='font-size:11px;font-weight:600;color:#64748b'>{formatar_moeda(val_sub_total)}</td>"
-                    for m_num in range(1, 13):
-                        val_m_sub = row.get(m_num, 0.0) / num_fases if num_fases > 0 else 0
-                        html_orc_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(val_m_sub) if val_m_sub > 0 else '-'}</td>"
-                    html_orc_det += "</tr>"
-            html_orc_det += "</tbody>"
-
-        html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
-        html_orc_det += f"<td style='font-weight:900;color:{TXT}'>{formatar_moeda(total_geral_orc)}</td>"
-        for m_num in range(1, 13):
-            t_col = totais_col_orc[m_num]
-            html_orc_det += f"<td style='font-weight:900'>{formatar_moeda(t_col) if t_col > 0 else '-'}</td>"
-        html_orc_det += "</tr></table></div>"
-        st.markdown(html_orc_det, unsafe_allow_html=True)
-
-# ==============================================================================
-# DETALHAMENTO PAGAMENTOS (DRILLDOWN CONTA CONTÁBIL / FORNECEDOR)
-# ==============================================================================
-st.markdown("<div class='section-title'>Detalhamento de pagamentos realizados</div>", unsafe_allow_html=True)
-
-if not df_real_filtrado.empty:
-    df_real_tab = df_real_filtrado[df_real_filtrado['Mes'] > 0].copy()
-    df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy() if not df_orc_filtrado.empty else pd.DataFrame()
-
-    if not df_real_tab.empty:
-        orc_obra_mes, orc_obra_tot = {}, {}
-        orc_mes_tot = {m: 0.0 for m in range(1, 13)}
-        if not df_orc_tab.empty:
-            df_orc_grp = df_orc_tab.groupby(['Obra', 'Mes'])['Valor_Orcado'].sum().reset_index()
-            for _, r in df_orc_grp.iterrows():
-                orc_obra_mes[(r['Obra'], r['Mes'])] = r['Valor_Orcado']
-                orc_obra_tot[r['Obra']] = orc_obra_tot.get(r['Obra'], 0.0) + r['Valor_Orcado']
-                orc_mes_tot[r['Mes']] = orc_mes_tot.get(r['Mes'], 0.0) + r['Valor_Orcado']
-        total_orcado_geral = sum(orc_mes_tot.values())
-
-        pivot_real = pd.pivot_table(df_real_tab, index='Obra', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
-        for m in range(1, 13):
-            if m not in pivot_real.columns:
-                pivot_real[m] = 0.0
-        pivot_real = pivot_real[sorted(pivot_real.columns)]
-        pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
-        pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
-
-        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CONTA CONTÁBIL</th>"
-        html_real_det += "<th>TOTAL</th>"
-        for m_num in range(1, 13):
-            html_real_det += f"<th>{meses_nomes[m_num].upper()}</th>"
-        html_real_det += "</tr></thead>"
-
-        totais_col_real = {m: 0.0 for m in range(1, 13)}
-        totais_geral_real = 0.0
-        uid_real = 0
-
-        for obra_name, row in pivot_real.iterrows():
-            uid_real += 1
-            key_real = f"real_{uid_real}"
-            sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
-            
-            # Pivot por Conta Contábil (ou sub-categoria/fornecedor)
-            pivot_sub = pd.pivot_table(sub_df, index='Conta_Contabil', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
-            for m in range(1, 13):
-                if m not in pivot_sub.columns:
-                    pivot_sub[m] = 0.0
-            pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
-            pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
-            pivot_sub = pivot_sub.sort_values(by='Total_Geral', ascending=False)
-
-            tot_obra_real = row['Total_Geral']
-            tot_obra_orc = orc_obra_tot.get(obra_name, 0.0)
-            totais_geral_real += tot_obra_real
-            cor_tot_obra = VERDE if (tot_obra_orc > 0 and tot_obra_real <= tot_obra_orc) else (VERMELHO if tot_obra_orc > 0 else TXT)
-            str_orc_tot_obra = f"Orç: {formatar_moeda_curta(tot_obra_orc)}" if tot_obra_orc > 0 else "Orç: -"
-
-            html_real_det += "<tbody class='obra-group'><tr>"
-            html_real_det += (
-                f"<td><label class='drilldown-label' for='{key_real}'>"
-                f"<input type='checkbox' id='{key_real}' class='toggle-checkbox'>"
-                f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
-            )
-            html_real_det += (
-                f"<td><span style='font-weight:800;color:{cor_tot_obra}'>{formatar_moeda(tot_obra_real)}</span>"
-                f"<span class='orcado-indicator'>{str_orc_tot_obra}</span></td>"
-            )
-            for m_num in range(1, 13):
-                val_m_real = row.get(m_num, 0.0)
-                totais_col_real[m_num] += val_m_real
-                val_m_orc = orc_obra_mes.get((obra_name, m_num), 0.0)
-                if val_m_real > 0 and val_m_orc > 0:
-                    cor_m = VERDE if val_m_real <= val_m_orc else VERMELHO
-                else:
-                    cor_m = TXT
-                val_str = formatar_moeda(val_m_real) if val_m_real > 0 else "-"
-                str_orc_m = f"Orç: {formatar_moeda_curta(val_m_orc)}" if val_m_orc > 0 else "Orç: -"
-                html_real_det += (
-                    f"<td><span style='font-weight:800;color:{cor_m}'>{val_str}</span>"
-                    f"<span class='orcado-indicator'>{str_orc_m}</span></td>"
-                )
-            html_real_det += "</tr>"
-
-            for conta_name, sub_row in pivot_sub.iterrows():
-                tot_sub_geral = sub_row['Total_Geral']
-                html_real_det += "<tr class='sub-row'>"
-                html_real_det += (
-                    f"<td title='↳ {conta_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
-                    f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
-                    f"white-space:nowrap'>↳ {conta_name}</td>"
-                )
-                html_real_det += f"<td style='font-size:11px;font-weight:700'>{formatar_moeda(tot_sub_geral)}</td>"
-                for m_num in range(1, 13):
-                    v_sub = sub_row.get(m_num, 0.0)
-                    html_real_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(v_sub) if v_sub > 0 else '-'}</td>"
-                html_real_det += "</tr>"
-            html_real_det += "</tbody>"
-
-        str_orc_tot_geral = f"Orç: {formatar_moeda_curta(total_orcado_geral)}" if total_orcado_geral > 0 else "Orç: -"
-        html_real_det += "<tr class='total-geral-row'><td>TOTAL GERAL</td>"
-        html_real_det += (
-            f"<td><span style='font-weight:900'>{formatar_moeda(totais_geral_real)}</span>"
-            f"<span class='orcado-indicator'>{str_orc_tot_geral}</span></td>"
+    html.extend(
+        linhas_df(
+            df_var_ap,
+            "(±) Variações de Ativos e Passivos",
+            "v",
         )
-        for m_num in range(1, 13):
-            t_col_real = totais_col_real[m_num]
-            t_col_orc = orc_mes_tot.get(m_num, 0.0)
-            str_orc_col = f"Orç: {formatar_moeda_curta(t_col_orc)}" if t_col_orc > 0 else "Orç: -"
-            html_real_det += (
-                f"<td><span style='font-weight:900'>{formatar_moeda(t_col_real) if t_col_real > 0 else '-'}</span>"
-                f"<span class='orcado-indicator'>{str_orc_col}</span></td>"
-            )
-        html_real_det += "</tr></table></div>"
-        st.markdown(html_real_det, unsafe_allow_html=True)
+    )
+    html.append(
+        linha_tot(
+            "Total variações de ativos e passivos",
+            s_vap,
+            VERDE if float(s_vap.sum()) >= 0 else VERMELHO,
+        )
+    )
+
+    html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
+
+    # ---- 2. FCI ----
+    html.append(
+        "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.extend(linhas_df(df[df["Papel"] == "capex"], "(−) Desembolsos em CAPEX", "k"))
+    html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
+
+    # ---- 3. FCF ----
+    html.append(
+        "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.extend(linhas_df(df_captacao, "(+) Novas captações (empréstimos)", "p"))
+    html.append(linha_tot("Total captações", s_cpt, VERDE))
+
+    html.extend(linhas_df(df_amort, "(−) Amortizações de empréstimos", "a"))
+    html.append(linha_tot("Total amortizações", s_amo, VERMELHO))
+
+    html.extend(linhas_df(df_juros, "(−) Juros e encargos financeiros", "j"))
+    html.append(linha_tot("Total juros e encargos", s_jur, VERMELHO))
+
+    html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
+
+    html.append(
+        "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
+        + "".join(
+            f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
+            f"{moeda(float(s_var.get(m, 0)))}</span></td>"
+            for m in refs_sel
+        )
+        + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
+        f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
+    )
+
+    # ---- 4. SALDO ----
+    html.append(
+        "<tr class='sec'><td>4. SALDO DE CAIXA</td>"
+        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+    )
+    html.append(linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo"))
+    html.append(
+        linha_tot(
+            "(+) Variação líquida do mês",
+            s_var,
+            VERDE if float(s_var.sum()) >= 0 else VERMELHO,
+            cls="tot",
+        )
+    )
+    html.append(
+        linha_tot(
+            "(=) Saldo final de caixa",
+            s_fim,
+            VERDE if saldo_fim_periodo >= 0 else VERMELHO,
+            cls="saldo",
+        )
+    )
+
+    html.append(linha_tot("Saldo Tasy", s_tasy, ROXO, cls="saldo"))
+    html.append(linha_tot("Diferença: fluxo − Tasy", s_diferenca, AMBAR, cls="saldo"))
+
+    d_out = df[df["Papel"] == "outros"]
+    if not d_out.empty:
+        html.append(
+            "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
+            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+        )
+        html.extend(linhas_df(d_out, None, "o"))
+
+    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
+    st.markdown(
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+        f"{''.join(html)}</table></div>",
+        unsafe_allow_html=True,
+    )
+
 
 with st.sidebar:
     st.markdown(
-        f"<div class='side-card'><small>Filtro atual</small><b>{txt_mes} · {txt_obra}</b></div>"
-        f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
+        f"<div class='side-card'><small>FCO</small>"
+        f"<b style='color:{'#059669' if fco >= 0 else '#dc2626'}'>{moeda(fco)}</b></div>"
+        f"<div class='side-card'><small>Var. Ativos/Passivos</small>"
+        f"<b style='color:{'#059669' if var_ap >= 0 else '#dc2626'}'>{moeda(var_ap)}</b></div>"
+        f"<div class='side-card'><small>FCI</small>"
+        f"<b style='color:{'#059669' if fci >= 0 else '#dc2626'}'>{moeda(fci)}</b></div>"
+        f"<div class='side-card'><small>FCF</small>"
+        f"<b style='color:{'#059669' if fcf >= 0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
+        f"<div class='side-card'><small>Saldo final</small>"
+        f"<b style='color:{'#059669' if saldo_fim_periodo >= 0 else '#dc2626'}'>{moeda(saldo_fim_periodo)}</b></div>"
+        f"<div class='side-card'><small>Última atualização</small>"
+        f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
