@@ -25,7 +25,7 @@ except Exception as e:
         return None
 
 # ==============================================================================
-# PALETA — tema claro (sem roxo forte)
+# PALETA — tema claro
 # ==============================================================================
 AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
 AZUL_CLARO, LARANJA, CIANO, ROSA = "#60a5fa", "#ea580c", "#0891b2", "#e11d48"
@@ -34,7 +34,6 @@ TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 ESPACO_ENTRE_BLOCOS = "0.75rem"
 AJUSTE_APOS_KPIS = "0.75rem"
 
-# Paleta de obras: azuis claros + complementares suaves (sem roxo intenso)
 PALETA_OBRAS = [
     AZUL, VERDE, AMBAR, AZUL_CLARO, LARANJA, CIANO, ROSA, VERMELHO,
     "#93c5fd", "#34d399", "#fbbf24", "#38bdf8", "#fb923c", "#2dd4bf",
@@ -124,16 +123,10 @@ css = """
         background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
     .unified-table td:last-child { border-right: none; }
-    /* Coluna Total FIXA à direita */
     .unified-table th.col-total,
     .unified-table td.col-total {
-        position: sticky;
-        right: 0;
-        z-index: 5;
-        background: #f1f5f9 !important;
-        font-weight: 800;
-        border-left: 2px solid #e2e8f0;
-        min-width: 90px;
+        position: sticky; right: 0; z-index: 5; background: #f1f5f9 !important;
+        font-weight: 800; border-left: 2px solid #e2e8f0; min-width: 90px;
         box-shadow: -4px 0 8px rgba(15,23,42,0.04);
     }
     .unified-table th.col-total { z-index: 6; }
@@ -175,7 +168,7 @@ css = """
         font-weight: 900; background: #f1f5f9 !important; border-top: 1px solid #e2e8f0; color: #0f172a;
     }
 
-    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; color: #0f172a; }
+    .drilldown-label { cursor: pointer; display: flex; align-items: center; margin: 0; width: 100%; height: 100%; color: #0f172a; user-select: none; }
     .toggle-checkbox { display: none; }
     .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #2563eb; }
     .obra-group .sub-row { display: none; }
@@ -298,7 +291,7 @@ def carregar_dados_obras_detalhado():
         meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
         col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
         col_item = next((c for c in df_orc.columns if c.upper() in [
-            'CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA'
+            'CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA', 'CONTA CONTABIL', 'CONTA CONTÁBIL'
         ]), None)
 
         df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
@@ -344,12 +337,18 @@ def carregar_dados_obras_detalhado():
             df_recursos = pd.DataFrame()
 
         df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
+        df_real.columns = [str(c).strip() for c in df_real.columns]
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
         df_real['Mes'] = df_real['MÊS'].apply(extract_month)
         df_real['Valor_Realizado'] = df_real['Valor'].apply(limpa_valor)
+        
+        # Identificação de Conta Contábil / Descrição / Fornecedor
+        col_conta = next((c for c in df_real.columns if any(k in c.lower() for k in ['conta', 'classif', 'item', 'descri', 'servico'])), None)
         col_forn = next((c for c in df_real.columns if 'forn' in c.lower()), 'Fornecedor')
         col_nf = next((c for c in df_real.columns if 'nf' in c.lower()), 'NF')
         col_data = next((c for c in df_real.columns if 'data' in c.lower()), 'DATA PGTO')
+        
+        df_real['Conta_Contabil'] = df_real[col_conta].fillna('OUTRAS DESPESAS').astype(str).str.strip().str.upper() if col_conta else df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
         df_real['Fornecedor'] = df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.upper()
         df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
         df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
@@ -401,9 +400,6 @@ with st.sidebar:
     df_real_detalhe_exp = df_real_filtrado.copy()
     if not df_real_detalhe_exp.empty:
         df_real_detalhe_exp['Valor_Realizado'] = df_real_detalhe_exp['Valor_Realizado'].apply(limpa_valor)
-        df_real_detalhe_exp['Fornecedor'] = df_real_detalhe_exp['Fornecedor'].fillna('NÃO INFORMADO').astype(str).str.strip().str.upper()
-        df_real_detalhe_exp['NF'] = df_real_detalhe_exp['NF'].fillna('-').astype(str).str.strip()
-        df_real_detalhe_exp['Data_Pgto'] = df_real_detalhe_exp['Data_Pgto'].fillna('-').astype(str).str.replace('00:00:00', '', regex=False).str.strip()
 
     output_excel = io.BytesIO()
     with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
@@ -469,7 +465,7 @@ txt_mes = f"Até Mês {mes_selecionado:02d}" if mes_selecionado != "Todos" else 
 txt_obra = obra_selecionada if obra_selecionada != "Todas" else "Todas"
 
 # ==============================================================================
-# CABEÇALHO + KPIs
+# CABEÇALHO + KPIS
 # ==============================================================================
 st.markdown(
     f"""
@@ -519,7 +515,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# EVOLUÇÃO MENSAL (+ TOTAL por linha, coluna fixa)
+# EVOLUÇÃO MENSAL
 # ==============================================================================
 df_orc_m_base = df_orcado.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
@@ -697,7 +693,7 @@ html_fluxo += "</tr></tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
 
 # ==============================================================================
-# DETALHAMENTO ORÇAMENTO (TOTAL ORÇADO em preto)
+# DETALHAMENTO ORÇAMENTO
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
 
@@ -720,8 +716,11 @@ if not df_orc_filtrado.empty:
 
         totais_col_orc = {m: 0.0 for m in range(1, 13)}
         total_geral_orc = 0.0
+        uid_orc = 0
 
         for obra_name, row in pivot_orc.iterrows():
+            uid_orc += 1
+            key_orc = f"orc_{uid_orc}"
             tot_obra = row['Total_Geral']
             total_geral_orc += tot_obra
 
@@ -737,10 +736,10 @@ if not df_orc_filtrado.empty:
 
             html_orc_det += "<tbody class='obra-group'><tr>"
             html_orc_det += (
-                f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'>"
+                f"<td><label class='drilldown-label' for='{key_orc}'>"
+                f"<input type='checkbox' id='{key_orc}' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
-            # TOTAL ORÇADO em preto
             html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(tot_obra)}</td>"
             for m_num in range(1, 13):
                 val_m = row.get(m_num, 0.0)
@@ -774,7 +773,7 @@ if not df_orc_filtrado.empty:
         st.markdown(html_orc_det, unsafe_allow_html=True)
 
 # ==============================================================================
-# DETALHAMENTO PAGAMENTOS
+# DETALHAMENTO PAGAMENTOS (DRILLDOWN CONTA CONTÁBIL / FORNECEDOR)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento de pagamentos realizados</div>", unsafe_allow_html=True)
 
@@ -801,7 +800,7 @@ if not df_real_filtrado.empty:
         pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
         pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
 
-        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
+        html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CONTA CONTÁBIL</th>"
         html_real_det += "<th>TOTAL</th>"
         for m_num in range(1, 13):
             html_real_det += f"<th>{meses_nomes[m_num].upper()}</th>"
@@ -809,10 +808,15 @@ if not df_real_filtrado.empty:
 
         totais_col_real = {m: 0.0 for m in range(1, 13)}
         totais_geral_real = 0.0
+        uid_real = 0
 
         for obra_name, row in pivot_real.iterrows():
+            uid_real += 1
+            key_real = f"real_{uid_real}"
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
-            pivot_sub = pd.pivot_table(sub_df, index='Fornecedor', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
+            
+            # Pivot por Conta Contábil (ou sub-categoria/fornecedor)
+            pivot_sub = pd.pivot_table(sub_df, index='Conta_Contabil', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
             for m in range(1, 13):
                 if m not in pivot_sub.columns:
                     pivot_sub[m] = 0.0
@@ -828,7 +832,8 @@ if not df_real_filtrado.empty:
 
             html_real_det += "<tbody class='obra-group'><tr>"
             html_real_det += (
-                f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'>"
+                f"<td><label class='drilldown-label' for='{key_real}'>"
+                f"<input type='checkbox' id='{key_real}' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
             html_real_det += (
@@ -851,13 +856,13 @@ if not df_real_filtrado.empty:
                 )
             html_real_det += "</tr>"
 
-            for forn_name, sub_row in pivot_sub.iterrows():
+            for conta_name, sub_row in pivot_sub.iterrows():
                 tot_sub_geral = sub_row['Total_Geral']
                 html_real_det += "<tr class='sub-row'>"
                 html_real_det += (
-                    f"<td title='↳ {forn_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
+                    f"<td title='↳ {conta_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
                     f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
-                    f"white-space:nowrap'>↳ {forn_name}</td>"
+                    f"white-space:nowrap'>↳ {conta_name}</td>"
                 )
                 html_real_det += f"<td style='font-size:11px;font-weight:700'>{formatar_moeda(tot_sub_geral)}</td>"
                 for m_num in range(1, 13):
