@@ -47,6 +47,7 @@ ABA_SALDO = "Saldo_FCx"
 ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
 ABA_DEVOL = "FCx_Devolução_Adiantamento"
 ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"  # fallback sem acento
+ABA_OBRA = "FCx_Obra"
 
 FLUXO_OP = "Fluxo de Caixa Operacional"
 FLUXO_INV = "Fluxo de Caixa de Investimentos"
@@ -302,15 +303,30 @@ def parse_mes_header(h, ano_ref=None):
     if isinstance(h, (pd.Timestamp, datetime)):
         return pd.Timestamp(ano_ref or ANO_REF, h.month, 1)
     if isinstance(h, (int, float)) and not isinstance(h, bool):
-        n = float(h)
-        if 1 <= n <= 12:
-            return pd.Timestamp(ano_ref or ANO_REF, int(n), 1)
-        if 20000 < n < 80000:
-            d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=n)
+        val_f = float(h)
+        if 2020 <= val_f <= 2050:  # e.g. 2026.01
+            ano = int(val_f)
+            mes = int(round((val_f - ano) * 100))
+            if 1 <= mes <= 12:
+                return pd.Timestamp(ano, mes, 1)
+        if 1 <= val_f <= 12:
+            return pd.Timestamp(ano_ref or ANO_REF, int(val_f), 1)
+        if 20000 < val_f < 80000:
+            d = pd.Timestamp("1899-12-30") + pd.Timedelta(days=val_f)
             return pd.Timestamp(ano_ref or ANO_REF, d.month, 1)
     t = normalizar(h)
     if not t or t in SKIP_HEADER or "total" in t:
         return None
+    m = re.match(r"^(\d{4})[.\-_/](\d{1,2})$", t)
+    if m:
+        ano, mes = int(m.group(1)), int(m.group(2))
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
+    m = re.match(r"^(\d{4})\s+(\d{1,2})$", t)
+    if m:
+        ano, mes = int(m.group(1)), int(m.group(2))
+        if 1 <= mes <= 12:
+            return pd.Timestamp(ano, mes, 1)
     m = re.match(r"^([a-z]{3,9})(?:\s+(\d{2,4}))?$", t)
     if m:
         chave = m.group(1)
@@ -477,17 +493,105 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
     return pd.DataFrame(reg)[cols_out]
 
 
+def parse_fcx_obra(raw, ano_ref=None):
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Papel_Override", "Fluxo_Override"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols_out)
+
+    ano = ano_ref or ANO_REF
+    col_headers = [str(c) if c is not None else "" for c in raw.columns]
+    data = [col_headers] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
+    n_rows = len(data)
+    n_cols = max((len(r) for r in data), default=0)
+    if n_cols < 3:
+        return pd.DataFrame(columns=cols_out)
+
+    grid = []
+    for r in data:
+        row = list(r) + [None] * (n_cols - len(r))
+        grid.append(row[:n_cols])
+
+    def montar_mapa_mes(header_row):
+        m = {}
+        for j in range(2, n_cols):
+            h = header_row[j] if j < len(header_row) else None
+            ref = parse_mes_header(h, ano)
+            if ref is not None:
+                m[j] = ref
+        return m
+
+    hr0, best_s = 0, 0
+    for i in range(min(8, n_rows)):
+        s = len(montar_mapa_mes(grid[i]))
+        if s > best_s:
+            hr0, best_s = i, s
+
+    mapa_atual = montar_mapa_mes(grid[hr0])
+    if not mapa_atual:
+        return pd.DataFrame(columns=cols_out)
+
+    reg = []
+    current_obra = ""
+
+    for i in range(hr0 + 1, n_rows):
+        row = grid[i]
+        col0_val = row[0] if len(row) > 0 else None
+        col1_val = row[1] if len(row) > 1 else None
+
+        n_col0 = normalizar(col0_val)
+        n_col1 = normalizar(col1_val)
+
+        if "total" in n_col0 or "total" in n_col1:
+            continue
+
+        if col0_val is not None and str(col0_val).strip() != "":
+            current_obra = str(col0_val).strip()
+
+        conta = col1_val if col1_val is not None else col0_val
+        if conta is None or (isinstance(conta, float) and pd.isna(conta)):
+            continue
+        conta_s = str(conta).strip()
+        nconta = normalizar(conta_s)
+        if not nconta or nconta in SKIP_LABELS or "total" in nconta:
+            continue
+
+        for j, ref in mapa_atual.items():
+            val = limpa_valor(row[j] if j < len(row) else 0)
+            if abs(val) <= 0.005:
+                continue
+
+            # 1. Redução no FCO (valor negativo)
+            reg.append({
+                "Ref": ref,
+                "Categoria": conta_s,
+                "Valor": -val,
+                "Tipo": "Saída",
+                "Grupo": "FCx_Obra (Redução FCO)",
+                "Papel_Override": None,
+                "Fluxo_Override": None,
+            })
+            # 2. Inclusão no FCI / CAPEX (valor positivo)
+            reg.append({
+                "Ref": ref,
+                "Categoria": conta_s,
+                "Valor": val,
+                "Tipo": "Saída",
+                "Grupo": f"FCx_Obra - {current_obra}" if current_obra else "FCx_Obra",
+                "Papel_Override": "capex",
+                "Fluxo_Override": FLUXO_INV,
+            })
+
+    if not reg:
+        return pd.DataFrame(columns=cols_out)
+    return pd.DataFrame(reg)
+
+
 def sinal_devolucao(categoria):
-    """
-    Fornecedores / Salarial → devolução ENTRA no caixa (+).
-    Paciente / Prontuário → devolução SAI do caixa (−).
-    """
     n = normalizar_chave(categoria)
     if "fornecedor" in n or "salarial" in n:
         return 1.0
     if "paciente" in n or "prontuario" in n:
         return -1.0
-    # genérico sem fornecedor/salarial → saída (paciente)
     if "devolucao" in n:
         return -1.0
     return 1.0
@@ -584,7 +688,6 @@ def carregar_saldo_inicial(ano_ref=None):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def carregar_saldos_tasy():
-    """Lê somente os totais de cada bloco; não soma bancos e total novamente."""
     inicial, final, avisos = {}, {}, []
     try:
         conn = conectar_sheets()
@@ -615,7 +718,6 @@ def carregar_saldos_tasy():
 
 
 def consolidar_devolucoes(base):
-    """Fonte específica tem prioridade por mês e natureza; fallback sem duplicar."""
     base = base.copy()
     mask = base["Categoria"].apply(eh_linha_devolucao)
     dev = base.loc[mask].copy()
@@ -631,8 +733,6 @@ def consolidar_devolucoes(base):
             return "prontuario"
         return "paciente"
     dev["Natureza"] = dev["Categoria"].map(natureza)
-    # Base_Despesas agrupa paciente e prontuário em uma única categoria.
-    # Só substitui esse agregado quando o mês existe na fonte específica.
     especifica = dev[dev["Grupo"] == "Devolução Adiantamento"]
     meses_paciente = set(especifica.loc[especifica["Natureza"].isin(["paciente", "prontuario"]), "Ref"])
     meses_fornecedor = set(especifica.loc[especifica["Natureza"] == "fornecedor", "Ref"])
@@ -792,7 +892,6 @@ def aplicar_classificacao(categoria, mapa):
     if not n:
         return "Não classificado", FLUXO_OP, categoria
 
-    # Devoluções de adiantamento → bloco Var. Ativos/Passivos no FCO
     if eh_linha_devolucao(categoria):
         return CLASSIF_VAR_AP, FLUXO_OP, categoria
 
@@ -872,8 +971,9 @@ def papel_classif(classif, fluxo=""):
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
-    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
-    vazio = pd.DataFrame(columns=cols)
+    cols_base = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
+    cols_ext = cols_base + ["Papel_Override", "Fluxo_Override"]
+    vazio = pd.DataFrame(columns=cols_base)
     avisos = []
     conn = conectar_sheets()
     if conn is None:
@@ -899,8 +999,6 @@ def carregar_fluxo():
                 "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
                 "Valor": df[c_val].apply(limpa_valor),
             })
-            # Preservar a natureza da devolução mesmo quando a classificação
-            # contábil da Base_Despesas não contém o nome da transação.
             devolucoes = tmp["Transação"].map(eh_linha_devolucao)
             permitidas = tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)
             tmp.loc[devolucoes, "Categoria"] = tmp.loc[devolucoes, "Transação"]
@@ -910,7 +1008,8 @@ def carregar_fluxo():
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
                 g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
                 g["Tipo"], g["Grupo"] = "Saída", "Despesas"
-                partes.append(g[cols])
+                g["Papel_Override"], g["Fluxo_Override"] = None, None
+                partes.append(g[cols_ext])
 
     # Borderô
     try:
@@ -925,9 +1024,10 @@ def carregar_fluxo():
         if not mb.empty:
             mb = mb.copy()
             mb["Grupo"] = "Borderô"
-            partes.append(mb[cols])
+            mb["Papel_Override"], mb["Fluxo_Override"] = None, None
+            partes.append(mb[cols_ext])
 
-    # Adiantamentos (saídas de adiantamento)
+    # Adiantamentos
     try:
         raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
     except Exception as e:
@@ -940,7 +1040,8 @@ def carregar_fluxo():
         if not ma.empty:
             ma = ma.copy()
             ma["Grupo"] = "Adiantamentos"
-            partes.append(ma[cols])
+            ma["Papel_Override"], ma["Fluxo_Override"] = None, None
+            partes.append(ma[cols_ext])
 
     # Receita
     try:
@@ -955,23 +1056,19 @@ def carregar_fluxo():
         if not mr.empty:
             mr = mr.copy()
             mr["Grupo"] = "Receita"
-            partes.append(mr[cols])
+            mr["Papel_Override"], mr["Fluxo_Override"] = None, None
+            partes.append(mr[cols_ext])
 
-    # Devoluções de adiantamento (Var. Ativos e Passivos)
+    # Devoluções de adiantamento
     raw_dev = None
     for nome_aba in (ABA_DEVOL, ABA_DEVOL_ALT):
         try:
             raw_dev = conn.read(worksheet=nome_aba, ttl=0)
             if raw_dev is not None and not raw_dev.empty:
                 break
-        except Exception as e:
+        except Exception:
             raw_dev = None
-            last_err = e
-    if raw_dev is None:
-        avisos.append(f"Devolução Adiantamento: aba não encontrada ({ABA_DEVOL})")
-    elif raw_dev.empty:
-        avisos.append("Devolução Adiantamento: aba vazia")
-    else:
+    if raw_dev is not None and not raw_dev.empty:
         md = melt_matriz(raw_dev, 0, 0, 1, "Entrada", ANO_REF)
         if md.empty:
             md = melt_matriz(raw_dev, 1, 0, 2, "Entrada", ANO_REF)
@@ -981,7 +1078,6 @@ def carregar_fluxo():
             md = melt_matriz(raw_dev, 1, 1, 2, "Entrada", ANO_REF)
         if not md.empty:
             md = md.copy()
-            # aplica sinal gerencial (fornecedor/salarial +, paciente/prontuário −)
             md["Valor"] = md.apply(
                 lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]),
                 axis=1,
@@ -990,16 +1086,33 @@ def carregar_fluxo():
                 lambda c: "Entrada" if sinal_devolucao(c) > 0 else "Saída"
             )
             md["Grupo"] = "Devolução Adiantamento"
-            partes.append(md[cols])
-        else:
-            avisos.append("Devolução Adiantamento: estrutura não reconhecida")
+            md["Papel_Override"], md["Fluxo_Override"] = None, None
+            partes.append(md[cols_ext])
+
+    # FCx_Obra (Integração e realocação de obras)
+    try:
+        raw_obra = conn.read(worksheet=ABA_OBRA, ttl=0)
+    except Exception as e:
+        raw_obra = None
+        avisos.append(f"FCx_Obra: {e}")
+    if raw_obra is not None and not raw_obra.empty:
+        mobra = parse_fcx_obra(raw_obra, ANO_REF)
+        if not mobra.empty:
+            partes.append(mobra[cols_ext])
 
     if not partes:
         return vazio, avisos or ["Nenhum lançamento."]
-    base = consolidar_devolucoes(pd.concat(partes, ignore_index=True))
-    base["Categoria"] = base["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
-    base = base.groupby(["Ref", "Categoria", "Tipo", "Grupo"], as_index=False)["Valor"].sum()
-    return base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
+    
+    base_full = pd.concat(partes, ignore_index=True)
+    base_full = consolidar_devolucoes(base_full)
+    base_full["Categoria"] = base_full["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
+    
+    base_grouped = base_full.groupby(
+        ["Ref", "Categoria", "Tipo", "Grupo", "Papel_Override", "Fluxo_Override"],
+        as_index=False
+    )["Valor"].sum()
+    
+    return base_grouped.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
 
 
 base, avisos = carregar_fluxo()
@@ -1022,8 +1135,14 @@ base["Fluxo"] = pares.apply(lambda x: x[1])
 base["Detalhe"] = pares.apply(lambda x: x[2])
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
-# Ajustes aprovados já possuem papel e sinal definidos pelo robô.
-# Ler fora do cache da base permite refletir aprovações e estornos ao abrir a página.
+# Aplicação de Overrides (ex: FCI / Capex vindos da aba FCx_Obra)
+if "Papel_Override" in base.columns and "Fluxo_Override" in base.columns:
+    mask_p = base["Papel_Override"].notna() & (base["Papel_Override"] != "")
+    base.loc[mask_p, "Papel"] = base.loc[mask_p, "Papel_Override"]
+    mask_f = base["Fluxo_Override"].notna() & (base["Fluxo_Override"] != "")
+    base.loc[mask_f, "Fluxo"] = base.loc[mask_f, "Fluxo_Override"]
+    base.loc[mask_f & (base["Fluxo_Override"] == FLUXO_INV), "Classif"] = base.loc[mask_f & (base["Fluxo_Override"] == FLUXO_INV), "Categoria"]
+
 from modules.ajustes_fcx import carregar_ajustes, linhas_dashboard, ativos
 try:
     conn_ajustes = conectar_sheets()
@@ -1084,7 +1203,7 @@ def total_papel(d, papel, tipo=None):
 rec_op = total_papel(df, "receita_op")
 custo_op = total_papel(df, "custo_op")
 impostos = total_papel(df, "imposto")
-var_ap = total_papel(df, "var_ap")  # já com sinal (+ fornecedor / − paciente)
+var_ap = total_papel(df, "var_ap")
 capex = total_papel(df, "capex")
 amort = total_papel(df, "amortizacao")
 juros = total_papel(df, "juros")
@@ -1145,7 +1264,6 @@ s_jur = serie(df, "juros")
 s_fcf = s_cpt - s_amo - s_jur
 s_var = s_fco + s_fci + s_fcf
 
-# Calcula os meses anteriores também, para filtros que começam após janeiro.
 refs_calculo = list(pd.date_range(min(meses_all), max(refs_sel), freq="MS")) if refs_sel else []
 s_var_completo = (base.assign(_sinal=base.apply(
     lambda r: float(r["Valor"]) * (1 if r["Papel"] in ("receita_op", "captacao", "var_ap") else -1)
@@ -1158,8 +1276,6 @@ s_tasy = pd.Series({m: mapa_tasy_fim.get(m, float("nan")) for m in refs_sel}, dt
 s_diferenca = s_fim - s_tasy
 saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
-if grupo_sel and set(grupo_sel) != set(grupos_all):
-    st.info("Comparativo Tasy com grupos filtrados: a diferença não representa a conciliação completa.")
 
 st.markdown(
     f"""
@@ -1266,7 +1382,7 @@ def linha_tot(label, s, cor, cls="tot"):
     return (
         f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
-            f"<td><span style='color:{cor}'>{fmt(s.get(m, float("nan")))}</span></td>"
+            f"<td><span style='color:{cor}'>{fmt(s.get(m, float('nan')))}</span></td>"
             for m in refs_sel
         )
         + tot_html
@@ -1293,7 +1409,6 @@ else:
     html.extend(linhas_df(df[df["Papel"] == "imposto"], "(−) Impostos", "i"))
     html.append(linha_tot("Total impostos", s_imp, VERMELHO))
 
-    # Variações de Ativos e Passivos (devoluções)
     html.extend(
         linhas_df(
             df_var_ap,
