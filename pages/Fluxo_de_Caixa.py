@@ -39,6 +39,7 @@ AJUSTE_APOS_KPIS = "0.75rem"
 ANO_REF = 2026
 
 ABA_DESPESAS = "Base_Despesas"
+ABA_FCX_OBRA = "FCx_Obra"
 ABA_BORDERO = "Fluxo_Despesas_Borderô"
 ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
@@ -294,6 +295,40 @@ def parse_data(v):
         return pd.to_datetime(v, dayfirst=True, errors="coerce").normalize()
     except Exception:
         return pd.NaT
+
+
+def parse_ref_mes(v, ano_ref=None):
+    """Converte data, serial ou texto de mês em referência no primeiro dia do mês."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return pd.NaT
+    ano = ano_ref or ANO_REF
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        n = float(v)
+        if 1 <= n <= 12:
+            return pd.Timestamp(ano, int(n), 1)
+    texto = str(v).strip()
+    if re.fullmatch(r"\d{1,2}", texto) and 1 <= int(texto) <= 12:
+        return pd.Timestamp(ano, int(texto), 1)
+    # Cabeçalhos de matriz no formato 2026.01 / 2026-01 / 2026/01.
+    m_ano_mes = re.fullmatch(r"(20\d{2})[./-](\d{1,2})", texto)
+    if m_ano_mes and 1 <= int(m_ano_mes.group(2)) <= 12:
+        return pd.Timestamp(int(m_ano_mes.group(1)), int(m_ano_mes.group(2)), 1)
+    d = parse_data(v)
+    if pd.notna(d):
+        return pd.Timestamp(d.year, d.month, 1)
+    mes = parse_mes_header(v, ano)
+    return mes if mes is not None else pd.NaT
+
+
+def chave_conta_contabil(v):
+    """Normaliza a conta contábil para conciliação entre abas."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    # Evita divergência entre códigos numéricos lidos como 123 e 123.0.
+    texto = str(v).strip()
+    if re.fullmatch(r"\d+\.0+", texto):
+        texto = texto.split(".", 1)[0]
+    return normalizar_chave(texto)
 
 
 def parse_mes_header(h, ano_ref=None):
@@ -880,6 +915,73 @@ def carregar_fluxo():
         return vazio, ["Conexão indisponível."]
     partes = []
 
+    # FCx_Obra: matriz mensal agregada por obra (Categoria) e Conta Contábil.
+    # Os valores dessa aba serão transferidos para o FCI via Classificacao_FCx,
+    # abatendo primeiro o mesmo valor da Base_Despesas para a mesma conta/mês.
+    raw_obra = None
+    try:
+        raw_obra = conn.read(worksheet=ABA_FCX_OBRA, ttl=0)
+    except Exception as e:
+        avisos.append(f"FCx_Obra: não foi possível ler a aba ({e})")
+
+    fcx_obra = pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo", "Grupo", "ContaContabil"])
+    if raw_obra is None:
+        avisos.append("FCx_Obra: aba indisponível; fluxo calculado sem essa fonte.")
+    elif raw_obra.empty:
+        avisos.append("FCx_Obra: aba vazia.")
+    else:
+        c_obra = col_por_nomes(raw_obra, ["Categoria", "Obra", "Empreendimento"])
+        c_conta_obra = col_por_nomes(raw_obra, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
+        if c_conta_obra is None:
+            avisos.append("FCx_Obra: não encontrei a coluna Conta Contábil.")
+        else:
+            # A aba é uma tabela dinâmica: a obra pode aparecer apenas na primeira
+            # linha de cada grupo; preencher para baixo recupera as linhas mescladas.
+            obra_series = (raw_obra[c_obra].astype(str).replace({"nan": "", "None": ""}).str.strip().ffill()
+                           if c_obra else pd.Series("Obra não informada", index=raw_obra.index))
+            meses_colunas = {}
+            for coluna in raw_obra.columns:
+                ref_mes = parse_ref_mes(coluna)
+                if pd.notna(ref_mes):
+                    meses_colunas[coluna] = ref_mes
+            linhas_obra = []
+            for idx, row in raw_obra.iterrows():
+                conta_original = row.get(c_conta_obra, "")
+                conta_txt = str(conta_original).strip() if pd.notna(conta_original) else ""
+                conta_norm = chave_conta_contabil(conta_original)
+                obra_txt = str(obra_series.loc[idx]).strip()
+                if (not conta_norm or conta_norm in {"total", "total geral", "nan", "none"}
+                        or normalizar_chave(conta_txt).endswith(" total")
+                        or normalizar_chave(obra_txt) in {"total", "total geral", "nan", "none", ""}):
+                    continue
+                for coluna_mes, ref_mes in meses_colunas.items():
+                    valor = abs(limpa_valor(row.get(coluna_mes)))
+                    if valor <= 0.005:
+                        continue
+                    linhas_obra.append({
+                        "Ref": ref_mes,
+                        # A conta contábil é a descrição a classificar no FCx.
+                        "Categoria": conta_txt,
+                        "Valor": valor,
+                        "Tipo": "Saída",
+                        "Grupo": "FCx_Obra",
+                        "ContaContabil": conta_norm,
+                        "Obra": obra_txt,
+                    })
+            if linhas_obra:
+                fcx_obra = pd.DataFrame(linhas_obra)
+            else:
+                avisos.append("FCx_Obra: nenhuma combinação válida de conta contábil, mês e valor foi encontrada.")
+
+    # Total mensal por conta contábil que deve ser retirado das outras bases.
+    abatimentos_obra = {}
+    if not fcx_obra.empty:
+        soma_obra = fcx_obra.groupby(["Ref", "ContaContabil"], as_index=False)["Valor"].sum()
+        abatimentos_obra = {
+            (r["Ref"], r["ContaContabil"]): float(r["Valor"])
+            for _, r in soma_obra.iterrows()
+        }
+
     # Base_Despesas
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
@@ -892,15 +994,15 @@ def carregar_fluxo():
         c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx"])
         c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx"])
         c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor"])
+        c_conta = col_por_nomes(df, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
         if all([c_data, c_trans, c_clas, c_val]):
             tmp = pd.DataFrame({
                 "Data": df[c_data].apply(parse_data),
                 "Transação": df[c_trans].fillna("").astype(str).str.strip(),
                 "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
                 "Valor": df[c_val].apply(limpa_valor),
+                "ContaContabil": df[c_conta].apply(chave_conta_contabil) if c_conta else "",
             })
-            # Preservar a natureza da devolução mesmo quando a classificação
-            # contábil da Base_Despesas não contém o nome da transação.
             devolucoes = tmp["Transação"].map(eh_linha_devolucao)
             permitidas = tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)
             tmp.loc[devolucoes, "Categoria"] = tmp.loc[devolucoes, "Transação"]
@@ -908,9 +1010,64 @@ def carregar_fluxo():
             tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
-                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
-                g["Tipo"], g["Grupo"] = "Saída", "Despesas"
-                partes.append(g[cols])
+
+                # Abater FCx_Obra da Base_Despesas por conta contábil e mês.
+                # O abatimento é limitado ao saldo encontrado na base antiga; se
+                # FCx_Obra superar a base, o excedente fica registrado em FCx_Obra
+                # e é sinalizado para conferência (não criamos valores negativos).
+                if abatimentos_obra:
+                    if c_conta is None:
+                        avisos.append(
+                            "FCx_Obra: a Base_Despesas não possui coluna Conta Contábil; "
+                            "não foi possível abater os valores nessa base."
+                        )
+                    else:
+                        tmp["_ChaveConciliacao"] = list(zip(tmp["Ref"], tmp["ContaContabil"]))
+                        tmp["_ValorDisponivel"] = tmp["Valor"].clip(lower=0)
+                        totais_base = tmp.groupby("_ChaveConciliacao")["_ValorDisponivel"].sum().to_dict()
+                        faltas = []
+                        for chave, valor_obra in abatimentos_obra.items():
+                            total_base = float(totais_base.get(chave, 0.0))
+                            valor_abatido = min(total_base, float(valor_obra))
+                            if valor_abatido > 0.005 and total_base > 0.005:
+                                mask = tmp["_ChaveConciliacao"].map(lambda x: x == chave)
+                                idxs = tmp.index[mask & (tmp["Valor"] > 0)].tolist()
+                                # Distribui o abatimento proporcionalmente entre os
+                                # lançamentos da mesma conta/mês, preservando categoria.
+                                restante = valor_abatido
+                                soma_disponivel = float(tmp.loc[idxs, "Valor"].clip(lower=0).sum())
+                                for pos, idx in enumerate(idxs):
+                                    original = max(float(tmp.at[idx, "Valor"]), 0.0)
+                                    if pos == len(idxs) - 1:
+                                        desconto = min(original, restante)
+                                    elif soma_disponivel > 0:
+                                        desconto = min(original, valor_abatido * original / soma_disponivel)
+                                    else:
+                                        desconto = 0.0
+                                    tmp.at[idx, "Valor"] = float(tmp.at[idx, "Valor"]) - desconto
+                                    restante -= desconto
+                            if float(valor_obra) > total_base + 0.01:
+                                faltas.append((chave, float(valor_obra) - total_base))
+                        if faltas:
+                            avisos.append(
+                                f"FCx_Obra: em {len(faltas)} combinação(ões) de mês/conta contábil, "
+                                "o valor da obra superou o encontrado na Base_Despesas. "
+                                "O saldo excedente foi mantido em FCx_Obra; confira possível duplicidade em outras fontes."
+                            )
+                        tmp = tmp.drop(columns=[c for c in tmp.columns if c.startswith("_")], errors="ignore")
+
+                tmp = tmp[tmp["Valor"].abs() > 0.005]
+                if not tmp.empty:
+                    g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                    g["Tipo"], g["Grupo"] = "Saída", "Despesas"
+                    partes.append(g[cols])
+        else:
+            avisos.append("Despesas: não foi possível identificar Data, Transação FCx, Classificação FCx e Valor.")
+
+    # Incluir FCx_Obra integralmente após o abatimento da Base_Despesas.
+    # A classificação da Conta Contábil será aplicada abaixo pelo mapa Classificacao_FCx.
+    if not fcx_obra.empty:
+        partes.append(fcx_obra[cols].copy())
 
     # Borderô
     try:
@@ -919,6 +1076,11 @@ def carregar_fluxo():
         raw_b = None
         avisos.append(f"Borderô: {e}")
     if raw_b is not None and not raw_b.empty:
+        if abatimentos_obra:
+            avisos.append(
+                "FCx_Obra: o abatimento foi aplicado à Base_Despesas; não foi possível validar "
+                "sobreposição com Borderô, pois essa aba não preserva conta contábil no processamento atual."
+            )
         mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
         if mb.empty:
             mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF)
@@ -934,6 +1096,11 @@ def carregar_fluxo():
         raw_a = None
         avisos.append(f"Adiantamentos: {e}")
     if raw_a is not None and not raw_a.empty:
+        if abatimentos_obra:
+            avisos.append(
+                "FCx_Obra: o abatimento foi aplicado à Base_Despesas; não foi possível validar "
+                "sobreposição com Adiantamentos, pois essa aba não preserva conta contábil no processamento atual."
+            )
         ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
         if ma.empty:
             ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF)
@@ -981,7 +1148,6 @@ def carregar_fluxo():
             md = melt_matriz(raw_dev, 1, 1, 2, "Entrada", ANO_REF)
         if not md.empty:
             md = md.copy()
-            # aplica sinal gerencial (fornecedor/salarial +, paciente/prontuário −)
             md["Valor"] = md.apply(
                 lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]),
                 axis=1,
