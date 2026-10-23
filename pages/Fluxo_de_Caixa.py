@@ -962,7 +962,10 @@ def carregar_fluxo():
     else:
         avisos.append("Realizado_Obra: aba vazia.")
 
-    # Totais do Realizado por conta contábil e mês usados para abatimento A.
+    # Totais do Realizado por conta contábil e mês para a Regra B.
+    # A substituição integral só é autorizada quando os totais positivos das duas
+    # fontes coincidem (tolerância de R$ 0,01). Isso é um critério conservador,
+    # mas não comprova por si só identidade lançamento a lançamento.
     realizado_conta_mes = {}
     if not realizado.empty:
         tmp_rcm = realizado[realizado["ContaContabil"].astype(str).str.strip() != ""].copy()
@@ -1003,29 +1006,41 @@ def carregar_fluxo():
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
 
-                # Regra A: para cada conta contábil/mês, abater da Base_Despesas
-                # o menor valor entre a base antiga e Realizado_Obra. O abatimento
-                # é distribuído proporcionalmente entre as linhas elegíveis da base.
+                # Regra B: substituir integralmente a conta contábil/mês da base
+                # antiga pelo Realizado_Obra SOMENTE quando os totais positivos
+                # coincidirem dentro de R$ 0,01. Nos demais casos, manter a base
+                # antiga e sinalizar a divergência; não há evidência suficiente
+                # para excluir os valores antigos com segurança.
                 if realizado_conta_mes:
                     if c_conta is None:
                         avisos.append(
-                            "Conciliação Realizado_Obra: a Base_Despesas não possui coluna Conta Contábil; "
-                            "não foi possível abater sobreposições nessa base."
+                            "Regra B - Realizado_Obra: a Base_Despesas não possui coluna Conta Contábil; "
+                            "não foi possível verificar substituições integrais nessa base."
                         )
                     else:
-                        tmp["_ContaConciliacao"] = tmp["ContaContabil"]
-                        tmp["_ValorOriginal"] = tmp["Valor"].clip(lower=0)
-                        tmp["_ChaveRef"] = list(zip(tmp["Ref"], tmp["_ContaConciliacao"]))
-                        tmp["_TotalBaseContaMes"] = tmp.groupby("_ChaveRef")["_ValorOriginal"].transform("sum")
-                        tmp["_TotalRealizadoContaMes"] = tmp["_ChaveRef"].map(realizado_conta_mes).fillna(0.0)
-                        tmp["_AbaterContaMes"] = tmp[["_TotalBaseContaMes", "_TotalRealizadoContaMes"]].min(axis=1)
-                        tmp["_FatorRestante"] = 1.0
-                        elegiveis = (tmp["_TotalBaseContaMes"] > 0.005) & (tmp["_TotalRealizadoContaMes"] > 0.005)
-                        tmp.loc[elegiveis, "_FatorRestante"] = (
-                            (tmp.loc[elegiveis, "_TotalBaseContaMes"] - tmp.loc[elegiveis, "_AbaterContaMes"])
-                            / tmp.loc[elegiveis, "_TotalBaseContaMes"]
-                        ).clip(lower=0.0, upper=1.0)
-                        tmp["Valor"] = tmp["Valor"].where(tmp["Valor"] <= 0, tmp["Valor"] * tmp["_FatorRestante"])
+                        tmp["_ChaveConciliacao"] = list(zip(tmp["Ref"], tmp["ContaContabil"]))
+                        tmp["_ValorPositivo"] = tmp["Valor"].clip(lower=0)
+                        totais_base = tmp.groupby("_ChaveConciliacao")["_ValorPositivo"].sum().to_dict()
+                        chaves_verificadas = set(totais_base).intersection(realizado_conta_mes)
+                        chaves_substituir = {
+                            chave for chave in chaves_verificadas
+                            if abs(float(totais_base[chave]) - float(realizado_conta_mes[chave])) <= 0.01
+                            and float(totais_base[chave]) > 0.005
+                        }
+                        chaves_divergentes = {
+                            chave for chave in chaves_verificadas
+                            if chave not in chaves_substituir
+                            and float(totais_base[chave]) > 0.005
+                            and float(realizado_conta_mes[chave]) > 0.005
+                        }
+                        if chaves_substituir:
+                            tmp = tmp[~tmp["_ChaveConciliacao"].isin(chaves_substituir)].copy()
+                        if chaves_divergentes:
+                            avisos.append(
+                                f"Regra B - Realizado_Obra: {len(chaves_divergentes)} combinação(ões) de mês/conta contábil "
+                                "têm totais diferentes entre Base_Despesas e Realizado_Obra. A base antiga foi mantida "
+                                "por segurança; confira possível sobreposição."
+                            )
                         tmp = tmp.drop(columns=[c for c in tmp.columns if c.startswith("_")], errors="ignore")
 
                 tmp = tmp[tmp["Valor"].abs() > 0.005]
@@ -1036,7 +1051,7 @@ def carregar_fluxo():
         else:
             avisos.append("Despesas: não foi possível identificar Data, Transação FCx, Classificação FCx e Valor.")
 
-    # Incluir Realizado_Obra integralmente depois de descontar a sobreposição da Base_Despesas.
+    # Incluir Realizado_Obra integralmente; as contas/mês conciliadas pela Regra B já foram removidas da Base_Despesas.
     if not realizado.empty:
         partes.append(realizado[cols].copy())
 
@@ -1049,8 +1064,8 @@ def carregar_fluxo():
     if raw_b is not None and not raw_b.empty:
         if realizado_conta_mes:
             avisos.append(
-                "Conciliação Realizado_Obra: o Borderô continua sem abatimento por conta contábil, "
-                "pois o processamento atual dessa aba não preserva essa coluna."
+                "Regra B - Realizado_Obra: não foi possível validar sobreposição com Borderô, "
+                "pois essa aba não preserva conta contábil no processamento atual."
             )
         mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
         if mb.empty:
@@ -1069,8 +1084,8 @@ def carregar_fluxo():
     if raw_a is not None and not raw_a.empty:
         if realizado_conta_mes:
             avisos.append(
-                "Conciliação Realizado_Obra: Adiantamentos continua sem abatimento por conta contábil, "
-                "pois o processamento atual dessa aba não preserva essa coluna."
+                "Regra B - Realizado_Obra: não foi possível validar sobreposição com Adiantamentos, "
+                "pois essa aba não preserva conta contábil no processamento atual."
             )
         ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
         if ma.empty:
