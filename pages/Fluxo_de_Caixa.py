@@ -46,7 +46,7 @@ ABA_CLASSIF = "Classificacao_FCx"
 ABA_SALDO = "Saldo_FCx"
 ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
 ABA_DEVOL = "FCx_Devolução_Adiantamento"
-ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"  # fallback sem acento
+ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"
 ABA_OBRA = "FCx_Obra"
 
 FLUXO_OP = "Fluxo de Caixa Operacional"
@@ -395,7 +395,7 @@ def cor_cat(nome, mapa):
 
 
 def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
-    cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Detalhe"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
 
@@ -486,7 +486,7 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo})
+            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo, "Detalhe": cat_s})
 
     if not reg:
         return pd.DataFrame(columns=cols_out)
@@ -494,7 +494,7 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 
 def parse_fcx_obra(raw, ano_ref=None):
-    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
+    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
 
@@ -560,21 +560,24 @@ def parse_fcx_obra(raw, ano_ref=None):
             if abs(val) <= 0.005:
                 continue
 
-            # 1. Redução no FCO (valor negativo na mesma categoria contábil)
+            # 1. Abatimento proporcional no FCO na mesma conta contábil
             reg.append({
                 "Ref": ref,
                 "Categoria": conta_s,
                 "Valor": -val,
                 "Tipo": "Saída",
                 "Grupo": "FCx_Obra (Redução FCO)",
+                "Detalhe": conta_s,
             })
-            # 2. Inclusão no FCI / CAPEX (valor positivo alocado na obra)
+            # 2. Realocação para o FCI sob "Investimentos / CAPEX" detalhado por Obra e Conta Contábil
+            nome_obra = current_obra if current_obra else "Diversas"
             reg.append({
                 "Ref": ref,
-                "Categoria": conta_s,
+                "Categoria": "Investimentos / CAPEX",
                 "Valor": val,
                 "Tipo": "Saída",
-                "Grupo": f"FCx_Obra - {current_obra}" if current_obra else "FCx_Obra",
+                "Grupo": f"FCx_Obra - {nome_obra}",
+                "Detalhe": f"{nome_obra} · {conta_s}",
             })
 
     if not reg:
@@ -967,7 +970,7 @@ def papel_classif(classif, fluxo=""):
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
-    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo"]
+    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     vazio = pd.DataFrame(columns=cols)
     avisos = []
     conn = conectar_sheets()
@@ -1003,6 +1006,7 @@ def carregar_fluxo():
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
                 g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
                 g["Tipo"], g["Grupo"] = "Saída", "Despesas"
+                g["Detalhe"] = g["Categoria"]
                 partes.append(g[cols])
 
     # Borderô
@@ -1098,7 +1102,7 @@ def carregar_fluxo():
     base_full["Categoria"] = base_full["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
     
     base_grouped = base_full.groupby(
-        ["Ref", "Categoria", "Tipo", "Grupo"],
+        ["Ref", "Categoria", "Tipo", "Grupo", "Detalhe"],
         as_index=False
     )["Valor"].sum()
     
@@ -1122,12 +1126,12 @@ base = base.copy()
 pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
 base["Classif"] = pares.apply(lambda x: x[0])
 base["Fluxo"] = pares.apply(lambda x: x[1])
-base["Detalhe"] = pares.apply(lambda x: x[2])
 
-# Forçar FCI (Investimento / Capex) para os lançamentos de obra vindos do FCx_Obra
-mask_obra_fci = base["Grupo"].str.startswith("FCx_Obra -", na=False)
-base.loc[mask_obra_fci, "Classif"] = base.loc[mask_obra_fci, "Categoria"]
-base.loc[mask_obra_fci, "Fluxo"] = FLUXO_INV
+# APLICAR O AGRUPAMENTO CENTRAL NO FCI
+# Todas as saídas de CAPEX são direcionadas para a categoria agregada "Investimentos / CAPEX"
+mask_capex = (base["Fluxo"] == FLUXO_INV) | (base["Grupo"].str.startswith("FCx_Obra -", na=False))
+base.loc[mask_capex, "Classif"] = "Investimentos / CAPEX"
+base.loc[mask_capex, "Fluxo"] = FLUXO_INV
 
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
