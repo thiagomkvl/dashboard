@@ -930,26 +930,63 @@ def carregar_fluxo():
     elif raw_obra.empty:
         avisos.append("FCx_Obra: aba vazia.")
     else:
-        c_obra = col_por_nomes(raw_obra, ["Categoria", "Obra", "Empreendimento"])
+        # Algumas leituras do Google Sheets usam a primeira linha de título
+        # (ex.: "SUM de Valor") como cabeçalho e deixam os cabeçalhos reais
+        # (Categoria / Conta Contábil / 2026.01...) dentro das primeiras linhas.
+        raw_obra = raw_obra.copy()
+        def _header_token(v):
+            return normalizar_chave(v)
         c_conta_obra = col_por_nomes(raw_obra, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
+        c_obra = col_por_nomes(raw_obra, ["Categoria", "Obra", "Empreendimento"])
+        if c_conta_obra is None or c_obra is None:
+            header_idx = None
+            for i in range(min(8, len(raw_obra))):
+                vals = {_header_token(v) for v in raw_obra.iloc[i].tolist()}
+                tem_conta = any(v in {"conta contabil", "conta contabil fcx"} for v in vals)
+                tem_categoria = any(v in {"categoria", "obra", "empreendimento"} for v in vals)
+                if tem_conta and tem_categoria:
+                    header_idx = i
+                    break
+            if header_idx is not None:
+                headers = [str(v).strip() if pd.notna(v) and str(v).strip() else f"Coluna_{j}"
+                           for j, v in enumerate(raw_obra.iloc[header_idx].tolist())]
+                raw_obra = raw_obra.iloc[header_idx + 1:].copy()
+                raw_obra.columns = headers
+                raw_obra = raw_obra.loc[:, ~pd.Index(raw_obra.columns).duplicated()]
+                c_conta_obra = col_por_nomes(raw_obra, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
+                c_obra = col_por_nomes(raw_obra, ["Categoria", "Obra", "Empreendimento"])
+
         if c_conta_obra is None:
-            avisos.append("FCx_Obra: não encontrei a coluna Conta Contábil.")
+            avisos.append("FCx_Obra: não encontrei a coluna Conta Contábil. Verifiquei também as primeiras linhas em busca do cabeçalho real.")
         else:
             # A aba é uma tabela dinâmica: a obra pode aparecer apenas na primeira
             # linha de cada grupo; preencher para baixo recupera as linhas mescladas.
-            obra_series = (raw_obra[c_obra].astype(str).replace({"nan": "", "None": ""}).str.strip().ffill()
+            obra_series = (raw_obra[c_obra].astype(str).replace({"nan": "", "None": ""}).str.strip().replace("", pd.NA).ffill()
                            if c_obra else pd.Series("Obra não informada", index=raw_obra.index))
             meses_colunas = {}
             for coluna in raw_obra.columns:
                 ref_mes = parse_ref_mes(coluna)
                 if pd.notna(ref_mes):
                     meses_colunas[coluna] = ref_mes
+            # Fallback: em algumas tabelas dinâmicas os meses aparecem em uma
+            # linha de cabeçalho secundária, não nos nomes de coluna.
+            if not meses_colunas:
+                for i in range(min(4, len(raw_obra))):
+                    for j, valor_cab in enumerate(raw_obra.iloc[i].tolist()):
+                        ref_mes = parse_ref_mes(valor_cab)
+                        if pd.notna(ref_mes) and j < len(raw_obra.columns):
+                            meses_colunas[raw_obra.columns[j]] = ref_mes
+                    if meses_colunas:
+                        raw_obra = raw_obra.iloc[i + 1:].copy()
+                        obra_series = (raw_obra[c_obra].astype(str).replace({"nan": "", "None": ""}).str.strip().replace("", pd.NA).ffill()
+                                       if c_obra else pd.Series("Obra não informada", index=raw_obra.index))
+                        break
             linhas_obra = []
             for idx, row in raw_obra.iterrows():
                 conta_original = row.get(c_conta_obra, "")
                 conta_txt = str(conta_original).strip() if pd.notna(conta_original) else ""
                 conta_norm = chave_conta_contabil(conta_original)
-                obra_txt = str(obra_series.loc[idx]).strip()
+                obra_txt = str(obra_series.loc[idx]).strip() if idx in obra_series.index else "Obra não informada"
                 if (not conta_norm or conta_norm in {"total", "total geral", "nan", "none"}
                         or normalizar_chave(conta_txt).endswith(" total")
                         or normalizar_chave(obra_txt) in {"total", "total geral", "nan", "none", ""}):
@@ -971,7 +1008,7 @@ def carregar_fluxo():
             if linhas_obra:
                 fcx_obra = pd.DataFrame(linhas_obra)
             else:
-                avisos.append("FCx_Obra: nenhuma combinação válida de conta contábil, mês e valor foi encontrada.")
+                avisos.append("FCx_Obra: nenhuma combinação válida de conta contábil, mês e valor foi encontrada. Confira se os meses estão nos cabeçalhos como 2026.01.")
 
     # Total mensal por conta contábil que deve ser retirado das outras bases.
     abatimentos_obra = {}
