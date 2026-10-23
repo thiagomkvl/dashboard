@@ -560,7 +560,7 @@ def parse_fcx_obra(raw, ano_ref=None):
             if abs(val) <= 0.005:
                 continue
 
-            # 1. Abatimento proporcional no FCO na mesma conta contábil
+            # 1. Abatimento proporcional no FCO
             reg.append({
                 "Ref": ref,
                 "Categoria": conta_s,
@@ -569,15 +569,15 @@ def parse_fcx_obra(raw, ano_ref=None):
                 "Grupo": "FCx_Obra (Redução FCO)",
                 "Detalhe": conta_s,
             })
-            # 2. Realocação para o FCI sob "Investimentos / CAPEX" detalhado por Obra e Conta Contábil
+            # 2. No FCI, cada Obra assume a sua própria categoria principal (ex: Obra: NOME) e detalha a Conta Contábil
             nome_obra = current_obra if current_obra else "Diversas"
             reg.append({
                 "Ref": ref,
-                "Categoria": "Investimentos / CAPEX",
+                "Categoria": f"Obra: {nome_obra}",
                 "Valor": val,
                 "Tipo": "Saída",
                 "Grupo": f"FCx_Obra - {nome_obra}",
-                "Detalhe": f"{nome_obra} · {conta_s}",
+                "Detalhe": conta_s,
             })
 
     if not reg:
@@ -1123,15 +1123,25 @@ if base.empty:
     st.stop()
 
 base = base.copy()
-pares = base["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
-base["Classif"] = pares.apply(lambda x: x[0])
-base["Fluxo"] = pares.apply(lambda x: x[1])
 
-# APLICAR O AGRUPAMENTO CENTRAL NO FCI
-# Todas as saídas de CAPEX são direcionadas para a categoria agregada "Investimentos / CAPEX"
-mask_capex = (base["Fluxo"] == FLUXO_INV) | (base["Grupo"].str.startswith("FCx_Obra -", na=False))
-base.loc[mask_capex, "Classif"] = "Investimentos / CAPEX"
-base.loc[mask_capex, "Fluxo"] = FLUXO_INV
+# Separar lançamentos normais de lançamentos vindos de FCx_Obra
+mask_obra = base["Grupo"].str.startswith("FCx_Obra -", na=False)
+
+df_normal = base[~mask_obra].copy()
+pares = df_normal["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
+df_normal["Classif"] = pares.apply(lambda x: x[0])
+df_normal["Fluxo"] = pares.apply(lambda x: x[1])
+
+# Cada Obra vira sua própria categoria/linha principal no FCI
+df_obra = base[mask_obra].copy()
+df_obra["Classif"] = df_obra["Categoria"]
+df_obra["Fluxo"] = FLUXO_INV
+
+base = pd.concat([df_normal, df_obra], ignore_index=True)
+
+# Forçar CAPEX geral (não-obra) a ir para "Investimentos / CAPEX"
+mask_capex_geral = (~base["Grupo"].str.startswith("FCx_Obra -", na=False)) & (base["Fluxo"] == FLUXO_INV)
+base.loc[mask_capex_geral, "Classif"] = "Investimentos / CAPEX"
 
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
