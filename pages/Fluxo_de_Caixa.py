@@ -39,7 +39,6 @@ AJUSTE_APOS_KPIS = "0.75rem"
 ANO_REF = 2026
 
 ABA_DESPESAS = "Base_Despesas"
-ABA_REALIZADO_OBRA = "Realizado_Obra"
 ABA_BORDERO = "Fluxo_Despesas_Borderô"
 ABA_ADIANT = "Fluxo_Adiantamentos"
 ABA_RECEITA = "Fluxo_Receita"
@@ -295,36 +294,6 @@ def parse_data(v):
         return pd.to_datetime(v, dayfirst=True, errors="coerce").normalize()
     except Exception:
         return pd.NaT
-
-
-def parse_ref_mes(v, ano_ref=None):
-    """Converte data, serial ou texto de mês em referência no primeiro dia do mês."""
-    if v is None or (isinstance(v, float) and pd.isna(v)):
-        return pd.NaT
-    ano = ano_ref or ANO_REF
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        n = float(v)
-        if 1 <= n <= 12:
-            return pd.Timestamp(ano, int(n), 1)
-    texto = str(v).strip()
-    if re.fullmatch(r"\d{1,2}", texto) and 1 <= int(texto) <= 12:
-        return pd.Timestamp(ano, int(texto), 1)
-    d = parse_data(v)
-    if pd.notna(d):
-        return pd.Timestamp(d.year, d.month, 1)
-    mes = parse_mes_header(v, ano)
-    return mes if mes is not None else pd.NaT
-
-
-def chave_conta_contabil(v):
-    """Normaliza a conta contábil para conciliação entre abas."""
-    if v is None or (isinstance(v, float) and pd.isna(v)):
-        return ""
-    # Evita divergência entre códigos numéricos lidos como 123 e 123.0.
-    texto = str(v).strip()
-    if re.fullmatch(r"\d+\.0+", texto):
-        texto = texto.split(".", 1)[0]
-    return normalizar_chave(texto)
 
 
 def parse_mes_header(h, ano_ref=None):
@@ -911,72 +880,6 @@ def carregar_fluxo():
         return vazio, ["Conexão indisponível."]
     partes = []
 
-    # Realizado_Obra: carregar primeiro para conciliar sobreposição com a Base_Despesas.
-    raw_real = None
-    try:
-        raw_real = conn.read(worksheet=ABA_REALIZADO_OBRA, ttl=0)
-    except Exception as e:
-        avisos.append(f"Realizado_Obra: não foi possível ler a aba ({e})")
-
-    realizado = pd.DataFrame(columns=["Ref", "Categoria", "Valor", "Tipo", "Grupo", "ContaContabil"])
-    if raw_real is not None and not raw_real.empty:
-        c_mes = col_por_nomes(raw_real, ["MÊS", "MES", "Mês de Referência", "Mes de Referencia"])
-        c_data_pgto = col_por_nomes(raw_real, ["DATA PGTO", "Data Pgto", "Data Pagamento", "Data de Pagamento"])
-        c_categoria = col_por_nomes(raw_real, ["Categoria"])
-        c_valor = col_por_nomes(raw_real, ["Valor", "Valor Realizado", "Vl Débito", "Vl Debito"])
-        c_conta_real = col_por_nomes(raw_real, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
-        faltantes = [nome for nome, col in [
-            ("Categoria", c_categoria), ("Valor", c_valor), ("Conta Contábil", c_conta_real)
-        ] if col is None]
-        if faltantes:
-            avisos.append("Realizado_Obra: estrutura incompleta; faltam as colunas " + ", ".join(faltantes) + ".")
-        else:
-            tmp_real = pd.DataFrame({
-                "DataPgto": raw_real[c_data_pgto].apply(parse_data) if c_data_pgto else pd.NaT,
-                "MesFonte": raw_real[c_mes] if c_mes else pd.NaT,
-                "Categoria": raw_real[c_categoria].fillna("").astype(str).str.strip(),
-                "Valor": raw_real[c_valor].apply(limpa_valor),
-                "ContaContabil": raw_real[c_conta_real].apply(chave_conta_contabil),
-            })
-            # Prioriza MÊS (período de referência da aba); usa DATA PGTO como fallback.
-            tmp_real["Ref"] = tmp_real["MesFonte"].apply(parse_ref_mes)
-            faltou_mes = tmp_real["Ref"].isna()
-            tmp_real.loc[faltou_mes, "Ref"] = tmp_real.loc[faltou_mes, "DataPgto"].apply(
-                lambda d: pd.Timestamp(d.year, d.month, 1) if pd.notna(d) else pd.NaT
-            )
-            tmp_real = tmp_real[
-                tmp_real["Ref"].notna()
-                & (tmp_real["Categoria"].str.strip() != "")
-                & (tmp_real["Valor"].abs() > 0.005)
-            ].copy()
-            if not tmp_real.empty:
-                realizado = tmp_real[["Ref", "Categoria", "Valor", "ContaContabil"]].copy()
-                realizado["Tipo"] = "Saída"
-                realizado["Grupo"] = "Realizado_Obra"
-                realizado = realizado[["Ref", "Categoria", "Valor", "Tipo", "Grupo", "ContaContabil"]]
-            else:
-                avisos.append("Realizado_Obra: nenhuma linha válida com mês/data, categoria e valor foi encontrada.")
-    elif raw_real is None:
-        # A aba pode ainda não existir em ambientes que não usam o módulo de obras.
-        avisos.append("Realizado_Obra: aba indisponível; fluxo calculado sem essa fonte.")
-    else:
-        avisos.append("Realizado_Obra: aba vazia.")
-
-    # Totais do Realizado por conta contábil e mês para a Regra B.
-    # A substituição integral só é autorizada quando os totais positivos das duas
-    # fontes coincidem (tolerância de R$ 0,01). Isso é um critério conservador,
-    # mas não comprova por si só identidade lançamento a lançamento.
-    realizado_conta_mes = {}
-    if not realizado.empty:
-        tmp_rcm = realizado[realizado["ContaContabil"].astype(str).str.strip() != ""].copy()
-        if not tmp_rcm.empty:
-            tmp_rcm["ValorConciliacao"] = tmp_rcm["Valor"].clip(lower=0)
-            soma_rcm = tmp_rcm.groupby(["Ref", "ContaContabil"], as_index=False)["ValorConciliacao"].sum()
-            realizado_conta_mes = {
-                (r["Ref"], r["ContaContabil"]): float(r["ValorConciliacao"])
-                for _, r in soma_rcm.iterrows()
-            }
-
     # Base_Despesas
     try:
         raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
@@ -989,15 +892,15 @@ def carregar_fluxo():
         c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx"])
         c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx"])
         c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor"])
-        c_conta = col_por_nomes(df, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
         if all([c_data, c_trans, c_clas, c_val]):
             tmp = pd.DataFrame({
                 "Data": df[c_data].apply(parse_data),
                 "Transação": df[c_trans].fillna("").astype(str).str.strip(),
                 "Categoria": df[c_clas].fillna("(Sem classificação)").astype(str).str.strip(),
                 "Valor": df[c_val].apply(limpa_valor),
-                "ContaContabil": df[c_conta].apply(chave_conta_contabil) if c_conta else "",
             })
+            # Preservar a natureza da devolução mesmo quando a classificação
+            # contábil da Base_Despesas não contém o nome da transação.
             devolucoes = tmp["Transação"].map(eh_linha_devolucao)
             permitidas = tmp["Transação"].map(normalizar).isin(TRANSACOES_DESPESAS)
             tmp.loc[devolucoes, "Categoria"] = tmp.loc[devolucoes, "Transação"]
@@ -1005,55 +908,9 @@ def carregar_fluxo():
             tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
-
-                # Regra B: substituir integralmente a conta contábil/mês da base
-                # antiga pelo Realizado_Obra SOMENTE quando os totais positivos
-                # coincidirem dentro de R$ 0,01. Nos demais casos, manter a base
-                # antiga e sinalizar a divergência; não há evidência suficiente
-                # para excluir os valores antigos com segurança.
-                if realizado_conta_mes:
-                    if c_conta is None:
-                        avisos.append(
-                            "Regra B - Realizado_Obra: a Base_Despesas não possui coluna Conta Contábil; "
-                            "não foi possível verificar substituições integrais nessa base."
-                        )
-                    else:
-                        tmp["_ChaveConciliacao"] = list(zip(tmp["Ref"], tmp["ContaContabil"]))
-                        tmp["_ValorPositivo"] = tmp["Valor"].clip(lower=0)
-                        totais_base = tmp.groupby("_ChaveConciliacao")["_ValorPositivo"].sum().to_dict()
-                        chaves_verificadas = set(totais_base).intersection(realizado_conta_mes)
-                        chaves_substituir = {
-                            chave for chave in chaves_verificadas
-                            if abs(float(totais_base[chave]) - float(realizado_conta_mes[chave])) <= 0.01
-                            and float(totais_base[chave]) > 0.005
-                        }
-                        chaves_divergentes = {
-                            chave for chave in chaves_verificadas
-                            if chave not in chaves_substituir
-                            and float(totais_base[chave]) > 0.005
-                            and float(realizado_conta_mes[chave]) > 0.005
-                        }
-                        if chaves_substituir:
-                            tmp = tmp[~tmp["_ChaveConciliacao"].isin(chaves_substituir)].copy()
-                        if chaves_divergentes:
-                            avisos.append(
-                                f"Regra B - Realizado_Obra: {len(chaves_divergentes)} combinação(ões) de mês/conta contábil "
-                                "têm totais diferentes entre Base_Despesas e Realizado_Obra. A base antiga foi mantida "
-                                "por segurança; confira possível sobreposição."
-                            )
-                        tmp = tmp.drop(columns=[c for c in tmp.columns if c.startswith("_")], errors="ignore")
-
-                tmp = tmp[tmp["Valor"].abs() > 0.005]
-                if not tmp.empty:
-                    g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
-                    g["Tipo"], g["Grupo"] = "Saída", "Despesas"
-                    partes.append(g[cols])
-        else:
-            avisos.append("Despesas: não foi possível identificar Data, Transação FCx, Classificação FCx e Valor.")
-
-    # Incluir Realizado_Obra integralmente; as contas/mês conciliadas pela Regra B já foram removidas da Base_Despesas.
-    if not realizado.empty:
-        partes.append(realizado[cols].copy())
+                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                g["Tipo"], g["Grupo"] = "Saída", "Despesas"
+                partes.append(g[cols])
 
     # Borderô
     try:
@@ -1062,11 +919,6 @@ def carregar_fluxo():
         raw_b = None
         avisos.append(f"Borderô: {e}")
     if raw_b is not None and not raw_b.empty:
-        if realizado_conta_mes:
-            avisos.append(
-                "Regra B - Realizado_Obra: não foi possível validar sobreposição com Borderô, "
-                "pois essa aba não preserva conta contábil no processamento atual."
-            )
         mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
         if mb.empty:
             mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF)
@@ -1082,11 +934,6 @@ def carregar_fluxo():
         raw_a = None
         avisos.append(f"Adiantamentos: {e}")
     if raw_a is not None and not raw_a.empty:
-        if realizado_conta_mes:
-            avisos.append(
-                "Regra B - Realizado_Obra: não foi possível validar sobreposição com Adiantamentos, "
-                "pois essa aba não preserva conta contábil no processamento atual."
-            )
         ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
         if ma.empty:
             ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF)
@@ -1134,6 +981,7 @@ def carregar_fluxo():
             md = melt_matriz(raw_dev, 1, 1, 2, "Entrada", ANO_REF)
         if not md.empty:
             md = md.copy()
+            # aplica sinal gerencial (fornecedor/salarial +, paciente/prontuário −)
             md["Valor"] = md.apply(
                 lambda r: abs(float(r["Valor"])) * sinal_devolucao(r["Categoria"]),
                 axis=1,
