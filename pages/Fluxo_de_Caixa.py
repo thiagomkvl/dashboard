@@ -1031,7 +1031,11 @@ def carregar_fluxo():
         c_trans = col_por_letra(df, "D") or col_por_nomes(df, ["Transação FCx", "Transacao FCx"])
         c_clas = col_por_letra(df, "E") or col_por_nomes(df, ["Classificação FCx", "Classificacao FCx"])
         c_val = col_por_letra(df, "F") or col_por_nomes(df, ["Vl Débito", "Vl Debito", "Valor"])
-        c_conta = col_por_nomes(df, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"])
+        # Na Base_Despesas, a conta contábil fica na coluna A; algumas leituras
+        # do Sheets não trazem o nome do cabeçalho, por isso priorizamos a posição.
+        c_conta = col_por_letra(df, "A") or col_por_nomes(
+            df, ["Conta Contábil", "Conta Contabil", "Conta Contábil FCx", "Conta Contabil FCx"]
+        )
         if all([c_data, c_trans, c_clas, c_val]):
             tmp = pd.DataFrame({
                 "Data": df[c_data].apply(parse_data),
@@ -1053,10 +1057,10 @@ def carregar_fluxo():
                 # FCx_Obra superar a base, o excedente fica registrado em FCx_Obra
                 # e é sinalizado para conferência (não criamos valores negativos).
                 if abatimentos_obra:
-                    if c_conta is None:
+                    if c_conta is None or not tmp["ContaContabil"].astype(str).str.strip().ne("").any():
                         avisos.append(
-                            "FCx_Obra: a Base_Despesas não possui coluna Conta Contábil; "
-                            "não foi possível abater os valores nessa base."
+                            "FCx_Obra: não foi possível identificar valores de Conta Contábil na Base_Despesas; "
+                            "os valores da FCx_Obra podem continuar duplicados."
                         )
                     else:
                         tmp["_ChaveConciliacao"] = list(zip(tmp["Ref"], tmp["ContaContabil"]))
