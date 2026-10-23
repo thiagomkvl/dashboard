@@ -413,8 +413,10 @@ def cor_cat(nome, mapa):
     return mapa[nome]
 
 
-def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
+def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None, col_conta_idx=None):
     cols_out = ["Ref", "Categoria", "Valor", "Tipo"]
+    if col_conta_idx is not None:
+        cols_out.append("ContaContabil")
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
 
@@ -505,7 +507,11 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo})
+            registro = {"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo}
+            if col_conta_idx is not None:
+                conta = row[col_conta_idx] if col_conta_idx < len(row) else ""
+                registro["ContaContabil"] = chave_conta_contabil(conta)
+            reg.append(registro)
 
     if not reg:
         return pd.DataFrame(columns=cols_out)
@@ -1027,7 +1033,12 @@ def carregar_fluxo():
         if df.empty or not abatimentos_restantes:
             return df
         out = df.copy()
-        out["_ContaObra"] = out["Categoria"].apply(chave_conta_contabil)
+        # Usa a coluna Conta Contábil real quando disponível; a Categoria da matriz
+        # costuma ser a Transação (ex.: "Adiantamento Fornecedores - BANCO").
+        if "ContaContabil" in out.columns:
+            out["_ContaObra"] = out["ContaContabil"].apply(chave_conta_contabil)
+        else:
+            out["_ContaObra"] = out["Categoria"].apply(chave_conta_contabil)
         for idx, linha in out.iterrows():
             chave = (linha["Ref"], linha["_ContaObra"])
             restante = float(abatimentos_restantes.get(chave, 0.0))
@@ -1117,9 +1128,9 @@ def carregar_fluxo():
         raw_b = None
         avisos.append(f"Borderô: {e}")
     if raw_b is not None and not raw_b.empty:
-        mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF)
+        mb = melt_matriz(raw_b, 1, 0, 2, "Saída", ANO_REF, col_conta_idx=1)
         if mb.empty:
-            mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF)
+            mb = melt_matriz(raw_b, 1, 2, 2, "Saída", ANO_REF, col_conta_idx=1)
         if not mb.empty:
             mb = abater_matriz_por_conta(mb, "Borderô")
             if not mb.empty:
@@ -1133,9 +1144,9 @@ def carregar_fluxo():
         raw_a = None
         avisos.append(f"Adiantamentos: {e}")
     if raw_a is not None and not raw_a.empty:
-        ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF)
+        ma = melt_matriz(raw_a, 1, 0, 2, "Saída", ANO_REF, col_conta_idx=1)
         if ma.empty:
-            ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF)
+            ma = melt_matriz(raw_a, 1, 1, 2, "Saída", ANO_REF, col_conta_idx=1)
         if not ma.empty:
             ma = abater_matriz_por_conta(ma, "Adiantamentos")
             if not ma.empty:
