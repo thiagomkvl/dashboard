@@ -13,6 +13,7 @@ except Exception:
 import os
 import re
 import textwrap
+import time
 import unicodedata
 from datetime import datetime
 
@@ -48,6 +49,32 @@ ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
 ABA_DEVOL = "FCx_Devolução_Adiantamento"
 ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"
 ABA_OBRA = "FCx_Obra"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def ler_aba_cacheada(nome_aba):
+    """Lê cada aba no máximo uma vez por janela de cache e repete em erros 429."""
+    ultimo_erro = None
+    for tentativa, espera in enumerate((0, 5, 10, 20, 30)):
+        if espera:
+            time.sleep(espera)
+        try:
+            conn = conectar_sheets()
+            if conn is None:
+                raise RuntimeError("Conexão indisponível com Google Sheets.")
+            raw = conn.read(worksheet=nome_aba, ttl=0)
+            if raw is None:
+                return pd.DataFrame()
+            return raw
+        except Exception as e:
+            ultimo_erro = e
+            msg = str(e).lower()
+            erro_limite = ("429" in msg or "quota exceeded" in msg or
+                           "rate_limit_exceeded" in msg or "resource_exhausted" in msg)
+            if not erro_limite or tentativa == 4:
+                raise
+    raise ultimo_erro
+
 
 FLUXO_OP = "Fluxo de Caixa Operacional"
 FLUXO_INV = "Fluxo de Caixa de Investimentos"
@@ -614,7 +641,7 @@ def carregar_saldo_inicial(ano_ref=None):
         conn = conectar_sheets()
         if conn is None:
             return out
-        raw = conn.read(worksheet=ABA_SALDO, ttl=0)
+        raw = ler_aba_cacheada(ABA_SALDO)
     except Exception:
         return out
 
@@ -692,7 +719,7 @@ def carregar_saldos_tasy():
         conn = conectar_sheets()
         if conn is None:
             return inicial, final, ["Saldo Tasy: conexão indisponível."]
-        raw = conn.read(worksheet=ABA_SALDO_TASY, ttl=0)
+        raw = ler_aba_cacheada(ABA_SALDO_TASY)
         if raw is None or raw.empty:
             return inicial, final, ["Saldo Tasy: aba vazia."]
         grid = [list(raw.columns)] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
@@ -822,7 +849,7 @@ def carregar_mapa_classificacao():
         conn = conectar_sheets()
         if conn is not None:
             try:
-                raw = conn.read(worksheet=ABA_CLASSIF, ttl=0)
+                raw = ler_aba_cacheada(ABA_CLASSIF)
                 m = _mapa_de_dataframe(raw)
                 if m:
                     return m
@@ -980,7 +1007,7 @@ def carregar_fluxo():
 
     # Base_Despesas
     try:
-        raw_d = conn.read(worksheet=ABA_DESPESAS, ttl=0)
+        raw_d = ler_aba_cacheada(ABA_DESPESAS)
     except Exception as e:
         raw_d = None
         avisos.append(f"Despesas: {e}")
@@ -1011,7 +1038,7 @@ def carregar_fluxo():
 
     # Borderô
     try:
-        raw_b = conn.read(worksheet=ABA_BORDERO, ttl=0)
+        raw_b = ler_aba_cacheada(ABA_BORDERO)
     except Exception as e:
         raw_b = None
         avisos.append(f"Borderô: {e}")
@@ -1026,7 +1053,7 @@ def carregar_fluxo():
 
     # Adiantamentos
     try:
-        raw_a = conn.read(worksheet=ABA_ADIANT, ttl=0)
+        raw_a = ler_aba_cacheada(ABA_ADIANT)
     except Exception as e:
         raw_a = None
         avisos.append(f"Adiantamentos: {e}")
@@ -1041,7 +1068,7 @@ def carregar_fluxo():
 
     # Receita
     try:
-        raw_r = conn.read(worksheet=ABA_RECEITA, ttl=0)
+        raw_r = ler_aba_cacheada(ABA_RECEITA)
     except Exception as e:
         raw_r = None
         avisos.append(f"Receita: {e}")
@@ -1058,7 +1085,7 @@ def carregar_fluxo():
     raw_dev = None
     for nome_aba in (ABA_DEVOL, ABA_DEVOL_ALT):
         try:
-            raw_dev = conn.read(worksheet=nome_aba, ttl=0)
+            raw_dev = ler_aba_cacheada(nome_aba)
             if raw_dev is not None and not raw_dev.empty:
                 break
         except Exception:
@@ -1085,7 +1112,7 @@ def carregar_fluxo():
 
     # FCx_Obra
     try:
-        raw_obra = conn.read(worksheet=ABA_OBRA, ttl=0)
+        raw_obra = ler_aba_cacheada(ABA_OBRA)
     except Exception as e:
         raw_obra = None
         avisos.append(f"FCx_Obra: {e}")
