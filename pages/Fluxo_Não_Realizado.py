@@ -145,16 +145,158 @@ def load_receivables():
     conta["Tipo"] = "Entrada pendente"
     return conta[["Mês","Convênio","Situação","Valor","Classificação","Fluxo","Tipo"]], []
 
-st.markdown("""<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"] {font-family:Inter,Segoe UI,Arial,sans-serif}
-.stApp,[data-testid="stAppViewContainer"]{background:#f8fafc;color:#0f172a}
-[data-testid="stHeader"]{background:transparent}#MainMenu,footer{visibility:hidden}
-.main .block-container{padding:1.1rem 1.4rem 1.4rem;max-width:99%}
-[data-testid="stMetric"]{background:white;border:1px solid #e2e8f0;padding:14px;border-radius:12px}
-</style>""", unsafe_allow_html=True)
-st.markdown("# Fluxo de Caixa Não Realizado")
-st.caption("Visão separada para validar títulos e recebimentos pendentes, sem alterar o dashboard de Fluxo de Caixa realizado.")
+st.markdown(
+    """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+    .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
+    [data-testid="stHeader"] { background: transparent !important; }
+    #MainMenu, footer { visibility: hidden; }
+    .main .block-container { padding: 1.1rem 1.4rem 1.4rem; max-width: 99%; }
+    div[data-testid="stVerticalBlock"] { gap: __GAP__; }
+    [data-testid="stMarkdownContainer"] { color: #0f172a; }
+
+    [data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
+    [data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
+    .side-sec {
+        font-size: 10px; font-weight: 800; letter-spacing: 1px;
+        color: #64748b; text-transform: uppercase; margin: 6px 0 -2px;
+    }
+    .side-card {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 10px 12px; margin-top: 8px;
+    }
+    .side-card small { display: block; color: #64748b; font-size: 11px; }
+    .side-card b { color: #0f172a; font-size: 13px; }
+
+    [data-baseweb="select"] > div {
+        background: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important;
+    }
+    [data-baseweb="select"] span, [data-baseweb="select"] input { color: #0f172a !important; }
+    [data-baseweb="select"] svg { fill: #64748b; }
+    [data-baseweb="popover"] ul, [data-baseweb="menu"] { background: #ffffff !important; }
+    li[role="option"] { color: #0f172a !important; }
+    li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
+    span[data-baseweb="tag"] { background: #2563eb !important; color: #fff !important; }
+
+    [data-testid="stSidebar"] .stButton > button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+        color: #fff !important; border: none !important; border-radius: 10px !important;
+        font-weight: 700 !important; padding: 0.55rem 1rem !important;
+    }
+
+    .top {
+        display: flex; justify-content: space-between; align-items: center; gap: 16px;
+        padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0;
+    }
+    .top h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
+    .top p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
+    .pills { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 6px 14px; min-width: 120px;
+        box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
+    .pill small { display: block; font-size: 10px; color: #64748b; }
+    .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
+    .kpi {
+        padding: 12px 14px; border-radius: 12px; min-height: 100px;
+        background: #ffffff; border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+        border-left: 3px solid #2563eb;
+    }
+    .kpi.green { border-left-color: #059669; }
+    .kpi.red { border-left-color: #dc2626; }
+    .kpi.amber { border-left-color: #d97706; }
+    .kpi.purple { border-left-color: #7c3aed; }
+    .kpi.blue { border-left-color: #2563eb; }
+    .kpi-t {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+        text-transform: uppercase; color: #64748b;
+    }
+    .kpi-v {
+        font-size: 18px; font-weight: 800; color: #0f172a; margin: 8px 0 4px;
+        font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .kpi-sub { font-size: 11px; color: #64748b; font-weight: 600; }
+
+    .section-title {
+        font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+        color: #0f172a; margin: 16px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
+    }
+
+    .tbl-wrap {
+        overflow-x: auto; overflow-y: visible;
+        border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff;
+    }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
+    .tbl th {
+        background: #f8fafc; color: #64748b; font-weight: 700; font-size: 11px;
+        text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap; text-transform: uppercase;
+    }
+    .tbl td {
+        padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .tbl tbody tr:hover td { background: #f8fafc; }
+    .tbl tr.tot td {
+        font-weight: 800; color: #0f172a; background: #f1f5f9; border-top: 1px solid #e2e8f0;
+    }
+    .tbl tr.sec td {
+        font-weight: 800; color: #0f172a; background: #eef2ff;
+        border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
+    }
+    .tbl tr.subsec td {
+        font-weight: 700; color: #334155; background: #f8fafc; font-size: 11px;
+    }
+    .tbl tr.res td {
+        font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
+    }
+    .tbl tr.saldo td {
+        font-weight: 800; background: #ecfdf5; border-top: 2px solid #a7f3d0;
+    }
+    .tbl tr.sub-row td { background: #fafbfc; color: #64748b; font-size: 11px; }
+    .tbl tr.sub-row td:first-child { padding-left: 28px; }
+    .dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        margin-right: 8px; vertical-align: middle;
+    }
+    .drill-label {
+        cursor: pointer; display: flex; align-items: center; gap: 6px;
+        margin: 0; font-weight: 700; color: #0f172a; user-select: none;
+    }
+    .toggle-checkbox { display: none; }
+    .indicator {
+        display: inline-block; font-size: 10px; color: #2563eb;
+        transition: transform 0.15s ease; width: 12px;
+    }
+    .grp .sub-row { display: none; }
+    .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+    .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
+</style>
+    """.replace("__GAP__", "0.75rem").replace("__KPI_GAP__", "0.75rem"),
+    unsafe_allow_html=True,
+)
+st.markdown(
+    """
+    <div class='top'>
+        <div>
+            <h1>FLUXO DE CAIXA NÃO REALIZADO</h1>
+            <p>Visão gerencial · Entradas e saídas pendentes · Valores projetados</p>
+        </div>
+        <div class='pills'>
+            <div class='pill'><small>Base</small><b>Não realizado</b></div>
+            <div class='pill'><small>Atualização</small><b>Dados em aberto</b></div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 with st.spinner("Carregando bases e classificações..."):
     errors=[]
     try: mapping=read_classifications()
@@ -177,9 +319,10 @@ base=pd.concat(frames,ignore_index=True)
 months=sorted(base["Mês"].dropna().unique())
 if not months: st.info("Não há datas válidas para agrupar os dados."); st.stop()
 with st.sidebar:
-    st.markdown("### Filtros")
-    start=st.selectbox("De",months,index=0,format_func=lambda x:pd.Timestamp(x).strftime("%b/%y").title())
-    end=st.selectbox("Até",months,index=len(months)-1,format_func=lambda x:pd.Timestamp(x).strftime("%b/%y").title())
+    st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
+    c_a, c_b = st.columns(2)
+    start=c_a.selectbox("De",months,index=0,format_func=lambda x:pd.Timestamp(x).strftime("%b/%y").title())
+    end=c_b.selectbox("Até",months,index=len(months)-1,format_func=lambda x:pd.Timestamp(x).strftime("%b/%y").title())
     types=sorted(base["Tipo"].unique())
     type_sel=st.multiselect("Movimento",types,default=types)
     class_sel=st.multiselect("Classificação",sorted(base["Classificação"].unique()))
@@ -191,32 +334,38 @@ if class_sel: f=f[f["Classificação"].isin(class_sel)]
 entr=f.loc[f["Tipo"]=="Entrada pendente","Valor"].sum()
 saidas_total=f.loc[f["Tipo"]=="Saída pendente","Valor"].sum()
 net=entr-saidas_total
-c1,c2,c3,c4=st.columns(4)
-c1.metric("Entradas pendentes",f"R$ {entr:,.2f}".replace(",","X").replace(".",",").replace("X","."))
-c2.metric("Saídas pendentes",f"R$ {saidas_total:,.2f}".replace(",","X").replace(".",",").replace("X","."))
-c3.metric("Saldo projetado líquido",f"R$ {net:,.2f}".replace(",","X").replace(".",",").replace("X","."))
-c4.metric("Lançamentos",f"{len(f):,}".replace(",","."))
+def moeda(v):
+    return (f"R$ {v:,.2f}").replace(",", "X").replace(".", ",").replace("X", ".")
+
+st.markdown(f"""
+<div class='kpi-grid' style='grid-template-columns:repeat(4, minmax(0, 1fr));'>
+    <div class='kpi green'><div class='kpi-t'>Entradas pendentes</div><div class='kpi-v' style='color:#059669'>{moeda(entr)}</div><div class='kpi-sub'>Recebimentos em aberto</div></div>
+    <div class='kpi red'><div class='kpi-t'>Saídas pendentes</div><div class='kpi-v' style='color:#dc2626'>{moeda(saidas_total)}</div><div class='kpi-sub'>Títulos a pagar</div></div>
+    <div class='kpi {'green' if net >= 0 else 'red'}'><div class='kpi-t'>Saldo projetado líquido</div><div class='kpi-v' style='color:{'#059669' if net >= 0 else '#dc2626'}'>{moeda(net)}</div><div class='kpi-sub'>Entradas − saídas</div></div>
+    <div class='kpi blue'><div class='kpi-t'>Lançamentos</div><div class='kpi-v'>{len(f):,}</div><div class='kpi-sub'>Itens no período filtrado</div></div>
+</div>
+""", unsafe_allow_html=True)
 
 if f.empty:
     st.info("Nenhum lançamento corresponde aos filtros selecionados.")
 else:
     monthly=f.groupby(["Mês","Tipo"],as_index=False)["Valor"].sum()
     monthly["Mês"] = monthly["Mês"].apply(lambda x:pd.Timestamp(x).strftime("%b/%y").title())
-    st.markdown("### Evolução mensal")
+    st.markdown("<div class='section-title'>Evolução mensal · Entradas e saídas pendentes</div>", unsafe_allow_html=True)
     fig=px.bar(monthly,x="Mês",y="Valor",color="Tipo",barmode="group",color_discrete_map={"Entrada pendente":VERDE,"Saída pendente":VERMELHO})
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend_title_text="",margin=dict(l=10,r=10,t=20,b=10))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend_title_text="",font=dict(family="Inter, Segoe UI, Arial, sans-serif",color="#64748b"),margin=dict(l=10,r=10,t=20,b=10),xaxis=dict(showgrid=False),yaxis=dict(gridcolor="#e2e8f0",zerolinecolor="#cbd5e1"))
     st.plotly_chart(fig,use_container_width=True)
     left,right=st.columns(2)
     with left:
-        st.markdown("### Valores por classificação")
+        st.markdown("<div class='section-title'>Valores por classificação</div>", unsafe_allow_html=True)
         grp=f.groupby(["Tipo","Classificação"],as_index=False)["Valor"].sum().sort_values("Valor",ascending=False)
         st.dataframe(grp,hide_index=True,use_container_width=True)
     with right:
-        st.markdown("### Detalhamento mensal")
+        st.markdown("<div class='section-title'>Detalhamento mensal</div>", unsafe_allow_html=True)
         piv=f.pivot_table(index="Classificação",columns="Mês",values="Valor",aggfunc="sum",fill_value=0)
         piv.columns=[pd.Timestamp(x).strftime("%b/%y").title() for x in piv.columns]
         st.dataframe(piv,use_container_width=True)
-    st.markdown("### Lançamentos")
+    st.markdown("<div class='section-title'>Lançamentos</div>", unsafe_allow_html=True)
     show=f.copy(); show["Mês"]=show["Mês"].apply(lambda x:pd.Timestamp(x).strftime("%m/%Y"))
     show["Valor"] = show["Valor"].round(2)
     st.dataframe(show[["Mês","Tipo","Classificação","Fluxo","Origem/Detalhe","Valor"]],hide_index=True,use_container_width=True)
