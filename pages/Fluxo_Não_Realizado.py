@@ -154,7 +154,7 @@ st.markdown(
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
     .main .block-container { padding: 1.1rem 1.4rem 1.4rem; max-width: 99%; }
-    div[data-testid="stVerticalBlock"] { gap: __GAP__; }
+    div[data-testid="stVerticalBlock"] { gap: 0.75rem; }
     [data-testid="stMarkdownContainer"] { color: #0f172a; }
 
     [data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
@@ -201,7 +201,7 @@ st.markdown(
     .pill small { display: block; font-size: 10px; color: #64748b; }
     .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: __KPI_GAP__; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 0.75rem; }
     .kpi {
         padding: 12px 14px; border-radius: 12px; min-height: 100px;
         background: #ffffff; border: 1px solid #e2e8f0;
@@ -279,24 +279,10 @@ st.markdown(
     .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
-    """.replace("__GAP__", "0.75rem").replace("__KPI_GAP__", "0.75rem"),
+""",
     unsafe_allow_html=True,
 )
-st.markdown(
-    """
-    <div class='top'>
-        <div>
-            <h1>FLUXO DE CAIXA NÃO REALIZADO</h1>
-            <p>Visão gerencial · Entradas e saídas pendentes · Valores projetados</p>
-        </div>
-        <div class='pills'>
-            <div class='pill'><small>Base</small><b>Não realizado</b></div>
-            <div class='pill'><small>Atualização</small><b>Dados em aberto</b></div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+
 with st.spinner("Carregando bases e classificações..."):
     errors=[]
     try: mapping=read_classifications()
@@ -337,36 +323,107 @@ net=entr-saidas_total
 def moeda(v):
     return (f"R$ {v:,.2f}").replace(",", "X").replace(".", ",").replace("X", ".")
 
+periodo_txt = f"{pd.Timestamp(start).strftime('%b/%y').title()} – {pd.Timestamp(end).strftime('%b/%y').title()}"
+st.markdown(
+    f"""
+    <div class='top'>
+        <div>
+            <h1>FLUXO DE CAIXA NÃO REALIZADO</h1>
+            <p>Visão gerencial · Entradas e saídas pendentes · Valores projetados</p>
+        </div>
+        <div class='pills'>
+            <div class='pill'><small>Período</small><b>{periodo_txt}</b></div>
+            <div class='pill'><small>Variação líquida</small>
+                <b style="color:{'#059669' if net >= 0 else '#dc2626'}">{moeda(net)}</b></div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown(f"""
-<div class='kpi-grid' style='grid-template-columns:repeat(4, minmax(0, 1fr));'>
+<div class='kpi-grid'>
     <div class='kpi green'><div class='kpi-t'>Entradas pendentes</div><div class='kpi-v' style='color:#059669'>{moeda(entr)}</div><div class='kpi-sub'>Recebimentos em aberto</div></div>
     <div class='kpi red'><div class='kpi-t'>Saídas pendentes</div><div class='kpi-v' style='color:#dc2626'>{moeda(saidas_total)}</div><div class='kpi-sub'>Títulos a pagar</div></div>
     <div class='kpi {'green' if net >= 0 else 'red'}'><div class='kpi-t'>Saldo projetado líquido</div><div class='kpi-v' style='color:{'#059669' if net >= 0 else '#dc2626'}'>{moeda(net)}</div><div class='kpi-sub'>Entradas − saídas</div></div>
+    <div class='kpi amber'><div class='kpi-t'>Recebíveis pendentes</div><div class='kpi-v'>{int((f['Tipo'] == 'Entrada pendente').sum()):,}</div><div class='kpi-sub'>Itens a receber</div></div>
     <div class='kpi blue'><div class='kpi-t'>Lançamentos</div><div class='kpi-v'>{len(f):,}</div><div class='kpi-sub'>Itens no período filtrado</div></div>
 </div>
 """, unsafe_allow_html=True)
 
+from html import escape
+
+def tabela_html(df, colunas=None, max_linhas=None, indice=False):
+    dados = df.copy()
+    if max_linhas is not None:
+        dados = dados.head(max_linhas)
+    if colunas is not None:
+        dados = dados[colunas]
+    headers = list(dados.columns)
+    th = "".join(f"<th>{escape(str(c))}</th>" for c in headers)
+    linhas = []
+    for _, row in dados.iterrows():
+        cells = []
+        for val in row.tolist():
+            if pd.isna(val): texto = ""
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                texto = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            else: texto = str(val)
+            cells.append(f"<td>{escape(texto)}</td>")
+        linhas.append("<tr>" + "".join(cells) + "</tr>")
+    if not linhas:
+        linhas.append(f"<tr><td colspan='{max(1, len(headers))}'>Sem dados no período</td></tr>")
+    return "<div class='tbl-wrap'><table class='tbl'><thead><tr>" + th + "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
+
 if f.empty:
-    st.info("Nenhum lançamento corresponde aos filtros selecionados.")
+    st.markdown("<div class='vazio'>Nenhum lançamento corresponde aos filtros selecionados.</div>", unsafe_allow_html=True)
 else:
-    monthly=f.groupby(["Mês","Tipo"],as_index=False)["Valor"].sum()
-    monthly["Mês"] = monthly["Mês"].apply(lambda x:pd.Timestamp(x).strftime("%b/%y").title())
+    # Demonstrativo principal no mesmo padrão estrutural do Fluxo de Caixa realizado:
+    # linhas por tipo/classificação, colunas mensais e total do período.
+    st.markdown("<div class='section-title'>Demonstrativo · Entradas e saídas pendentes por mês</div>", unsafe_allow_html=True)
+    mensal = f.pivot_table(index=["Tipo", "Classificação"], columns="Mês", values="Valor", aggfunc="sum", fill_value=0)
+    all_months = sorted(f["Mês"].dropna().unique())
+    mensal = mensal.reindex(columns=all_months, fill_value=0)
+    mensal["Total do período"] = mensal.sum(axis=1)
+    mensal = mensal.sort_index(level=[0, 1])
+    mensal = mensal.reset_index()
+    mensal.columns = [pd.Timestamp(c).strftime("%b/%y").title() if isinstance(c, (pd.Timestamp,)) else str(c) for c in mensal.columns]
+    for c in mensal.columns[2:]:
+        mensal[c] = mensal[c].apply(moeda)
+    st.markdown(tabela_html(mensal), unsafe_allow_html=True)
+
+    monthly = f.groupby(["Mês", "Tipo"], as_index=False)["Valor"].sum()
+    monthly["Mês"] = monthly["Mês"].apply(lambda x: pd.Timestamp(x).strftime("%b/%y").title())
     st.markdown("<div class='section-title'>Evolução mensal · Entradas e saídas pendentes</div>", unsafe_allow_html=True)
-    fig=px.bar(monthly,x="Mês",y="Valor",color="Tipo",barmode="group",color_discrete_map={"Entrada pendente":VERDE,"Saída pendente":VERMELHO})
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend_title_text="",font=dict(family="Inter, Segoe UI, Arial, sans-serif",color="#64748b"),margin=dict(l=10,r=10,t=20,b=10),xaxis=dict(showgrid=False),yaxis=dict(gridcolor="#e2e8f0",zerolinecolor="#cbd5e1"))
-    st.plotly_chart(fig,use_container_width=True)
-    left,right=st.columns(2)
+    fig = px.bar(monthly, x="Mês", y="Valor", color="Tipo", barmode="group",
+                 color_discrete_map={"Entrada pendente": VERDE, "Saída pendente": VERMELHO})
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend_title_text="", font=dict(family="Inter, Segoe UI, Arial, sans-serif", color="#64748b", size=11),
+        margin=dict(l=10, r=10, t=16, b=10),
+        xaxis=dict(showgrid=False, tickangle=-90, title="Mês", tickfont=dict(size=10), linecolor="#e2e8f0"),
+        yaxis=dict(gridcolor="#e2e8f0", zerolinecolor="#cbd5e1", title="Valor", tickformat="~s"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), bargap=0.22)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    left, right = st.columns(2)
     with left:
         st.markdown("<div class='section-title'>Valores por classificação</div>", unsafe_allow_html=True)
-        grp=f.groupby(["Tipo","Classificação"],as_index=False)["Valor"].sum().sort_values("Valor",ascending=False)
-        st.dataframe(grp,hide_index=True,use_container_width=True)
+        grp = f.groupby(["Tipo", "Classificação"], as_index=False)["Valor"].sum().sort_values(["Tipo", "Valor"], ascending=[True, False])
+        grp["Valor"] = grp["Valor"].apply(moeda)
+        st.markdown(tabela_html(grp), unsafe_allow_html=True)
     with right:
         st.markdown("<div class='section-title'>Detalhamento mensal</div>", unsafe_allow_html=True)
-        piv=f.pivot_table(index="Classificação",columns="Mês",values="Valor",aggfunc="sum",fill_value=0)
-        piv.columns=[pd.Timestamp(x).strftime("%b/%y").title() for x in piv.columns]
-        st.dataframe(piv,use_container_width=True)
+        piv = f.pivot_table(index="Classificação", columns="Mês", values="Valor", aggfunc="sum", fill_value=0).sort_index()
+        piv.columns = [pd.Timestamp(x).strftime("%b/%y").title() for x in piv.columns]
+        piv = piv.reset_index()
+        for col in piv.columns[1:]: piv[col] = piv[col].apply(moeda)
+        st.markdown(tabela_html(piv), unsafe_allow_html=True)
+
     st.markdown("<div class='section-title'>Lançamentos</div>", unsafe_allow_html=True)
-    show=f.copy(); show["Mês"]=show["Mês"].apply(lambda x:pd.Timestamp(x).strftime("%m/%Y"))
-    show["Valor"] = show["Valor"].round(2)
-    st.dataframe(show[["Mês","Tipo","Classificação","Fluxo","Origem/Detalhe","Valor"]],hide_index=True,use_container_width=True)
-    st.download_button("Baixar dados filtrados (CSV)",show.to_csv(index=False).encode("utf-8-sig"),"fluxo_caixa_nao_realizado.csv","text/csv")
+    show = f.copy()
+    show["Mês"] = show["Mês"].apply(lambda x: pd.Timestamp(x).strftime("%m/%Y"))
+    show["Valor"] = show["Valor"].apply(moeda)
+    show = show[["Mês", "Tipo", "Classificação", "Fluxo", "Origem/Detalhe", "Valor"]]
+    st.markdown(tabela_html(show), unsafe_allow_html=True)
+    st.download_button("Baixar dados filtrados (CSV)", f.to_csv(index=False).encode("utf-8-sig"), "fluxo_caixa_nao_realizado.csv", "text/csv")
