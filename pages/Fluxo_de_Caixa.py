@@ -1349,21 +1349,29 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     rows = []
     if x.empty:
         return rows
-    # Em desembolsos de CAPEX, o sinal representa a convenção contábil;
-    # na visualização mostramos magnitude positiva sem alterar os cálculos.
-    if exibir_abs:
-        x = x.copy()
-        x["Valor"] = x["Valor"].abs()
+    # Em CAPEX, primeiro compensamos valores positivos e negativos da mesma
+    # classificação/conta no mês; só depois exibimos a magnitude positiva.
+    # Aplicar abs() em cada lançamento antes da soma transformava abatimentos
+    # da FCx_Obra em novos desembolsos e inflava a linha Investimentos / CAPEX.
+    x = x.copy()
     if titulo:
         rows.append(
             f"<tr class='subsec'><td>{titulo}</td>"
             + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
         )
-    piv = x.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
+    if exibir_abs:
+        # Compensa no nível do detalhe/conta contábil antes de somar a linha
+        # principal. Assim a parcela alocada à obra abate a mesma conta, sem
+        # virar um desembolso positivo nem compensar contas diferentes.
+        det_visual = det.copy()
+        det_visual["Valor"] = det_visual["Valor"].abs()
+        piv = det_visual.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+    else:
+        piv = x.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
     piv = piv.reindex(columns=refs_sel, fill_value=0.0)
     piv["__t__"] = piv.sum(axis=1)
     piv = piv.sort_values("__t__", ascending=False)
-    det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
     uid = 0
     for classif, r in piv.iterrows():
         uid += 1
@@ -1391,6 +1399,8 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
             )
             ps = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
             ps = ps.reindex(columns=refs_sel, fill_value=0.0)
+            if exibir_abs:
+                ps = ps.abs()
             ps["__t__"] = ps.sum(axis=1)
             ps = ps.sort_values("__t__", ascending=False)
             for dn, rd in ps.iterrows():
