@@ -159,6 +159,11 @@ candidatos = [
         "Fluxo de Caixa",
         "Fluxo_de_Caixa",
     ),
+    (
+        "pages/Fluxo_Não_Realizado.py",
+        "Fluxo de Caixa Não Realizado",
+        "Fluxo_Nao_Realizado",
+    ),
 ]
 
 pages = []
