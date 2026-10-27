@@ -1345,10 +1345,15 @@ st.markdown(
 )
 
 
-def linhas_df(x, titulo, uid_prefix):
+def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     rows = []
     if x.empty:
         return rows
+    # Em desembolsos de CAPEX, o sinal representa a convenção contábil;
+    # na visualização mostramos magnitude positiva sem alterar os cálculos.
+    if exibir_abs:
+        x = x.copy()
+        x["Valor"] = x["Valor"].abs()
     if titulo:
         rows.append(
             f"<tr class='subsec'><td>{titulo}</td>"
@@ -1460,7 +1465,7 @@ else:
         "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
     )
-    html.extend(linhas_df(df[df["Papel"] == "capex"], "(−) Desembolsos em CAPEX", "k"))
+    html.extend(linhas_df(df[df["Papel"] == "capex"], "(−) Desembolsos em CAPEX", "k", exibir_abs=True))
     html.append(linha_tot("= FCI (− CAPEX)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO))
 
     # ---- 3. FCF ----
