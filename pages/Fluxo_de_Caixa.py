@@ -1468,15 +1468,12 @@ else:
     df_capex = df[df["Papel"] == "capex"].copy()
     html.extend(linhas_df(df_capex, "(−) Desembolsos em CAPEX", "k", exibir_abs=True))
 
-    # A tabela apresenta desembolsos como magnitudes positivas. Portanto, o
-    # total visual precisa somar a mesma base positiva exibida nas categorias;
-    # o impacto negativo do investimento continua preservado em s_fci/s_var.
-    s_capex_visual = (
-        df_capex.assign(_ValorVisual=df_capex["Valor"].abs())
-        .groupby("Ref")["_ValorVisual"]
-        .sum()
-        .reindex(refs_sel, fill_value=0.0)
-    )
+    # As linhas de obras são uma abertura/segregação do CAPEX, não valores
+    # adicionais a somar ao grupo "Investimentos / CAPEX". Por isso, o total
+    # deve refletir o CAPEX líquido efetivamente considerado no FCI (s_cap),
+    # exibido como magnitude positiva, e não a soma dos valores absolutos de
+    # cada linha, que duplicaria as obras e outras compensações de sinal.
+    s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
     html.append(linha_tot("Total desembolsos em CAPEX", s_capex_visual, VERMELHO))
 
     # ---- 3. FCF ----
