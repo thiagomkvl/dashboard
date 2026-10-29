@@ -243,9 +243,19 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
             continue
 
         if section == "impostos":
-            # Impostos: exibir o rótulo exatamente como aparece na tabela dinâmica,
-            # sem aplicar o de-para da Classificacao_FCx.
-            classification = label_s
+            # Classificação específica para impostos: estes rótulos da tabela dinâmica
+            # são consolidados em "Impostos Correntes". Os demais permanecem com
+            # o nome original da tabela dinâmica, sem aplicar o de-para da planilha.
+            impostos_correntes = {
+                "inss",
+                "iptu",
+                "irrf pf e pj",
+                "iss",
+                "pis cofins csll parcelamento",
+                "pis cofins csll retidos na fonte",
+                "taxas recolhimento",
+            }
+            classification = "Impostos Correntes" if label_key in impostos_correntes else label_s
             flow = "Impostos pendentes"
         else:
             # Fornecedores continuam classificados pela Conta Contábil.
