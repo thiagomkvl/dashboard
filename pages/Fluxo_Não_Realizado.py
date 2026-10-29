@@ -76,25 +76,71 @@ def read_tab(name):
     raise last
 
 def read_classifications():
-    df = read_tab(ABA_CLASSIF)
-    if df.empty: return {}
-    m = colmap(df)
-    desc = next((m[x] for x in ("descricao", "conta contabil", "categoria") if x in m), df.columns[0])
-    cls = next((c for c in df.columns if "classific" in key(c) and "fluxo" not in key(c)), df.columns[1] if len(df.columns)>1 else None)
-    flx = next((c for c in df.columns if "fluxo" in key(c)), df.columns[2] if len(df.columns)>2 else None)
-    out = {}
-    if cls is None: return out
-    for _, r in df.iterrows():
-        d, c = key(r.get(desc, "")), str(r.get(cls, "") or "").strip()
-        f = key(r.get(flx, "")) if flx else ""
-        if not d or not c or c.lower() == "nan": continue
-        flow = FLUXO_INV if "invest" in f else FLUXO_FIN if "financ" in f else FLUXO_OP
-        out[d] = (c, flow)
-    return out
+    """Lê o de-para oficial da aba Classificacao_FCx.
 
-def classify(value, mapping):
+    Mantém mapas separados para Conta Contábil (fornecedores) e Conta
+    Financeira (impostos), evitando que nomes iguais em colunas diferentes
+    sobrescrevam a classificação correta.
+    """
+    df = read_tab(ABA_CLASSIF)
+    maps = {"contabil": {}, "financeira": {}, "geral": {}}
+    if df.empty:
+        return maps
+
+    cls_col = next((c for c in df.columns if "classific" in key(c) and "fluxo" not in key(c)), None)
+    flow_col = next((c for c in df.columns if "fluxo" in key(c)), None)
+    if cls_col is None:
+        cls_col = df.columns[1] if len(df.columns) > 1 else None
+    if flow_col is None:
+        flow_col = df.columns[2] if len(df.columns) > 2 else None
+    if cls_col is None:
+        return maps
+
+    account_cols = {
+        "contabil": next((c for c in df.columns if "conta contabil" in key(c)), None),
+        "financeira": next((c for c in df.columns if "conta financeira" in key(c)), None),
+    }
+    general_cols = [c for c in df.columns if any(token in key(c) for token in
+                    ("descricao", "categoria", "fornecedor"))]
+    if not any(account_cols.values()) and not general_cols:
+        general_cols = [df.columns[0]]
+
+    for _, r in df.iterrows():
+        classificacao = str(r.get(cls_col, "") or "").strip()
+        if not classificacao or classificacao.lower() == "nan":
+            continue
+        f = key(r.get(flow_col, "")) if flow_col else ""
+        fluxo = FLUXO_INV if "invest" in f else FLUXO_FIN if "financ" in f else FLUXO_OP
+        resultado = (classificacao, fluxo)
+        for tipo, col in account_cols.items():
+            if col is not None:
+                valor = key(r.get(col, ""))
+                if valor and valor not in {"nan", "none", "-"}:
+                    maps[tipo][valor] = resultado
+        for col in general_cols:
+            valor = key(r.get(col, ""))
+            if valor and valor not in {"nan", "none", "-"}:
+                maps["geral"][valor] = resultado
+    return maps
+
+
+def classify(value, mapping, account_type="contabil"):
+    """Classifica usando primeiro a coluna de conta correta e depois fallback."""
     k = key(value)
-    if k in mapping: return mapping[k]
+    if isinstance(mapping, dict) and any(isinstance(v, dict) for v in mapping.values()):
+        candidates = [mapping.get(account_type, {}), mapping.get("geral", {})]
+        for source in candidates:
+            if k in source:
+                return source[k]
+        for source in candidates:
+            matches = [(len(mk), val) for mk, val in source.items()
+                       if len(mk) >= 4 and (mk in k or k in mk)]
+            if matches:
+                return sorted(matches, key=lambda x: x[0], reverse=True)[0][1]
+        return ("Não classificado", FLUXO_OP)
+    # Compatibilidade defensiva caso o chamador forneça um mapa simples.
+    if k in mapping:
+        return mapping[k]
     matches = [(len(mk), val) for mk, val in mapping.items() if len(mk) >= 6 and (mk in k or k in mk)]
     return sorted(matches, key=lambda x: x[0], reverse=True)[0][1] if matches else ("Não classificado", FLUXO_OP)
 
@@ -124,57 +170,95 @@ def parse_month_header(v, default_year):
     return None
 
 def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
-    """Lê pivôs empilhados: detecta cada linha de meses e usa o rótulo da primeira coluna.
-    Os rótulos da seção de fornecedores são Conta Contábil; na seção de impostos,
-    os próprios rótulos representam Conta Financeira, conforme a dinâmica de origem.
+    """Lê tabelas dinâmicas empilhadas de fornecedores e impostos.
+
+    Cada bloco possui seu próprio cabeçalho mensal. Os rótulos da primeira
+    coluna são usados como Conta Contábil no bloco de fornecedores e Conta
+    Financeira no bloco de impostos. A leitura não depende de a classificação
+    existir: movimentos sem correspondência permanecem como Não classificado.
     """
     out = []
     if raw is None or raw.empty:
         return pd.DataFrame(), [f"A aba {tab_name} está vazia."]
+
     grid = [list(raw.columns)] + raw.astype(object).where(pd.notna(raw), None).values.tolist()
     ncols = max(len(r) for r in grid)
-    grid = [r + [None] * (ncols-len(r)) for r in grid]
+    grid = [r + [None] * (ncols - len(r)) for r in grid]
     active_map = {}
     active_year = default_year
-    saw_header = False
-    for i, row in enumerate(grid):
-        # Títulos como '... 2025' ou '... 2026' definem o ano do pivô seguinte.
-        row_text = " ".join(str(x) for x in row if x is not None)
+    section = "fornecedores"
+    headers_found = 0
+    tax_rows_found = 0
+
+    for row in grid:
+        row_text = " ".join(str(x) for x in row if x is not None).strip()
+        row_key = key(row_text)
         years = re.findall(r"\b(20\d{2})\b", row_text)
+        # Identifica o bloco pelo título da tabela dinâmica.
+        if "posicao impostos vencidos" in row_key or "impostos vencidos" in row_key:
+            section = "impostos"
+        elif "posicao fornecedores vencidos" in row_key or "fornecedores vencidos" in row_key:
+            section = "fornecedores"
         if years and not any(parse_month_header(x, int(years[-1])) for x in row):
             active_year = int(years[-1])
+
         month_map = {}
         for j in range(1, ncols):
             ref = parse_month_header(row[j], active_year)
             if ref is not None:
                 month_map[j] = ref
-        # Cabeçalhos das tabelas dinâmicas têm vários meses e reiniciam a seção.
         if len(month_map) >= 2:
             active_map = month_map
-            saw_header = True
+            headers_found += 1
+            # Se o cabeçalho identifica Conta Financeira, trata esse bloco como impostos.
+            first_cell = key(row[0]) if row else ""
+            if "financeira" in first_cell:
+                section = "impostos"
+            elif "contabil" in first_cell:
+                section = "fornecedores"
             continue
         if not active_map:
             continue
+
         label = row[0] if row else None
         label_s = str(label).strip() if label is not None else ""
         label_key = key(label_s)
-        if not label_key or label_key in {"total geral", "total", "total do periodo", "total do período", "conta contabil", "conta contábil", "conta financeira", "convenio conta", "convenio", "mes faturamento mes", "inadimplencia contas faturadas", "posicao fornecedores vencidos", "posicao impostos vencidos"} or label_key.startswith("total geral"):
+        if not label_key:
             continue
-        # Ignora títulos, linhas de seção e nomes de campos que não são contas.
-        if any(x in label_key for x in ["inadimplencia contas faturadas", "posicao fornecedores vencidos", "posicao impostos vencidos"]):
+        if label_key.startswith("total") or label_key in {
+            "conta contabil", "conta financeira", "convenio conta", "convenio",
+            "mes faturamento mes", "inadimplencia contas faturadas",
+            "posicao fornecedores vencidos", "posicao impostos vencidos",
+        }:
             continue
+        if any(x in label_key for x in ("inadimplencia contas faturadas", "posicao fornecedores vencidos", "posicao impostos vencidos")):
+            continue
+
+        classification, flow = classify(label_s, mapping, "financeira" if section == "impostos" else "contabil")
+        found_in_row = False
         for j, ref in active_map.items():
             val = money(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            classification, flow = classify(label_s, mapping)
-            out.append({"Mês": ref, "Valor": abs(val), "Classificação": classification,
-                        "Fluxo": flow, "Tipo": kind, "Conta origem": label_s,
-                        "Origem/Detalhe": f"{tab_name} — {label_s}"})
+            found_in_row = True
+            out.append({
+                "Mês": ref, "Valor": abs(val), "Classificação": classification,
+                "Fluxo": flow, "Tipo": kind, "Conta origem": label_s,
+                "Origem/Detalhe": f"{tab_name} — {'Impostos / Conta Financeira' if section == 'impostos' else 'Fornecedores / Conta Contábil'} — {label_s}",
+                "Grupo origem": section,
+            })
+        if found_in_row and section == "impostos":
+            tax_rows_found += 1
+
     if not out:
-        msg = f"Não identifiquei linhas mensais nas tabelas dinâmicas da aba {tab_name}. Confira se os meses estão na primeira linha de cabeçalho de cada pivô."
+        msg = f"Não identifiquei linhas mensais nas tabelas dinâmicas da aba {tab_name}. Confira os cabeçalhos mensais e os valores."
         return pd.DataFrame(), [msg]
-    return pd.DataFrame(out), []
+    warnings = []
+    if headers_found == 0:
+        warnings.append(f"Não encontrei cabeçalhos mensais em {tab_name}.")
+    if "2025" in tab_name and tax_rows_found == 0:
+        warnings.append(f"A tabela de impostos de {tab_name} não foi identificada; confira se o bloco 'Posição Impostos Vencidos 2025' está na mesma aba e se os meses estão em colunas separadas.")
+    return pd.DataFrame(out), warnings
 
 def load_outflows(mapping):
     partes, avisos = [], []
