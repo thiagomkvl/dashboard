@@ -124,24 +124,31 @@ def read_classifications():
     return maps
 
 
-def classify(value, mapping, account_type="contabil"):
-    """Classifica usando primeiro a coluna de conta correta e depois fallback."""
+def classify(value, mapping, account_type="contabil", strict_account=False):
+    """Classifica pela chave correta; impostos não usam fallback genérico."""
     k = key(value)
     if isinstance(mapping, dict) and any(isinstance(v, dict) for v in mapping.values()):
-        candidates = [mapping.get(account_type, {}), mapping.get("geral", {})]
-        for source in candidates:
-            if k in source:
-                return source[k]
-        for source in candidates:
-            matches = [(len(mk), val) for mk, val in source.items()
-                       if len(mk) >= 4 and (mk in k or k in mk)]
-            if matches:
-                return sorted(matches, key=lambda x: x[0], reverse=True)[0][1]
+        primary = mapping.get(account_type, {})
+        if k in primary:
+            return primary[k]
+        matches = [(len(mk), val) for mk, val in primary.items()
+                   if len(mk) >= 3 and (mk in k or k in mk)]
+        if matches:
+            return sorted(matches, key=lambda x: x[0], reverse=True)[0][1]
+        if strict_account:
+            return ("Não classificado", FLUXO_OP)
+        general = mapping.get("geral", {})
+        if k in general:
+            return general[k]
+        matches = [(len(mk), val) for mk, val in general.items()
+                   if len(mk) >= 4 and (mk in k or k in mk)]
+        if matches:
+            return sorted(matches, key=lambda x: x[0], reverse=True)[0][1]
         return ("Não classificado", FLUXO_OP)
-    # Compatibilidade defensiva caso o chamador forneça um mapa simples.
     if k in mapping:
         return mapping[k]
-    matches = [(len(mk), val) for mk, val in mapping.items() if len(mk) >= 6 and (mk in k or k in mk)]
+    matches = [(len(mk), val) for mk, val in mapping.items()
+               if len(mk) >= 6 and (mk in k or k in mk)]
     return sorted(matches, key=lambda x: x[0], reverse=True)[0][1] if matches else ("Não classificado", FLUXO_OP)
 
 def locate_header(raw, required):
@@ -189,6 +196,7 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
     section = "fornecedores"
     headers_found = 0
     tax_rows_found = 0
+    tax_unclassified = set()
 
     for row in grid:
         row_text = " ".join(str(x) for x in row if x is not None).strip()
@@ -234,7 +242,12 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
         if any(x in label_key for x in ("inadimplencia contas faturadas", "posicao fornecedores vencidos", "posicao impostos vencidos")):
             continue
 
-        classification, flow = classify(label_s, mapping, "financeira" if section == "impostos" else "contabil")
+        classification, flow = classify(
+            label_s,
+            mapping,
+            "financeira" if section == "impostos" else "contabil",
+            strict_account=(section == "impostos"),
+        )
         found_in_row = False
         for j, ref in active_map.items():
             val = money(row[j] if j < len(row) else 0)
@@ -249,6 +262,8 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
             })
         if found_in_row and section == "impostos":
             tax_rows_found += 1
+            if classification == "Não classificado":
+                tax_unclassified.add(label_s)
 
     if not out:
         msg = f"Não identifiquei linhas mensais nas tabelas dinâmicas da aba {tab_name}. Confira os cabeçalhos mensais e os valores."
@@ -258,6 +273,11 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
         warnings.append(f"Não encontrei cabeçalhos mensais em {tab_name}.")
     if "2025" in tab_name and tax_rows_found == 0:
         warnings.append(f"A tabela de impostos de {tab_name} não foi identificada; confira se o bloco 'Posição Impostos Vencidos 2025' está na mesma aba e se os meses estão em colunas separadas.")
+    if tax_unclassified:
+        warnings.append(
+            f"Impostos sem correspondência na Conta Financeira de Classificacao_FCx ({tab_name}): "
+            + ", ".join(sorted(tax_unclassified))
+        )
     return pd.DataFrame(out), warnings
 
 def load_outflows(mapping):
