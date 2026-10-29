@@ -242,12 +242,14 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
         if any(x in label_key for x in ("inadimplencia contas faturadas", "posicao fornecedores vencidos", "posicao impostos vencidos")):
             continue
 
-        classification, flow = classify(
-            label_s,
-            mapping,
-            "financeira" if section == "impostos" else "contabil",
-            strict_account=(section == "impostos"),
-        )
+        if section == "impostos":
+            # Impostos: exibir o rótulo exatamente como aparece na tabela dinâmica,
+            # sem aplicar o de-para da Classificacao_FCx.
+            classification = label_s
+            flow = "Impostos pendentes"
+        else:
+            # Fornecedores continuam classificados pela Conta Contábil.
+            classification, flow = classify(label_s, mapping, "contabil")
         found_in_row = False
         for j, ref in active_map.items():
             val = money(row[j] if j < len(row) else 0)
@@ -262,8 +264,6 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
             })
         if found_in_row and section == "impostos":
             tax_rows_found += 1
-            if classification == "Não classificado":
-                tax_unclassified.add(label_s)
 
     if not out:
         msg = f"Não identifiquei linhas mensais nas tabelas dinâmicas da aba {tab_name}. Confira os cabeçalhos mensais e os valores."
@@ -273,11 +273,6 @@ def parse_pivot_matrix(raw, default_year, kind, mapping, tab_name):
         warnings.append(f"Não encontrei cabeçalhos mensais em {tab_name}.")
     if "2025" in tab_name and tax_rows_found == 0:
         warnings.append(f"A tabela de impostos de {tab_name} não foi identificada; confira se o bloco 'Posição Impostos Vencidos 2025' está na mesma aba e se os meses estão em colunas separadas.")
-    if tax_unclassified:
-        warnings.append(
-            f"Impostos sem correspondência na Conta Financeira de Classificacao_FCx ({tab_name}): "
-            + ", ".join(sorted(tax_unclassified))
-        )
     return pd.DataFrame(out), warnings
 
 def load_outflows(mapping):
