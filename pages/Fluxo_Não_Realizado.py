@@ -451,6 +451,9 @@ st.markdown(
     .grp .sub-row { display: none; }
     .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+    .tbl .grp .sub-row { display: none; }
+    .tbl .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+    .tbl .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """,
@@ -527,42 +530,121 @@ st.markdown(f"""
 
 from html import escape
 
-def tabela_html(df, colunas=None, max_linhas=None, indice=False):
-    dados = df.copy()
-    if max_linhas is not None:
-        dados = dados.head(max_linhas)
-    if colunas is not None:
-        dados = dados[colunas]
-    headers = list(dados.columns)
-    th = "".join(f"<th>{escape(str(c))}</th>" for c in headers)
-    linhas = []
-    for _, row in dados.iterrows():
-        cells = []
-        for val in row.tolist():
-            if pd.isna(val): texto = ""
-            elif isinstance(val, (int, float)) and not isinstance(val, bool):
-                texto = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            else: texto = str(val)
-            cells.append(f"<td>{escape(texto)}</td>")
-        linhas.append("<tr>" + "".join(cells) + "</tr>")
-    if not linhas:
-        linhas.append(f"<tr><td colspan='{max(1, len(headers))}'>Sem dados no período</td></tr>")
-    return "<div class='tbl-wrap'><table class='tbl'><thead><tr>" + th + "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
+def fmt_money(v):
+    try:
+        if pd.isna(v):
+            return "R$ 0,00"
+        return moeda(float(v))
+    except (TypeError, ValueError):
+        return "R$ 0,00"
+
+def html_cell(value, bold=False):
+    text = escape(str(value))
+    return f"<b>{text}</b>" if bold else text
+
+def row_cells(values):
+    return "".join(f"<td>{v}</td>" for v in values)
 
 if f.empty:
     st.markdown("<div class='vazio'>Nenhum lançamento corresponde aos filtros selecionados.</div>", unsafe_allow_html=True)
 else:
-    # Demonstrativo principal no mesmo padrão estrutural do Fluxo de Caixa realizado:
-    # linhas por tipo/classificação, colunas mensais e total do período.
-    st.markdown("<div class='section-title'>Demonstrativo · Entradas e saídas pendentes por mês</div>", unsafe_allow_html=True)
-    mensal = f.pivot_table(index=["Tipo", "Classificação"], columns="Mês", values="Valor", aggfunc="sum", fill_value=0)
-    all_months = sorted(f["Mês"].dropna().unique())
-    mensal = mensal.reindex(columns=all_months, fill_value=0)
-    mensal["Total do período"] = mensal.sum(axis=1)
-    mensal = mensal.sort_index(level=[0, 1])
-    mensal = mensal.reset_index()
-    mensal.columns = [pd.Timestamp(c).strftime("%b/%y").title() if isinstance(c, (pd.Timestamp,)) else str(c) for c in mensal.columns]
-    for c in mensal.columns[2:]:
-        mensal[c] = mensal[c].apply(moeda)
-    st.markdown(tabela_html(mensal), unsafe_allow_html=True)
+    st.markdown(
+        "<div class='section-title'>Demonstrativo · Entradas e saídas pendentes por mês · clique na seta para composição</div>",
+        unsafe_allow_html=True,
+    )
 
+    # Mantém todas as competências do intervalo selecionado, inclusive meses sem movimento.
+    refs_sel = list(pd.date_range(pd.Timestamp(start).replace(day=1), pd.Timestamp(end).replace(day=1), freq="MS"))
+    if not refs_sel:
+        refs_sel = sorted(pd.to_datetime(f["Mês"].dropna().unique()))
+    x_labels = [pd.Timestamp(m).strftime("%b/%y").upper() for m in refs_sel]
+
+    # A tabela usa o mesmo padrão do Fluxo de Caixa realizado: linhas expansíveis,
+    # valores por mês e totalizador no final de cada linha e de cada grupo.
+    def render_class_rows(df_tipo, prefix):
+        rows = []
+        if df_tipo.empty:
+            return rows
+        grouped = df_tipo.groupby("Classificação", dropna=False)["Valor"].sum().sort_values(ascending=False)
+        uid = 0
+        for classificacao, _ in grouped.items():
+            class_name = str(classificacao) if pd.notna(classificacao) else "Não classificado"
+            sub = df_tipo[df_tipo["Classificação"].fillna("Não classificado").astype(str) == class_name].copy()
+            pivot = sub.pivot_table(index="Mês", values="Valor", aggfunc="sum", fill_value=0)
+            vals = [float(pivot["Valor"].get(pd.Timestamp(m), 0.0)) for m in refs_sel]
+            total = sum(vals)
+            detail_col = "Origem/Detalhe" if "Origem/Detalhe" in sub.columns else "Classificação"
+            detail = sub.groupby([detail_col, "Mês"], dropna=False)["Valor"].sum().reset_index()
+            detail_names = detail[detail_col].fillna("Sem detalhe").astype(str).unique().tolist()
+            has_detail = len(detail_names) > 1 or any(key(d) != key(class_name) for d in detail_names)
+            uid += 1
+            checkbox_id = f"{prefix}_{uid}"
+            color = "#059669" if prefix == "ent" else "#dc2626"
+            if has_detail:
+                label = (
+                    f"<label class='drill-label' for='{checkbox_id}'>"
+                    f"<input type='checkbox' id='{checkbox_id}' class='toggle-checkbox'>"
+                    f"<span class='indicator'>▶</span><span class='dot' style='background:{color}'></span>"
+                    f"{escape(class_name)}</label>"
+                )
+                rows.append(f"<tbody class='grp'><tr><td>{label}</td>{row_cells([fmt_money(v) for v in vals] + [fmt_money(total)])}</tr>")
+                det_pivot = detail.pivot_table(index=detail_col, columns="Mês", values="Valor", aggfunc="sum", fill_value=0)
+                for detail_name, detail_row in det_pivot.iterrows():
+                    dvals = [float(detail_row.get(pd.Timestamp(m), 0.0)) for m in refs_sel]
+                    dtotal = sum(dvals)
+                    rows.append(
+                        f"<tr class='sub-row'><td>↳ {escape(str(detail_name))}</td>"
+                        f"{row_cells([fmt_money(v) for v in dvals] + [fmt_money(dtotal)])}</tr>"
+                    )
+                rows.append("</tbody>")
+            else:
+                rows.append(
+                    f"<tr><td><span class='dot' style='background:{color}'></span>{escape(class_name)}</td>"
+                    f"{row_cells([fmt_money(v) for v in vals] + [fmt_money(total)])}</tr>"
+                )
+        return rows
+
+    html = []
+    col_count = len(refs_sel) + 2
+
+    entradas_f = f[f["Tipo"] == "Entrada pendente"].copy()
+    saidas_f = f[f["Tipo"] == "Saída pendente"].copy()
+
+    html.append(f"<tr class='sec'><td colspan='{col_count}'>ENTRADAS PENDENTES</td></tr>")
+    html.extend(render_class_rows(entradas_f, "ent"))
+    entrada_mes = entradas_f.groupby("Mês")["Valor"].sum()
+    entrada_vals = [float(entrada_mes.get(pd.Timestamp(m), 0.0)) for m in refs_sel]
+    html.append(
+        f"<tr class='tot'><td>Total entradas pendentes</td>"
+        f"{row_cells([f'<span style=\"color:#059669\">{fmt_money(v)}</span>' for v in entrada_vals] + [f'<span style=\"color:#059669\">{fmt_money(sum(entrada_vals))}</span>'])}</tr>"
+    )
+
+    html.append(f"<tr class='sec'><td colspan='{col_count}'>SAÍDAS PENDENTES</td></tr>")
+    html.extend(render_class_rows(saidas_f, "sai"))
+    saida_mes = saidas_f.groupby("Mês")["Valor"].sum()
+    saida_vals = [float(saida_mes.get(pd.Timestamp(m), 0.0)) for m in refs_sel]
+    html.append(
+        f"<tr class='tot'><td>Total saídas pendentes</td>"
+        f"{row_cells([f'<span style=\"color:#dc2626\">{fmt_money(v)}</span>' for v in saida_vals] + [f'<span style=\"color:#dc2626\">{fmt_money(sum(saida_vals))}</span>'])}</tr>"
+    )
+
+    net_vals = [entrada_vals[i] - saida_vals[i] for i in range(len(refs_sel))]
+    net_cells = [
+        f"<span style='color:{'#059669' if v >= 0 else '#dc2626'};font-weight:800'>{fmt_money(v)}</span>"
+        for v in net_vals
+    ]
+    net_total = sum(net_vals)
+    net_cells.append(
+        f"<span style='color:{'#059669' if net_total >= 0 else '#dc2626'};font-weight:800'>{fmt_money(net_total)}</span>"
+    )
+    html.append(
+        "<tr class='res'><td>SALDO PROJETADO LÍQUIDO (ENTRADAS − SAÍDAS)</td>"
+        + row_cells(net_cells) + "</tr>"
+    )
+
+    headers = ["Descrição"] + x_labels + ["Total do período"]
+    th = "".join(f"<th>{escape(h)}</th>" for h in headers)
+    st.markdown(
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>{''.join(html)}</table></div>",
+        unsafe_allow_html=True,
+    )
