@@ -244,8 +244,10 @@ def formatar_moeda_curta(valor):
 
 
 def extract_month(m):
-    """Extrai o mês de formatos numéricos, Jan/26, 2027-01 ou nomes de meses."""
+    """Extrai o mês de cabeçalhos como JANEIRO, 01/2026, 2026-01 ou Jan-2026."""
     try:
+        if pd.isna(m):
+            return 0
         s = str(m).strip().lower()
         nomes = {
             'jan': 1, 'janeiro': 1, 'fev': 2, 'fevereiro': 2, 'mar': 3, 'março': 3, 'marco': 3,
@@ -253,14 +255,16 @@ def extract_month(m):
             'jul': 7, 'julho': 7, 'ago': 8, 'agosto': 8, 'set': 9, 'setembro': 9,
             'out': 10, 'outubro': 10, 'nov': 11, 'novembro': 11, 'dez': 12, 'dezembro': 12,
         }
-        m = re.search(r'(?:^|[^a-z])([a-zç]+)', s)
-        if m and m.group(1)[:3] in nomes:
-            return nomes[m.group(1)[:3]]
-        nums = re.findall(r'\d+', s)
+        nome = re.search(r'[a-zç]+', s)
+        if nome and nome.group(0)[:3] in nomes:
+            return nomes[nome.group(0)[:3]]
+        nums = re.findall(r'\\d+', s)
         if len(nums) >= 2:
-            # YYYY-MM ou MM/YYYY
             a, b = int(nums[0]), int(nums[1])
-            return b if a >= 1000 and 1 <= b <= 12 else (a if 1 <= a <= 12 else 0)
+            if a >= 1900 and 1 <= b <= 12:  # YYYY-MM
+                return b
+            if 1 <= a <= 12 and b >= 1900:  # MM/YYYY
+                return a
         if nums:
             n = int(nums[0])
             return n if 1 <= n <= 12 else 0
@@ -332,7 +336,7 @@ def carregar_dados_obras_detalhado():
             'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6, 'JULHO': 7,
             'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
         }
-        meses_existentes = [c for c in df_orc.columns if c.upper() in map_meses]
+        meses_existentes = [c for c in df_orc.columns if extract_month(c) in range(1, 13)]
         col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
         col_item = next((c for c in df_orc.columns if c.upper() in [
             'CATEGORIA', 'FASE', 'ITEM', 'DESCRIÇÃO', 'DESCRICAO', 'ETAPA', 'SERVIÇO', 'SERVICO', 'DETALHE', 'CONTA'
@@ -357,8 +361,13 @@ def carregar_dados_obras_detalhado():
                 id_vars = ['Obra', 'Item', 'Ano']
 
         df_orc_melt = df_orc.melt(id_vars=id_vars, value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
-        df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
+        df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].apply(extract_month)
+        ano_coluna = pd.to_numeric(df_orc_melt['Ano'], errors='coerce')
+        ano_cabecalho = df_orc_melt['Mes_Nome'].apply(lambda x: extract_year(x, None))
+        df_orc_melt['Ano'] = ano_cabecalho.where(ano_cabecalho.notna(), ano_coluna)
         df_orc_melt['Ano'] = pd.to_numeric(df_orc_melt['Ano'], errors='coerce').fillna(2026).astype(int)
+        nomes_mes_abrev = {1:'Jan', 2:'Fev', 3:'Mar', 4:'Abr', 5:'Mai', 6:'Jun', 7:'Jul', 8:'Ago', 9:'Set', 10:'Out', 11:'Nov', 12:'Dez'}
+        df_orc_melt['Competencia'] = df_orc_melt['Mes'].map(nomes_mes_abrev) + '-' + df_orc_melt['Ano'].astype(str)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
 
         df_fases = pd.DataFrame()
