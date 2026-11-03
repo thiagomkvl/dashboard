@@ -258,7 +258,7 @@ def extract_month(m):
         nome = re.search(r'[a-zç]+', s)
         if nome and nome.group(0)[:3] in nomes:
             return nomes[nome.group(0)[:3]]
-        nums = re.findall(r'\\d+', s)
+        nums = re.findall(r'\d+', s)
         if len(nums) >= 2:
             a, b = int(nums[0]), int(nums[1])
             if a >= 1900 and 1 <= b <= 12:  # YYYY-MM
@@ -282,13 +282,18 @@ def extract_year(value, default=None):
             return int(value.year)
         if hasattr(value, 'year') and hasattr(value, 'month'):
             return int(value.year)
-        nums = re.findall(r'\d{2,4}', str(value))
-        for n in nums:
-            y = int(n)
-            if y >= 1900:
-                return y
-            if len(n) == 2:
-                return 2000 + y if y < 70 else 1900 + y
+        texto = str(value)
+        anos_4_digitos = re.findall(r'\d{4}', texto)
+        if anos_4_digitos:
+            ano = int(anos_4_digitos[-1])
+            if 1900 <= ano <= 2200:
+                return ano
+        # Para formatos como Jan/26, considera o último bloco numérico,
+        # evitando interpretar o mês 01 de 01/2026 como ano 2001.
+        nums_2_digitos = re.findall(r'\d{2}', texto)
+        if nums_2_digitos:
+            y = int(nums_2_digitos[-1])
+            return 2000 + y if y < 70 else 1900 + y
     except Exception:
         pass
     return default
@@ -352,13 +357,10 @@ def carregar_dados_obras_detalhado():
             df_orc['Item'] = df_orc[col_item].fillna('GERAL').astype(str).str.strip().str.upper()
             id_vars = ['Obra', 'Item', 'Ano']
         else:
-            outras_cols = [c for c in df_orc.columns if c.upper() not in map_meses and c != col_resumo and c.upper() != 'OBRA' and c != col_ano_orc]
-            if outras_cols:
-                df_orc['Item'] = df_orc[outras_cols[0]].fillna('GERAL').astype(str).str.strip().str.upper()
-                id_vars = ['Obra', 'Item', 'Ano']
-            else:
-                df_orc['Item'] = df_orc['Obra']
-                id_vars = ['Obra', 'Item', 'Ano']
+            # A aba de resumo por obra não possui coluna de item: não usar Custo R$, %
+            # ou qualquer coluna de competência como identificador do lançamento.
+            df_orc['Item'] = df_orc['Obra']
+            id_vars = ['Obra', 'Item', 'Ano']
 
         df_orc_melt = df_orc.melt(id_vars=id_vars, value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].apply(extract_month)
