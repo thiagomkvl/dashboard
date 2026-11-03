@@ -244,13 +244,50 @@ def formatar_moeda_curta(valor):
 
 
 def extract_month(m):
+    """Extrai o mês de formatos numéricos, Jan/26, 2027-01 ou nomes de meses."""
     try:
-        s = str(m).strip()
-        if '.' in s:
-            return int(float(s.split('.')[-1]))
-        return int(float(s))
+        s = str(m).strip().lower()
+        nomes = {
+            'jan': 1, 'janeiro': 1, 'fev': 2, 'fevereiro': 2, 'mar': 3, 'março': 3, 'marco': 3,
+            'abr': 4, 'abril': 4, 'mai': 5, 'maio': 5, 'jun': 6, 'junho': 6,
+            'jul': 7, 'julho': 7, 'ago': 8, 'agosto': 8, 'set': 9, 'setembro': 9,
+            'out': 10, 'outubro': 10, 'nov': 11, 'novembro': 11, 'dez': 12, 'dezembro': 12,
+        }
+        m = re.search(r'(?:^|[^a-z])([a-zç]+)', s)
+        if m and m.group(1)[:3] in nomes:
+            return nomes[m.group(1)[:3]]
+        nums = re.findall(r'\d+', s)
+        if len(nums) >= 2:
+            # YYYY-MM ou MM/YYYY
+            a, b = int(nums[0]), int(nums[1])
+            return b if a >= 1000 and 1 <= b <= 12 else (a if 1 <= a <= 12 else 0)
+        if nums:
+            n = int(nums[0])
+            return n if 1 <= n <= 12 else 0
     except Exception:
-        return 0
+        pass
+    return 0
+
+
+def extract_year(value, default=None):
+    """Extrai ano de datas, números ou textos como 2027, Jan/27 e 01/2027."""
+    try:
+        if pd.isna(value) or str(value).strip() in ('', '-', 'nan', 'None'):
+            return default
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return int(value.year)
+        if hasattr(value, 'year') and hasattr(value, 'month'):
+            return int(value.year)
+        nums = re.findall(r'\d{2,4}', str(value))
+        for n in nums:
+            y = int(n)
+            if y >= 1900:
+                return y
+            if len(n) == 2:
+                return 2000 + y if y < 70 else 1900 + y
+    except Exception:
+        pass
+    return default
 
 
 def mapa_cores_obras(lista):
@@ -303,21 +340,25 @@ def carregar_dados_obras_detalhado():
 
         df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
+        col_ano_orc = next((c for c in df_orc.columns if str(c).strip().upper() in ['ANO', 'ANO ORCAMENTO', 'ANO ORÇAMENTO', 'EXERCICIO', 'EXERCÍCIO']), None)
+        # Compatibilidade: linhas antigas sem coluna ANO continuam em 2026.
+        df_orc['Ano'] = df_orc[col_ano_orc].apply(lambda x: extract_year(x, 2026)) if col_ano_orc else 2026
 
         if col_item and col_item != col_resumo:
             df_orc['Item'] = df_orc[col_item].fillna('GERAL').astype(str).str.strip().str.upper()
-            id_vars = ['Obra', 'Item']
+            id_vars = ['Obra', 'Item', 'Ano']
         else:
-            outras_cols = [c for c in df_orc.columns if c.upper() not in map_meses and c != col_resumo and c.upper() != 'OBRA']
+            outras_cols = [c for c in df_orc.columns if c.upper() not in map_meses and c != col_resumo and c.upper() != 'OBRA' and c != col_ano_orc]
             if outras_cols:
                 df_orc['Item'] = df_orc[outras_cols[0]].fillna('GERAL').astype(str).str.strip().str.upper()
-                id_vars = ['Obra', 'Item']
+                id_vars = ['Obra', 'Item', 'Ano']
             else:
                 df_orc['Item'] = df_orc['Obra']
-                id_vars = ['Obra', 'Item']
+                id_vars = ['Obra', 'Item', 'Ano']
 
         df_orc_melt = df_orc.melt(id_vars=id_vars, value_vars=meses_existentes, var_name='Mes_Nome', value_name='Valor_Orcado')
         df_orc_melt['Mes'] = df_orc_melt['Mes_Nome'].str.upper().map(map_meses)
+        df_orc_melt['Ano'] = pd.to_numeric(df_orc_melt['Ano'], errors='coerce').fillna(2026).astype(int)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
 
         df_fases = pd.DataFrame()
@@ -345,11 +386,19 @@ def carregar_dados_obras_detalhado():
 
         df_real = conn.read(worksheet="Realizado_Obra", ttl=0)
         df_real['Obra'] = df_real['Categoria'].astype(str).str.upper().str.strip()
-        df_real['Mes'] = df_real['MÊS'].apply(extract_month)
+        col_data = next((c for c in df_real.columns if 'data' in c.lower()), 'DATA PGTO')
+        datas_pgto = pd.to_datetime(df_real[col_data], errors='coerce', dayfirst=True)
+        df_real['Mes'] = datas_pgto.dt.month
+        mes_texto = df_real['MÊS'].apply(extract_month)
+        df_real['Mes'] = df_real['Mes'].fillna(mes_texto).fillna(0).astype(int)
+        df_real['Ano'] = datas_pgto.dt.year
+        ano_texto = df_real['MÊS'].apply(lambda x: extract_year(x, None))
+        df_real['Ano'] = df_real['Ano'].fillna(ano_texto)
+        # Se a linha antiga não tiver ano na data nem em MÊS, mantém o histórico no ano-base 2026.
+        df_real['Ano'] = pd.to_numeric(df_real['Ano'], errors='coerce').fillna(2026).astype(int)
         df_real['Valor_Realizado'] = df_real['Valor'].apply(limpa_valor)
         col_forn = next((c for c in df_real.columns if 'forn' in c.lower()), 'Fornecedor')
         col_nf = next((c for c in df_real.columns if 'nf' in c.lower()), 'NF')
-        col_data = next((c for c in df_real.columns if 'data' in c.lower()), 'DATA PGTO')
         df_real['Fornecedor'] = df_real[col_forn].fillna('NÃO INFORMADO').astype(str).str.upper()
         df_real['NF'] = df_real[col_nf].fillna('-').astype(str)
         df_real['Data_Pgto'] = df_real[col_data].fillna('-').astype(str).str.replace('00:00:00', '').str.strip()
@@ -377,8 +426,13 @@ df_orc_filtrado = df_orcado.copy()
 df_real_filtrado = df_realizado.copy()
 df_fases_filtrado = df_fases.copy()
 
+anos_disponiveis = sorted(set(df_orcado['Ano'].dropna().astype(int).tolist() if not df_orcado.empty else []) | set(df_realizado['Ano'].dropna().astype(int).tolist() if not df_realizado.empty else []))
+if not anos_disponiveis:
+    anos_disponiveis = [2026]
+
 with st.sidebar:
     st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
+    ano_selecionado = st.selectbox("Ano de Análise", anos_disponiveis, index=len(anos_disponiveis)-1)
     mes_selecionado = st.selectbox(
         "Mês de Análise (Acumulado)",
         options=["Todos"] + list(range(1, 13)),
@@ -388,6 +442,8 @@ with st.sidebar:
     if st.button("↻ Limpar filtros", use_container_width=True):
         st.rerun()
 
+    df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Ano'] == ano_selecionado]
+    df_real_filtrado = df_real_filtrado[df_real_filtrado['Ano'] == ano_selecionado]
     if mes_selecionado != "Todos":
         df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
         df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
@@ -440,10 +496,11 @@ if not df_recursos.empty:
             caixa_inicial_base = val_rec
 
 caixa_disponivel = caixa_inicial_base - total_realizado
-mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_realizado['Mes'].max()) if not df_realizado.empty else 0)
+df_real_ano = df_realizado[df_realizado['Ano'] == ano_selecionado]
+mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_real_ano['Mes'].max()) if not df_real_ano.empty else 0)
 mes_anterior = mes_atual - 1
 
-df_real_mom = df_realizado.copy()
+df_real_mom = df_realizado[df_realizado['Ano'] == ano_selecionado].copy()
 if obra_selecionada != "Todas":
     df_real_mom = df_real_mom[df_real_mom['Obra'] == obra_selecionada]
 
@@ -465,7 +522,7 @@ pb_width = min(consumo_geral_perc, 100)
 pb_color = VERMELHO if consumo_geral_perc > 100 else VERDE
 saldo_color = VERMELHO if saldo_orcamento < 0 else TXT
 caixa_disp_color = VERMELHO if caixa_disponivel < 0 else VERDE
-txt_mes = f"Até Mês {mes_selecionado:02d}" if mes_selecionado != "Todos" else "Todos os meses"
+txt_mes = f"Até Mês {mes_selecionado:02d}/{ano_selecionado}" if mes_selecionado != "Todos" else f"Ano {ano_selecionado} · Todos os meses"
 txt_obra = obra_selecionada if obra_selecionada != "Todas" else "Todas"
 
 # ==============================================================================
@@ -521,8 +578,8 @@ st.markdown(f"""
 # ==============================================================================
 # EVOLUÇÃO MENSAL (+ TOTAL por linha, coluna fixa)
 # ==============================================================================
-df_orc_m_base = df_orcado.copy()
-df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
+df_orc_m_base = df_orcado[df_orcado['Ano'] == ano_selecionado].copy()
+df_real_m_base = df_realizado[(df_realizado['Ano'] == ano_selecionado) & (df_realizado['Mes'] > 0)].copy()
 if obra_selecionada != "Todas":
     df_orc_m_base = df_orc_m_base[df_orc_m_base['Obra'] == obra_selecionada]
     df_real_m_base = df_real_m_base[df_real_m_base['Obra'] == obra_selecionada]
