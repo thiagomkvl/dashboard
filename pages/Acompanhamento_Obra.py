@@ -118,7 +118,7 @@ css = """
     }
     .unified-table th:last-child { border-right: none; }
     .unified-table td {
-        color: #111827 !important;
+        color: #334155;
         padding: 10px 8px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9;
         background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
@@ -182,6 +182,7 @@ css = """
     .toggle-checkbox { display: none; }
     .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #2563eb; }
     .obra-group .sub-row { display: none; }
+    .unified-table td.detail-black { color: #111827 !important; }
     .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
     .orcado-indicator { display: block; font-size: 9px; color: #64748b; margin-top: 3px; font-weight: 600; }
@@ -375,8 +376,6 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Competencia'] = df_orc_melt['Mes'].map(nomes_mes_abrev) + '-' + df_orc_melt['Ano'].astype(str)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
 
-        # Fases_Obra é a fonte detalhada do orçamento por fase/tarefa.
-        # Cada linha representa uma fase real; os cabeçalhos mensais são competências.
         df_fases = pd.DataFrame()
         try:
             df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
@@ -385,7 +384,7 @@ def carregar_dados_obras_detalhado():
                 if str(c).strip() and not str(c).strip().lower().startswith('unnamed')
             ]
             df_fases_raw = df_fases_raw[valid_cols].copy()
-            df_fases_raw = df_fases_raw.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
+            df_fases_raw = df_fases_raw.replace(r'^\\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
 
             if not df_fases_raw.empty and len(df_fases_raw.columns) >= 2:
                 col_obra_fase = df_fases_raw.columns[0]
@@ -805,23 +804,64 @@ for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
     curr_saldo += recurso_m - saida_m
     s_fim_list.append(curr_saldo)
 
-html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Fluxo de Caixa</th>"
+# Faixas do cabeçalho: competências já realizadas em verde e futuras projetadas em salmão.
+n_real = sum(1 for p in periodos if max_comp_real and p <= max_comp_real)
+n_proj = len(periodos_labels) - n_real
+
+html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead>"
+html_fluxo += "<tr><th class='row-label' rowspan='2'>Fluxo de Caixa</th>"
+if n_real:
+    html_fluxo += f"<th colspan='{n_real}' style='background:#86efac;color:#065f46;text-align:center;font-weight:800;padding:7px'>REALIZADO</th>"
+if n_proj:
+    html_fluxo += f"<th colspan='{n_proj}' style='background:#fdba9a;color:#9a3412;text-align:center;font-weight:800;padding:7px'>PROJETADO</th>"
+html_fluxo += "</tr><tr>"
 for comp in periodos_labels:
     html_fluxo += f"<th>{comp}</th>"
 html_fluxo += "</tr></thead><tbody>"
-html_fluxo += "<tr><td colspan='" + str(len(periodos_labels)+1) + "' style='background:#fff;text-align:left;font-weight:800;color:#0f172a'>"
-html_fluxo += "<span style='color:#059669;margin-right:18px'>● REALIZADO</span><span style='color:#dc2626'>● PROJETADO</span></td></tr>"
 
+# Saldo inicial preserva a cor de cada fase: verde no realizado e azul no projetado.
 html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
-for val in s_ini_list:
-    html_fluxo += f"<td style='color:{VERMELHO if val < 0 else TXT};font-weight:700'>{formatar_moeda_curta(val)}</td>"
+for idx, val in enumerate(s_ini_list):
+    css = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
+    color = VERMELHO if val < 0 else (VERDE if css == "val-real" else "#2563eb")
+    html_fluxo += f"<td class='{css}' style='color:{color};font-weight:700'>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-html_fluxo += "<tr><td class='row-label'>(+) Recursos Alocados</td>"
+# Captações no mesmo padrão expansível de Saídas Totais.
+html_fluxo += "<tbody class='obra-group recurso-group'><tr>"
+html_fluxo += (
+    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
+    "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
+    "<b>(+) Recursos Alocados</b></label></td>"
+)
 for val in recursos_mes_list:
-    html_fluxo += f"<td style='color:#059669;font-weight:800'>{formatar_moeda_curta(val) if val else '-'} </td>"
+    html_fluxo += f"<td style='color:#059669;font-weight:800'>{formatar_moeda_curta(val) if val else '-'}</td>"
 html_fluxo += "</tr>"
 
+# Detalhamento de cada captação, preservando produto, contrato, data e valor.
+for _, rr in df_recursos.iterrows():
+    ano_rec, mes_rec = rr.get('_Ano'), rr.get('_Mes')
+    if pd.isna(ano_rec) or pd.isna(mes_rec):
+        continue
+    comp_rec = f"{meses_nomes[int(mes_rec)]}-{int(ano_rec)}"
+    if comp_rec not in periodos_labels:
+        continue
+    produto_col = next((c for c in df_recursos.columns if 'produto' in str(c).lower()), None)
+    contrato_col = next((c for c in df_recursos.columns if 'contrato' in str(c).lower()), None)
+    data_rec = rr.get('_Data_Alocacao')
+    data_txt = data_rec.strftime('%d/%m/%Y') if pd.notna(data_rec) else '-'
+    produto = str(rr.get(produto_col, '-')) if produto_col else '-'
+    contrato = str(rr.get(contrato_col, '-')) if contrato_col else '-'
+    valor_rec = float(rr.get('_Valor_Alocado', 0) or 0)
+    html_fluxo += "<tr class='sub-row recurso-sub-row'>"
+    html_fluxo += f"<td class='row-label detail-black' style='padding-left:28px;font-size:10px;font-weight:normal'>↳ {produto} · Contrato {contrato} · {data_txt}</td>"
+    for comp in periodos_labels:
+        valor_cel = valor_rec if comp == comp_rec else 0
+        html_fluxo += f"<td class='detail-black' style='font-size:10px'>{formatar_moeda_curta(valor_cel) if valor_cel else '-'}</td>"
+    html_fluxo += "</tr>"
+html_fluxo += "</tbody>"
+
+# Saídas: linha principal vermelha; apenas os detalhes expandidos ficam em preto.
 html_fluxo += "<tbody class='obra-group'><tr>"
 html_fluxo += (
     "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
@@ -834,24 +874,25 @@ html_fluxo += "</tr>"
 
 for obra_name in obras_fluxo:
     html_fluxo += (
-        f"<tr class='sub-row'><td class='row-label' style='padding-left:28px;font-size:10px;"
-        f"font-weight:normal;color:#64748b;border-right:2px solid #e2e8f0'>↳ {obra_name}</td>"
+        f"<tr class='sub-row'><td class='row-label detail-black' style='padding-left:28px;font-size:10px;"
+        f"font-weight:normal'>↳ {obra_name}</td>"
     )
     for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
         v_obra = real_por_obra_mes.get((comp, obra_name), 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else orc_por_obra_mes.get((comp, obra_name), 0.0)
-        html_fluxo += f"<td style='font-size:10px;color:#64748b'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
+        html_fluxo += f"<td class='detail-black' style='font-size:10px'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
     html_fluxo += "</tr>"
 html_fluxo += "</tbody>"
 
 html_fluxo += "<tr><td class='row-label' style='font-weight:800'>(=) Saldo Final</td>"
 for idx, val in enumerate(s_fim_list):
     css_class = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
-    html_fluxo += f"<td class='{css_class}' style='color:{VERMELHO if val < 0 else (VERDE if css_class == 'val-real' else VERMELHO)}'><b>{formatar_moeda_curta(val)}</b></td>"
+    color = VERMELHO if val < 0 else (VERDE if css_class == "val-real" else "#2563eb")
+    html_fluxo += f"<td class='{css_class}' style='color:{color};font-weight:800'><b>{formatar_moeda_curta(val)}</b></td>"
 html_fluxo += "</tr></tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
 
 # ==============================================================================
-# DETALHAMENTO ORÇAMENTO — valores reais por fase, lidos da aba Fases_Obra
+# DETALHAMENTO ORÇAMENTO (TOTAL ORÇADO em preto)
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
 
