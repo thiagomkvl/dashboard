@@ -600,7 +600,20 @@ df_real_mensal = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum() 
 df_linha = pd.DataFrame({'Competencia': periodos_labels})
 df_linha['Valor_Orcado'] = df_linha['Competencia'].map(df_orc_mensal).fillna(0.0)
 df_linha['Valor_Realizado'] = df_linha['Competencia'].map(df_real_mensal)
-max_periodo_real = max(((int(r.Ano), int(r.Mes)) for r in df_real_m_base[['Ano','Mes']].dropna().itertuples(index=False)), default=None) if not df_real_m_base.empty else None
+# O corte entre realizado e projetado considera somente competências com
+# lançamentos efetivamente realizados (valor diferente de zero). Assim, uma
+# linha vazia ou uma data inválida não empurra indevidamente a projeção.
+if not df_real_m_base.empty:
+    _real_validos = df_real_m_base[
+        df_real_m_base['Mes'].between(1, 12)
+        & (pd.to_numeric(df_real_m_base['Valor_Realizado'], errors='coerce').fillna(0).abs() > 0)
+    ].copy()
+else:
+    _real_validos = pd.DataFrame()
+max_periodo_real = max(
+    ((int(r.Ano), int(r.Mes)) for r in _real_validos[['Ano', 'Mes']].dropna().itertuples(index=False)),
+    default=None,
+) if not _real_validos.empty else None
 if max_periodo_real:
     df_linha.loc[[p > max_periodo_real for p in periodos], 'Valor_Realizado'] = None
 else:
@@ -679,9 +692,17 @@ with col_g2:
 # ==============================================================================
 st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
 
+# Fluxo híbrido: competências até o último mês com pagamento registrado
+# usam exclusivamente Realizado_Obra; competências posteriores usam
+# exclusivamente Orçamento_Obra. Nunca somar realizado + orçamento no mesmo mês.
 saidas_real_dict = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum().to_dict()
 saidas_orc_dict = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum().to_dict()
 max_comp_real = max_periodo_real
+if max_comp_real:
+    corte_label = f"{meses_nomes[max_comp_real[1]]}-{max_comp_real[0]}"
+    st.caption(f"Fluxo calculado com pagamentos realizados até {corte_label}; a partir da competência seguinte, utiliza o orçamento previsto.")
+else:
+    st.caption("Ainda não há pagamentos realizados válidos; o fluxo utiliza o orçamento previsto em todas as competências.")
 
 todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
 if not df_orc_m_base.empty:
