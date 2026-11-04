@@ -118,7 +118,6 @@ css = """
     }
     .unified-table th:last-child { border-right: none; }
     .unified-table td {
-        color: #334155;
         padding: 10px 8px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9;
         background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
@@ -145,11 +144,8 @@ css = """
     .val-orc { font-weight: 800; color: #2563eb; }
 
     .fases-table-container {
-        width: 100%; max-height: none; height: auto;
-        overflow-x: auto; overflow-y: hidden;
-        border: 1px solid #e2e8f0; border-radius: 12px;
+        max-height: 300px; overflow-x: auto; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px;
         background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
-        scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
     }
     .fases-table {
         width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
@@ -162,7 +158,6 @@ css = """
         position: sticky; top: 0; z-index: 15;
     }
     .fases-table td {
-        color: #111827 !important;
         padding: 10px; border-bottom: 1px solid #f1f5f9; color: #334155;
         background: #ffffff; text-align: left;
     }
@@ -182,7 +177,6 @@ css = """
     .toggle-checkbox { display: none; }
     .indicator { margin-right: 8px; font-size: 11px; transition: transform 0.2s; display: inline-block; color: #2563eb; }
     .obra-group .sub-row { display: none; }
-    .unified-table td.detail-black { color: #111827 !important; }
     .obra-group:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .obra-group:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
     .orcado-indicator { display: block; font-size: 9px; color: #64748b; margin-top: 3px; font-weight: 600; }
@@ -376,39 +370,76 @@ def carregar_dados_obras_detalhado():
         df_orc_melt['Competencia'] = df_orc_melt['Mes'].map(nomes_mes_abrev) + '-' + df_orc_melt['Ano'].astype(str)
         df_orc_melt['Valor_Orcado'] = df_orc_melt['Valor_Orcado'].apply(limpa_valor)
 
+        # Fases_Obra é a fonte detalhada do orçamento por fase/tarefa.
+        # Cada linha representa uma fase real; os cabeçalhos mensais são competências.
         df_fases = pd.DataFrame()
         try:
             df_fases_raw = conn.read(worksheet="Fases_Obra", ttl=0)
-            valid_cols = [c for c in df_fases_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
-            df_fases = df_fases_raw[valid_cols].copy()
-            df_fases = df_fases.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
-            if not df_fases.empty and len(df_fases.columns) >= 2:
-                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
-                df_fases['Fase_Tarefa'] = df_fases[df_fases.columns[1]].fillna('').astype(str).str.strip().str.upper()
-            elif not df_fases.empty and len(df_fases.columns) == 1:
-                df_fases['Obra'] = df_fases[df_fases.columns[0]].fillna('').astype(str).str.strip().str.upper()
-                df_fases['Fase_Tarefa'] = "GERAL"
-        except Exception:
+            valid_cols = [
+                c for c in df_fases_raw.columns
+                if str(c).strip() and not str(c).strip().lower().startswith('unnamed')
+            ]
+            df_fases_raw = df_fases_raw[valid_cols].copy()
+            df_fases_raw = df_fases_raw.replace(r'^\\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
+
+            if not df_fases_raw.empty and len(df_fases_raw.columns) >= 2:
+                col_obra_fase = df_fases_raw.columns[0]
+                col_nome_fase = df_fases_raw.columns[1]
+                col_custo_fase = next(
+                    (c for c in df_fases_raw.columns if 'custo' in str(c).strip().lower()),
+                    None
+                )
+                colunas_comp_fase = [
+                    c for c in df_fases_raw.columns
+                    if extract_month(c) in range(1, 13)
+                ]
+
+                base_fases = df_fases_raw.copy()
+                base_fases['Obra'] = base_fases[col_obra_fase].fillna('').astype(str).str.strip().str.upper()
+                base_fases['Fase_Tarefa'] = base_fases[col_nome_fase].fillna('').astype(str).str.strip().str.upper()
+                base_fases = base_fases[
+                    base_fases['Obra'].ne('') &
+                    base_fases['Fase_Tarefa'].ne('') &
+                    ~base_fases['Fase_Tarefa'].isin(['TOTAL', 'TOTAL GERAL', 'TOTAL GERAL ORÇADO'])
+                ].copy()
+
+                base_fases['Custo_Fase'] = (
+                    base_fases[col_custo_fase].apply(limpa_valor)
+                    if col_custo_fase else 0.0
+                )
+
+                if colunas_comp_fase:
+                    df_fases = base_fases.melt(
+                        id_vars=['Obra', 'Fase_Tarefa', 'Custo_Fase'],
+                        value_vars=colunas_comp_fase,
+                        var_name='Mes_Nome',
+                        value_name='Valor_Fase'
+                    )
+                    df_fases['Mes'] = df_fases['Mes_Nome'].apply(extract_month)
+                    anos_cabecalho = df_fases['Mes_Nome'].apply(lambda x: extract_year(x, None))
+                    df_fases['Ano'] = pd.to_numeric(anos_cabecalho, errors='coerce').fillna(2026).astype(int)
+                    df_fases['Competencia'] = (
+                        df_fases['Mes'].map({
+                            1:'Jan', 2:'Fev', 3:'Mar', 4:'Abr', 5:'Mai', 6:'Jun',
+                            7:'Jul', 8:'Ago', 9:'Set', 10:'Out', 11:'Nov', 12:'Dez'
+                        }) + '-' + df_fases['Ano'].astype(str)
+                    )
+                    df_fases['Valor_Fase'] = df_fases['Valor_Fase'].apply(limpa_valor)
+                    df_fases = df_fases[df_fases['Mes'].between(1, 12)].copy()
+                else:
+                    df_fases = pd.DataFrame(columns=[
+                        'Obra', 'Fase_Tarefa', 'Custo_Fase', 'Mes_Nome',
+                        'Valor_Fase', 'Mes', 'Ano', 'Competencia'
+                    ])
+        except Exception as erro_fases:
             df_fases = pd.DataFrame()
+            st.warning(f"Não foi possível ler os valores detalhados da aba Fases_Obra: {erro_fases}")
 
         df_recursos = pd.DataFrame()
         try:
             df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
             valid_cols_rec = [c for c in df_recursos_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_recursos = df_recursos_raw[valid_cols_rec].copy()
-            # Normaliza as captações pela data efetiva e pelo valor alocado à obra.
-            col_data_rec = next((c for c in df_recursos.columns if str(c).strip().lower() in ['data', 'data alocacao', 'data alocação']), None)
-            col_valor_rec = next((c for c in df_recursos.columns if 'recurso' in str(c).lower() and 'aloc' in str(c).lower()), None)
-            if col_data_rec and col_valor_rec:
-                df_recursos['_Data_Alocacao'] = pd.to_datetime(df_recursos[col_data_rec], errors='coerce', dayfirst=True)
-                df_recursos['_Valor_Alocado'] = df_recursos[col_valor_rec].apply(limpa_valor)
-                df_recursos['_Ano'] = df_recursos['_Data_Alocacao'].dt.year
-                df_recursos['_Mes'] = df_recursos['_Data_Alocacao'].dt.month
-                df_recursos = df_recursos[df_recursos['_Data_Alocacao'].notna() & (df_recursos['_Valor_Alocado'] != 0)].copy()
-            else:
-                df_recursos['_Ano'] = pd.Series(dtype='int64')
-                df_recursos['_Mes'] = pd.Series(dtype='int64')
-                df_recursos['_Valor_Alocado'] = pd.Series(dtype='float64')
         except Exception:
             df_recursos = pd.DataFrame()
 
@@ -502,11 +533,14 @@ total_realizado = df_real_filtrado['Valor_Realizado'].sum()
 saldo_orcamento = total_orcado - total_realizado
 consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
 
-# Total captado continua sendo exibido no KPI; no fluxo, cada captação
-# entra somente na competência da sua data (não no saldo inicial).
-caixa_inicial_base = float(df_recursos['_Valor_Alocado'].sum()) if not df_recursos.empty and '_Valor_Alocado' in df_recursos.columns else 0.0
-if caixa_inicial_base <= 0:
-    caixa_inicial_base = 10_000_000.0  # compatibilidade caso a aba não esteja disponível
+caixa_inicial_base = 10_000_000.0
+if not df_recursos.empty:
+    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
+    if col_rec:
+        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
+        if val_rec > 0:
+            caixa_inicial_base = val_rec
+
 caixa_disponivel = caixa_inicial_base - total_realizado
 df_real_ano = df_realizado.copy()
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_real_ano['Mes'].max()) if not df_real_ano.empty else 0)
@@ -582,6 +616,7 @@ st.markdown(f"""
     <div class='kpi'>
         <div class='kpi-t'>Caixa disponível</div>
         <div class='kpi-v' style='color:{caixa_disp_color}'>{formatar_moeda(caixa_disponivel)}</div>
+        <div class='kpi-sub {mom_cls}'>{mom_str}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -601,8 +636,6 @@ periodos_set = set()
 for dfx in (df_orc_m_base, df_real_m_base):
     if not dfx.empty:
         periodos_set.update((int(r.Ano), int(r.Mes)) for r in dfx[['Ano','Mes']].dropna().itertuples(index=False) if int(r.Mes) > 0)
-if not df_recursos.empty and {'_Ano', '_Mes'}.issubset(df_recursos.columns):
-    periodos_set.update((int(a), int(m)) for a, m in zip(df_recursos['_Ano'].dropna(), df_recursos.loc[df_recursos['_Ano'].notna(), '_Mes']) if int(m) > 0)
 periodos = sorted(periodos_set)
 if not periodos:
     periodos = [(2026, m) for m in range(1, 13)]
@@ -639,18 +672,12 @@ tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
 tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
 st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
-st.markdown(f"""
-<div style='display:flex;justify-content:flex-end;align-items:center;gap:18px;flex-wrap:wrap;
-            margin:-2px 2px 8px;padding:7px 12px;background:#ffffff;border:1px solid #e2e8f0;
-            border-radius:8px;font-size:12px;font-weight:700'>
-  <span style='color:{AZUL}'>Total orçado: {formatar_moeda(tot_orc_linha)}</span>
-  <span style='color:{VERDE}'>Total realizado: {formatar_moeda(tot_real_linha)}</span>
-</div>
-""", unsafe_allow_html=True)
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado', line=dict(color=AZUL, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(37,99,235,0.10)', hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>"))
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Realizado'], mode='lines+markers', name='Realizado', line=dict(color=VERDE, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(5,150,105,0.12)', connectgaps=False, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>"))
-fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=20,b=48))
+fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=48,b=48))
+fig_linha.add_annotation(x=0.01,y=1.16,xref='paper',yref='paper',text=f"<b>Total orçado: {formatar_moeda_curta(tot_orc_linha)}</b>",showarrow=False,font=dict(color=AZUL,size=12),xanchor='left')
+fig_linha.add_annotation(x=0.99,y=1.16,xref='paper',yref='paper',text=f"<b>Total realizado: {formatar_moeda_curta(tot_real_linha)}</b>",showarrow=False,font=dict(color=VERDE,size=12),xanchor='right')
 st.plotly_chart(layout_fig(fig_linha, 300, True), use_container_width=True, config={'displayModeBar': False})
 
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Competência</th>"
@@ -713,151 +740,28 @@ with col_g2:
 # ==============================================================================
 # FLUXO DE CAIXA DA OBRA
 # ==============================================================================
-st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
-
-# Fluxo híbrido: competências até o último mês com pagamento registrado
-# usam exclusivamente Realizado_Obra; competências posteriores usam
-# exclusivamente Orçamento_Obra. Nunca somar realizado + orçamento no mesmo mês.
-saidas_real_dict = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum().to_dict()
-saidas_orc_dict = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum().to_dict()
-max_comp_real = max_periodo_real
-if max_comp_real:
-    corte_label = f"{meses_nomes[max_comp_real[1]]}-{max_comp_real[0]}"
-    st.caption(f"Fluxo calculado com pagamentos realizados até {corte_label}; a partir da competência seguinte, utiliza o orçamento previsto.")
-else:
-    st.caption("Ainda não há pagamentos realizados válidos; o fluxo utiliza o orçamento previsto em todas as competências.")
-
-todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
-if not df_orc_m_base.empty:
-    todas_obras_fluxo = todas_obras_fluxo.union(set(df_orc_m_base['Obra'].unique()))
-obras_fluxo = sorted(list(todas_obras_fluxo))
-if obra_selecionada != "Todas":
-    obras_fluxo = [obra_selecionada]
-
-real_por_obra_mes = df_real_m_base.groupby(['Competencia', 'Obra'])['Valor_Realizado'].sum().to_dict()
-orc_por_obra_mes = df_orc_m_base.groupby(['Competencia', 'Obra'])['Valor_Orcado'].sum().to_dict()
-
-s_ini_list, recursos_mes_list, saidas_tot_list, s_fim_list = [], [], [], []
-recursos_por_comp = {}
-if not df_recursos.empty and {'_Ano', '_Mes', '_Valor_Alocado'}.issubset(df_recursos.columns):
-    for _, rr in df_recursos.iterrows():
-        if pd.notna(rr['_Ano']) and pd.notna(rr['_Mes']):
-            label_rec = f"{meses_nomes[int(rr['_Mes'])]}-{int(rr['_Ano'])}"
-            recursos_por_comp[label_rec] = recursos_por_comp.get(label_rec, 0.0) + float(rr['_Valor_Alocado'])
-
-# O saldo começa zerado. As captações entram na competência indicada em Recursos_Obra.
-curr_saldo = 0.0
-for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
-    s_ini_list.append(curr_saldo)
-    recurso_m = recursos_por_comp.get(comp, 0.0)
-    recursos_mes_list.append(recurso_m)
-    saida_m = saidas_real_dict.get(comp, 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else saidas_orc_dict.get(comp, 0.0)
-    saidas_tot_list.append(saida_m)
-    curr_saldo += recurso_m - saida_m
-    s_fim_list.append(curr_saldo)
-
-# Faixas do cabeçalho: competências já realizadas em verde e futuras projetadas em salmão.
-n_real = sum(1 for p in periodos if max_comp_real and p <= max_comp_real)
-n_proj = len(periodos_labels) - n_real
-
-html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead>"
-html_fluxo += "<tr><th class='row-label' rowspan='2'>Fluxo de Caixa</th>"
-if n_real:
-    html_fluxo += f"<th colspan='{n_real}' style='background:#86efac;color:#065f46;text-align:center;font-weight:800;padding:7px'>REALIZADO</th>"
-if n_proj:
-    html_fluxo += f"<th colspan='{n_proj}' style='background:#fdba9a;color:#9a3412;text-align:center;font-weight:800;padding:7px'>PROJETADO</th>"
-html_fluxo += "</tr><tr>"
-for comp in periodos_labels:
-    html_fluxo += f"<th>{comp}</th>"
-html_fluxo += "</tr></thead><tbody>"
-
-# Saldo inicial preserva a cor de cada fase: verde no realizado e azul no projetado.
-html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
-for idx, val in enumerate(s_ini_list):
-    css = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
-    color = VERMELHO if val < 0 else (VERDE if css == "val-real" else "#2563eb")
-    html_fluxo += f"<td class='{css}' style='color:{color};font-weight:700'>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-# Captações no mesmo padrão expansível de Saídas Totais.
-html_fluxo += "<tbody class='obra-group recurso-group'><tr>"
-html_fluxo += (
-    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
-    "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
-    "<b>(+) Recursos Alocados</b></label></td>"
-)
-for val in recursos_mes_list:
-    html_fluxo += f"<td style='color:#059669;font-weight:800'>{formatar_moeda_curta(val) if val else '-'}</td>"
-html_fluxo += "</tr>"
-
-# Detalhamento de cada captação, preservando produto, contrato, data e valor.
-for _, rr in df_recursos.iterrows():
-    ano_rec, mes_rec = rr.get('_Ano'), rr.get('_Mes')
-    if pd.isna(ano_rec) or pd.isna(mes_rec):
-        continue
-    comp_rec = f"{meses_nomes[int(mes_rec)]}-{int(ano_rec)}"
-    if comp_rec not in periodos_labels:
-        continue
-    produto_col = next((c for c in df_recursos.columns if 'produto' in str(c).lower()), None)
-    contrato_col = next((c for c in df_recursos.columns if 'contrato' in str(c).lower()), None)
-    data_rec = rr.get('_Data_Alocacao')
-    data_txt = data_rec.strftime('%d/%m/%Y') if pd.notna(data_rec) else '-'
-    produto = str(rr.get(produto_col, '-')) if produto_col else '-'
-    contrato = str(rr.get(contrato_col, '-')) if contrato_col else '-'
-    valor_rec = float(rr.get('_Valor_Alocado', 0) or 0)
-    html_fluxo += "<tr class='sub-row recurso-sub-row'>"
-    html_fluxo += f"<td class='row-label detail-black' style='padding-left:28px;font-size:10px;font-weight:normal'>↳ {produto} · Contrato {contrato} · {data_txt}</td>"
-    for comp in periodos_labels:
-        valor_cel = valor_rec if comp == comp_rec else 0
-        html_fluxo += f"<td class='detail-black' style='font-size:10px'>{formatar_moeda_curta(valor_cel) if valor_cel else '-'}</td>"
-    html_fluxo += "</tr>"
-html_fluxo += "</tbody>"
-
-# Saídas: linha principal vermelha; apenas os detalhes expandidos ficam em preto.
-html_fluxo += "<tbody class='obra-group'><tr>"
-html_fluxo += (
-    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
-    "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
-    "<b>(-) Saídas Totais</b></label></td>"
-)
-for val in saidas_tot_list:
-    html_fluxo += f"<td style='color:#dc2626;font-weight:800'>{formatar_moeda_curta(val)}</td>"
-html_fluxo += "</tr>"
-
-for obra_name in obras_fluxo:
-    html_fluxo += (
-        f"<tr class='sub-row'><td class='row-label detail-black' style='padding-left:28px;font-size:10px;"
-        f"font-weight:normal'>↳ {obra_name}</td>"
-    )
-    for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
-        v_obra = real_por_obra_mes.get((comp, obra_name), 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else orc_por_obra_mes.get((comp, obra_name), 0.0)
-        html_fluxo += f"<td class='detail-black' style='font-size:10px'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
-    html_fluxo += "</tr>"
-html_fluxo += "</tbody>"
-
-html_fluxo += "<tr><td class='row-label' style='font-weight:800'>(=) Saldo Final</td>"
-for idx, val in enumerate(s_fim_list):
-    css_class = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
-    color = VERMELHO if val < 0 else (VERDE if css_class == "val-real" else "#2563eb")
-    html_fluxo += f"<td class='{css_class}' style='color:{color};font-weight:800'><b>{formatar_moeda_curta(val)}</b></td>"
-html_fluxo += "</tr></tbody></table></div>"
-st.markdown(html_fluxo, unsafe_allow_html=True)
-
-# ==============================================================================
-# DETALHAMENTO ORÇAMENTO (TOTAL ORÇADO em preto)
+# DETALHAMENTO ORÇAMENTO — valores reais por fase, lidos da aba Fases_Obra
 # ==============================================================================
 st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div>", unsafe_allow_html=True)
 
-if not df_orc_filtrado.empty:
-    df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy()
-    if not df_orc_tab.empty:
-        df_orc_tab['Competencia'] = [f"{meses_nomes.get(int(m), '?')}-{int(a)}" for a,m in zip(df_orc_tab['Ano'], df_orc_tab['Mes'])]
-        pivot_orc = pd.pivot_table(df_orc_tab, index='Obra', columns='Competencia', values='Valor_Orcado', aggfunc='sum', fill_value=0.0)
+if not df_fases_filtrado.empty and {'Obra', 'Fase_Tarefa', 'Competencia', 'Valor_Fase'}.issubset(df_fases_filtrado.columns):
+    df_fases_tab = df_fases_filtrado.copy()
+    df_fases_tab = df_fases_tab[df_fases_tab['Competencia'].isin(periodos_labels)].copy()
+
+    if not df_fases_tab.empty:
+        # Consolida apenas linhas de fase/tarefa; linhas TOTAL da planilha já foram excluídas.
+        pivot_fases = pd.pivot_table(
+            df_fases_tab,
+            index=['Obra', 'Fase_Tarefa'],
+            columns='Competencia',
+            values='Valor_Fase',
+            aggfunc='sum',
+            fill_value=0.0
+        )
         for comp in periodos_labels:
-            if comp not in pivot_orc.columns: pivot_orc[comp] = 0.0
-        pivot_orc = pivot_orc[periodos_labels]
-        pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
-        pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
+            if comp not in pivot_fases.columns:
+                pivot_fases[comp] = 0.0
+        pivot_fases = pivot_fases[periodos_labels]
 
         html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FASE DA OBRA</th>"
         html_orc_det += "<th>TOTAL ORÇADO</th>"
@@ -868,48 +772,43 @@ if not df_orc_filtrado.empty:
         totais_col_orc = {comp: 0.0 for comp in periodos_labels}
         total_geral_orc = 0.0
 
-        for obra_name, row in pivot_orc.iterrows():
-            tot_obra = row['Total_Geral']
-            total_geral_orc += tot_obra
+        # Ordena obras pelo total efetivamente composto pelas fases da Fases_Obra.
+        totais_por_obra = pivot_fases.sum(axis=1).groupby(level=0).sum().sort_values(ascending=False)
 
-            fases_lista = []
-            if not df_fases.empty and 'Obra' in df_fases.columns and 'Fase_Tarefa' in df_fases.columns:
-                sub_fases = df_fases[df_fases['Obra'] == obra_name]
-                if not sub_fases.empty:
-                    fases_lista = [f for f in sub_fases['Fase_Tarefa'].dropna().unique().tolist() if f and f != 'NAN']
-            if not fases_lista:
-                sub_df_orc = df_orc_tab[df_orc_tab['Obra'] == obra_name]
-                if 'Item' in sub_df_orc.columns:
-                    fases_lista = sub_df_orc['Item'].dropna().unique().tolist()
+        for obra_name in totais_por_obra.index:
+            fases_obra = pivot_fases.loc[obra_name]
+            if isinstance(fases_obra, pd.Series):
+                fases_obra = fases_obra.to_frame().T
+            total_obra_comp = fases_obra.sum(axis=0)
+            total_obra = float(total_obra_comp.sum())
+            total_geral_orc += total_obra
 
             html_orc_det += "<tbody class='obra-group'><tr>"
             html_orc_det += (
                 f"<td><label class='drilldown-label'><input type='checkbox' class='toggle-checkbox'>"
                 f"<span class='indicator'>▶</span> <b>{obra_name}</b></label></td>"
             )
-            # TOTAL ORÇADO em preto
-            html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(tot_obra)}</td>"
+            html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(total_obra)}</td>"
             for comp in periodos_labels:
-                val_m = row.get(comp, 0.0)
+                val_m = float(total_obra_comp.get(comp, 0.0))
                 totais_col_orc[comp] += val_m
                 html_orc_det += f"<td style='font-weight:700'>{formatar_moeda(val_m) if val_m > 0 else '-'}</td>"
             html_orc_det += "</tr>"
 
-            if fases_lista:
-                num_fases = len(fases_lista)
-                for fase_name in fases_lista:
-                    html_orc_det += "<tr class='sub-row'>"
-                    html_orc_det += (
-                        f"<td title='↳ {fase_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
-                        f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
-                        f"white-space:nowrap'>↳ {fase_name}</td>"
-                    )
-                    val_sub_total = tot_obra / num_fases if num_fases > 0 else 0
-                    html_orc_det += f"<td style='font-size:11px;font-weight:600;color:#64748b'>{formatar_moeda(val_sub_total)}</td>"
-                    for comp in periodos_labels:
-                        val_m_sub = row.get(comp, 0.0) / num_fases if num_fases > 0 else 0
-                        html_orc_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(val_m_sub) if val_m_sub > 0 else '-'}</td>"
-                    html_orc_det += "</tr>"
+            for fase_name, fase_row in fases_obra.iterrows():
+                val_fase_total = float(fase_row.sum())
+                html_orc_det += "<tr class='sub-row'>"
+                html_orc_det += (
+                    f"<td title='↳ {fase_name}' style='padding-left:30px;font-size:11px;color:#64748b;"
+                    f"border-right:2px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;"
+                    f"white-space:nowrap'>↳ {fase_name}</td>"
+                )
+                html_orc_det += f"<td style='font-size:11px;font-weight:600;color:{TXT}'>{formatar_moeda(val_fase_total) if val_fase_total else '-'}</td>"
+                for comp in periodos_labels:
+                    val_m_sub = float(fase_row.get(comp, 0.0))
+                    html_orc_det += f"<td style='font-size:11px;color:#334155'>{formatar_moeda(val_m_sub) if val_m_sub > 0 else '-'}</td>"
+                html_orc_det += "</tr>"
+
             html_orc_det += "</tbody>"
 
         html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
@@ -919,6 +818,10 @@ if not df_orc_filtrado.empty:
             html_orc_det += f"<td style='font-weight:900'>{formatar_moeda(t_col) if t_col > 0 else '-'}</td>"
         html_orc_det += "</tr></table></div>"
         st.markdown(html_orc_det, unsafe_allow_html=True)
+    else:
+        st.info("A aba Fases_Obra não possui valores mensais nas competências exibidas.")
+else:
+    st.info("Não foram encontrados dados detalhados válidos na aba Fases_Obra.")
 
 # ==============================================================================
 # DETALHAMENTO PAGAMENTOS
