@@ -144,8 +144,11 @@ css = """
     .val-orc { font-weight: 800; color: #2563eb; }
 
     .fases-table-container {
-        max-height: 300px; overflow-x: auto; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px;
+        width: 100%; max-height: none; height: auto;
+        overflow-x: auto; overflow-y: hidden;
+        border: 1px solid #e2e8f0; border-radius: 12px;
         background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+        scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
     }
     .fases-table {
         width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
@@ -566,7 +569,6 @@ st.markdown(f"""
     <div class='kpi'>
         <div class='kpi-t'>Caixa disponível</div>
         <div class='kpi-v' style='color:{caixa_disp_color}'>{formatar_moeda(caixa_disponivel)}</div>
-        <div class='kpi-sub {mom_cls}'>{mom_str}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -622,12 +624,18 @@ tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
 tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
 st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
+st.markdown(f"""
+<div style='display:flex;justify-content:flex-end;align-items:center;gap:18px;flex-wrap:wrap;
+            margin:-2px 2px 8px;padding:7px 12px;background:#ffffff;border:1px solid #e2e8f0;
+            border-radius:8px;font-size:12px;font-weight:700'>
+  <span style='color:{AZUL}'>Total orçado: {formatar_moeda(tot_orc_linha)}</span>
+  <span style='color:{VERDE}'>Total realizado: {formatar_moeda(tot_real_linha)}</span>
+</div>
+""", unsafe_allow_html=True)
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado', line=dict(color=AZUL, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(37,99,235,0.10)', hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>"))
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Realizado'], mode='lines+markers', name='Realizado', line=dict(color=VERDE, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(5,150,105,0.12)', connectgaps=False, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>"))
-fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=48,b=48))
-fig_linha.add_annotation(x=0.01,y=1.16,xref='paper',yref='paper',text=f"<b>Total orçado: {formatar_moeda_curta(tot_orc_linha)}</b>",showarrow=False,font=dict(color=AZUL,size=12),xanchor='left')
-fig_linha.add_annotation(x=0.99,y=1.16,xref='paper',yref='paper',text=f"<b>Total realizado: {formatar_moeda_curta(tot_real_linha)}</b>",showarrow=False,font=dict(color=VERDE,size=12),xanchor='right')
+fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=20,b=48))
 st.plotly_chart(layout_fig(fig_linha, 300, True), use_container_width=True, config={'displayModeBar': False})
 
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Competência</th>"
