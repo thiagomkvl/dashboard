@@ -27,18 +27,15 @@ except Exception as e:
 # ==============================================================================
 # PALETA — tema claro (sem roxo forte)
 # ==============================================================================
-AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
-AZUL_CLARO, LARANJA, CIANO, ROSA = "#60a5fa", "#ea580c", "#0891b2", "#e11d48"
+AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#2563eb", "#dc2626"
+AZUL_CLARO, LARANJA, CIANO, ROSA = "#60a5fa", "#2563eb", "#0891b2", "#059669"
 TXT, MUTED, BORDA = "#0f172a", "#64748b", "#e2e8f0"
 
 ESPACO_ENTRE_BLOCOS = "0.75rem"
 AJUSTE_APOS_KPIS = "0.75rem"
 
 # Paleta de obras: azuis claros + complementares suaves (sem roxo intenso)
-PALETA_OBRAS = [
-    AZUL, VERDE, AMBAR, AZUL_CLARO, LARANJA, CIANO, ROSA, VERMELHO,
-    "#93c5fd", "#34d399", "#fbbf24", "#38bdf8", "#fb923c", "#2dd4bf",
-]
+PALETA_OBRAS = ["#2563eb", "#059669", "#0891b2", "#60a5fa", "#34d399", "#93c5fd"]
 
 # ==============================================================================
 # CSS — identidade branca + Total sticky
@@ -50,7 +47,7 @@ css = """
     .stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
     [data-testid="stHeader"] { background: transparent !important; }
     #MainMenu, footer { visibility: hidden; }
-    .main .block-container { padding: 1.1rem 1.4rem 1rem; max-width: 99%; }
+    .main .block-container { padding: 0.65rem 1rem 0.7rem; max-width: 100%; }
     div[data-testid="stVerticalBlock"] { gap: __GAP__; }
     [data-testid="stMarkdownContainer"] { color: #0f172a; }
 
@@ -93,7 +90,7 @@ css = """
     .kpi { padding: 12px 14px; border-radius: 12px; min-height: 110px; background: #ffffff;
            border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(15,23,42,0.05); border-left: 3px solid #2563eb; }
     .kpi.green { border-left-color: #059669; }
-    .kpi.amber { border-left-color: #d97706; }
+    .kpi.amber { border-left-color: #2563eb; }
     .kpi.purple { border-left-color: #60a5fa; }
     .kpi-t { font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: #64748b; min-height: 22px; }
     .kpi-v { font-size: 17px; font-weight: 800; color: #0f172a; margin: 6px 0 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -109,6 +106,7 @@ css = """
     }
 
     .unified-summary-box {
+        max-width: 100%; overflow-x: auto;
         background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
         margin-top: 8px; margin-bottom: 16px; overflow: auto;
         box-shadow: 0 1px 3px rgba(15,23,42,0.04);
@@ -146,7 +144,7 @@ css = """
     .val-orc { font-weight: 800; color: #2563eb; }
 
     .fases-table-container {
-        max-height: 500px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px;
+        max-height: 300px; overflow-x: auto; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px;
         background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
     }
     .fases-table {
@@ -307,7 +305,7 @@ def mapa_cores_obras(lista):
 def layout_fig(fig, h=280, legenda=True):
     fig.update_layout(
         height=h,
-        margin=dict(l=0, r=0, t=36 if legenda else 8, b=0),
+        margin=dict(l=0, r=0, t=48 if legenda else 8, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, Segoe UI, sans-serif", size=11, color=MUTED),
@@ -437,27 +435,14 @@ df_orc_filtrado = df_orcado.copy()
 df_real_filtrado = df_realizado.copy()
 df_fases_filtrado = df_fases.copy()
 
-anos_disponiveis = sorted(set(df_orcado['Ano'].dropna().astype(int).tolist() if not df_orcado.empty else []) | set(df_realizado['Ano'].dropna().astype(int).tolist() if not df_realizado.empty else []))
-if not anos_disponiveis:
-    anos_disponiveis = [2026]
-
+ano_selecionado = "Todos"
+mes_selecionado = "Todos"
 with st.sidebar:
     st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
-    ano_selecionado = st.selectbox("Ano de Análise", anos_disponiveis, index=len(anos_disponiveis)-1)
-    mes_selecionado = st.selectbox(
-        "Mês de Análise (Acumulado)",
-        options=["Todos"] + list(range(1, 13)),
-        format_func=lambda x: f"Até Mês {x:02d}" if isinstance(x, int) else x,
-    )
     obra_selecionada = st.selectbox("Empreendimento / Obra", ["Todas"] + lista_obras)
     if st.button("↻ Limpar filtros", use_container_width=True):
         st.rerun()
 
-    df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Ano'] == ano_selecionado]
-    df_real_filtrado = df_real_filtrado[df_real_filtrado['Ano'] == ano_selecionado]
-    if mes_selecionado != "Todos":
-        df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Mes'] <= mes_selecionado]
-        df_real_filtrado = df_real_filtrado[df_real_filtrado['Mes'] <= mes_selecionado]
     if obra_selecionada != "Todas":
         df_orc_filtrado = df_orc_filtrado[df_orc_filtrado['Obra'] == obra_selecionada]
         df_real_filtrado = df_real_filtrado[df_real_filtrado['Obra'] == obra_selecionada]
@@ -507,11 +492,11 @@ if not df_recursos.empty:
             caixa_inicial_base = val_rec
 
 caixa_disponivel = caixa_inicial_base - total_realizado
-df_real_ano = df_realizado[df_realizado['Ano'] == ano_selecionado]
+df_real_ano = df_realizado.copy()
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_real_ano['Mes'].max()) if not df_real_ano.empty else 0)
 mes_anterior = mes_atual - 1
 
-df_real_mom = df_realizado[df_realizado['Ano'] == ano_selecionado].copy()
+df_real_mom = df_realizado.copy()
 if obra_selecionada != "Todas":
     df_real_mom = df_real_mom[df_real_mom['Obra'] == obra_selecionada]
 
@@ -533,7 +518,7 @@ pb_width = min(consumo_geral_perc, 100)
 pb_color = VERMELHO if consumo_geral_perc > 100 else VERDE
 saldo_color = VERMELHO if saldo_orcamento < 0 else TXT
 caixa_disp_color = VERMELHO if caixa_disponivel < 0 else VERDE
-txt_mes = f"Até Mês {mes_selecionado:02d}/{ano_selecionado}" if mes_selecionado != "Todos" else f"Ano {ano_selecionado} · Todos os meses"
+txt_mes = "Todos os anos · Todas as competências"
 txt_obra = obra_selecionada if obra_selecionada != "Todas" else "Todas"
 
 # ==============================================================================
@@ -587,69 +572,60 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# EVOLUÇÃO MENSAL (+ TOTAL por linha, coluna fixa)
+# EVOLUÇÃO MENSAL · TODAS AS COMPETÊNCIAS (COM TOTALIZADORES)
 # ==============================================================================
-df_orc_m_base = df_orcado[df_orcado['Ano'] == ano_selecionado].copy()
-df_real_m_base = df_realizado[(df_realizado['Ano'] == ano_selecionado) & (df_realizado['Mes'] > 0)].copy()
+df_orc_m_base = df_orcado.copy()
+df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
 if obra_selecionada != "Todas":
     df_orc_m_base = df_orc_m_base[df_orc_m_base['Obra'] == obra_selecionada]
     df_real_m_base = df_real_m_base[df_real_m_base['Obra'] == obra_selecionada]
 
-df_orc_mensal = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().reset_index()
-df_real_mensal = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().reset_index()
-
-df_linha = pd.DataFrame({'Mes': range(1, 13)})
-df_linha = pd.merge(df_linha, df_orc_mensal, on='Mes', how='left').fillna({'Valor_Orcado': 0.0})
-df_linha = pd.merge(df_linha, df_real_mensal, on='Mes', how='left')
-max_mes_real = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
-df_linha.loc[df_linha['Mes'] > max_mes_real, 'Valor_Realizado'] = None
-
 meses_nomes = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
                7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
-df_linha['Mes_Nome'] = df_linha['Mes'].map(meses_nomes)
+periodos_set = set()
+for dfx in (df_orc_m_base, df_real_m_base):
+    if not dfx.empty:
+        periodos_set.update((int(r.Ano), int(r.Mes)) for r in dfx[['Ano','Mes']].dropna().itertuples(index=False) if int(r.Mes) > 0)
+periodos = sorted(periodos_set)
+if not periodos:
+    periodos = [(2026, m) for m in range(1, 13)]
+periodos_labels = [f"{meses_nomes[m]}-{a}" for a,m in periodos]
+map_periodo = { (a,m): label for (a,m), label in zip(periodos, periodos_labels) }
+for dfx in (df_orc_m_base, df_real_m_base):
+    if not dfx.empty:
+        dfx['Competencia'] = [map_periodo.get((int(a), int(m)), f"{meses_nomes.get(int(m), '?')}-{int(a)}") for a,m in zip(dfx['Ano'], dfx['Mes'])]
 
+df_orc_mensal = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum() if not df_orc_m_base.empty else pd.Series(dtype=float)
+df_real_mensal = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum() if not df_real_m_base.empty else pd.Series(dtype=float)
+df_linha = pd.DataFrame({'Competencia': periodos_labels})
+df_linha['Valor_Orcado'] = df_linha['Competencia'].map(df_orc_mensal).fillna(0.0)
+df_linha['Valor_Realizado'] = df_linha['Competencia'].map(df_real_mensal)
+max_periodo_real = max(((int(r.Ano), int(r.Mes)) for r in df_real_m_base[['Ano','Mes']].dropna().itertuples(index=False)), default=None) if not df_real_m_base.empty else None
+if max_periodo_real:
+    df_linha.loc[[p > max_periodo_real for p in periodos], 'Valor_Realizado'] = None
+else:
+    df_linha['Valor_Realizado'] = None
 tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
 tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
 st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
-
 fig_linha = go.Figure()
-fig_linha.add_trace(go.Scatter(
-    x=df_linha['Mes_Nome'], y=df_linha['Valor_Orcado'],
-    mode='lines+markers', name='Orçado',
-    line=dict(color=AZUL, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(37,99,235,0.10)',
-    hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>",
-))
-fig_linha.add_trace(go.Scatter(
-    x=df_linha['Mes_Nome'], y=df_linha['Valor_Realizado'],
-    mode='lines+markers', name='Realizado',
-    line=dict(color=VERDE, width=2.5), marker=dict(size=7),
-    fill='tozeroy', fillcolor='rgba(5,150,105,0.12)',
-    connectgaps=False,
-    hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>",
-))
-st.plotly_chart(layout_fig(fig_linha, 260, True), use_container_width=True, config={'displayModeBar': False})
+fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado', line=dict(color=AZUL, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(37,99,235,0.10)', hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>"))
+fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Realizado'], mode='lines+markers', name='Realizado', line=dict(color=VERDE, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(5,150,105,0.12)', connectgaps=False, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>"))
+fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=48,b=48))
+fig_linha.add_annotation(x=0.01,y=1.16,xref='paper',yref='paper',text=f"<b>Total orçado: {formatar_moeda_curta(tot_orc_linha)}</b>",showarrow=False,font=dict(color=AZUL,size=12),xanchor='left')
+fig_linha.add_annotation(x=0.99,y=1.16,xref='paper',yref='paper',text=f"<b>Total realizado: {formatar_moeda_curta(tot_real_linha)}</b>",showarrow=False,font=dict(color=VERDE,size=12),xanchor='right')
+st.plotly_chart(layout_fig(fig_linha, 300, True), use_container_width=True, config={'displayModeBar': False})
 
-html_unified = (
-    "<div class='unified-summary-box'><table class='unified-table'><thead><tr>"
-    "<th class='row-label'>Mês</th>"
-)
-for _, r in df_linha.iterrows():
-    html_unified += f"<th>{r['Mes_Nome']}</th>"
+html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Competência</th>"
+for label in periodos_labels: html_unified += f"<th>{label}</th>"
 html_unified += "<th class='col-total'>Total</th></tr></thead><tbody>"
-
 html_unified += "<tr><td class='row-label'>Realizado</td>"
-for _, r in df_linha.iterrows():
-    val_disp = formatar_moeda_curta(r['Valor_Realizado']) if pd.notna(r['Valor_Realizado']) else '-'
-    html_unified += f"<td class='val-real'>{val_disp}</td>"
+for _, r in df_linha.iterrows(): html_unified += f"<td class='val-real'>{formatar_moeda_curta(r['Valor_Realizado']) if pd.notna(r['Valor_Realizado']) else '-'}</td>"
 html_unified += f"<td class='col-total val-real'>{formatar_moeda_curta(tot_real_linha)}</td></tr>"
-
 html_unified += "<tr><td class='row-label'>Orçado</td>"
-for _, r in df_linha.iterrows():
-    html_unified += f"<td class='val-orc'>{formatar_moeda_curta(r['Valor_Orcado'])}</td>"
-html_unified += f"<td class='col-total val-orc'>{formatar_moeda_curta(tot_orc_linha)}</td></tr>"
-html_unified += "</tbody></table></div>"
+for _, r in df_linha.iterrows(): html_unified += f"<td class='val-orc'>{formatar_moeda_curta(r['Valor_Orcado'])}</td>"
+html_unified += f"<td class='col-total val-orc'>{formatar_moeda_curta(tot_orc_linha)}</td></tr></tbody></table></div>"
 st.markdown(html_unified, unsafe_allow_html=True)
 
 # ==============================================================================
@@ -677,15 +653,15 @@ with col_g1:
 
 with col_g2:
     st.markdown("<div class='section-title' style='margin-top:4px'>Consumo de caixa mensal por obra</div>", unsafe_allow_html=True)
-    df_stack = df_real_filtrado.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().reset_index()
+    df_stack = df_real_filtrado[df_real_filtrado['Mes'] > 0].groupby(['Ano', 'Mes', 'Obra'])['Valor_Realizado'].sum().reset_index()
     if not df_stack.empty:
-        df_stack['Mes_Nome'] = df_stack['Mes'].map(meses_nomes)
-        df_stack = df_stack.sort_values(['Mes', 'Obra'])
-        df_stack_tot = df_stack.groupby(['Mes', 'Mes_Nome'])['Valor_Realizado'].sum().reset_index()
+        df_stack['Mes_Nome'] = [f"{meses_nomes.get(int(m), '?')}-{int(a)}" for a,m in zip(df_stack['Ano'], df_stack['Mes'])]
+        df_stack = df_stack.sort_values(['Ano', 'Mes', 'Obra'])
+        df_stack_tot = df_stack.groupby(['Ano', 'Mes', 'Mes_Nome'])['Valor_Realizado'].sum().reset_index()
         obras_no_graf = sorted(df_stack['Obra'].unique().tolist())
         fig_stack = px.bar(
             df_stack, x='Mes_Nome', y='Valor_Realizado', color='Obra',
-            category_orders={"Obra": obras_no_graf, "Mes_Nome": list(meses_nomes.values())},
+            category_orders={"Obra": obras_no_graf, "Mes_Nome": periodos_labels},
             color_discrete_map=CORES_OBRA,
         )
         fig_stack.add_trace(go.Scatter(
@@ -703,9 +679,9 @@ with col_g2:
 # ==============================================================================
 st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
 
-saidas_real_dict = df_real_m_base.groupby('Mes')['Valor_Realizado'].sum().to_dict()
-saidas_orc_dict = df_orc_m_base.groupby('Mes')['Valor_Orcado'].sum().to_dict()
-max_mes_realizado = df_real_m_base['Mes'].max() if not df_real_m_base.empty else 0
+saidas_real_dict = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum().to_dict()
+saidas_orc_dict = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum().to_dict()
+max_comp_real = max_periodo_real
 
 todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
 if not df_orc_m_base.empty:
@@ -714,21 +690,21 @@ obras_fluxo = sorted(list(todas_obras_fluxo))
 if obra_selecionada != "Todas":
     obras_fluxo = [obra_selecionada]
 
-real_por_obra_mes = df_real_m_base.groupby(['Mes', 'Obra'])['Valor_Realizado'].sum().to_dict()
-orc_por_obra_mes = df_orc_m_base.groupby(['Mes', 'Obra'])['Valor_Orcado'].sum().to_dict()
+real_por_obra_mes = df_real_m_base.groupby(['Competencia', 'Obra'])['Valor_Realizado'].sum().to_dict()
+orc_por_obra_mes = df_orc_m_base.groupby(['Competencia', 'Obra'])['Valor_Orcado'].sum().to_dict()
 
 s_ini_list, saidas_tot_list, s_fim_list = [], [], []
 curr_saldo = caixa_inicial_base
-for m in range(1, 13):
+for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
     s_ini_list.append(curr_saldo)
-    saida_m = saidas_real_dict.get(m, 0.0) if m <= max_mes_realizado else saidas_orc_dict.get(m, 0.0)
+    saida_m = saidas_real_dict.get(comp, 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else saidas_orc_dict.get(comp, 0.0)
     saidas_tot_list.append(saida_m)
     curr_saldo -= saida_m
     s_fim_list.append(curr_saldo)
 
 html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Fluxo de Caixa</th>"
-for m_num in range(1, 13):
-    html_fluxo += f"<th>{meses_nomes[m_num]}</th>"
+for comp in periodos_labels:
+    html_fluxo += f"<th>{comp}</th>"
 html_fluxo += "</tr></thead><tbody>"
 
 html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
@@ -751,15 +727,15 @@ for obra_name in obras_fluxo:
         f"<tr class='sub-row'><td class='row-label' style='padding-left:28px;font-size:10px;"
         f"font-weight:normal;color:#64748b;border-right:2px solid #e2e8f0'>↳ {obra_name}</td>"
     )
-    for m_num in range(1, 13):
-        v_obra = real_por_obra_mes.get((m_num, obra_name), 0.0) if m_num <= max_mes_realizado else orc_por_obra_mes.get((m_num, obra_name), 0.0)
+    for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
+        v_obra = real_por_obra_mes.get((comp, obra_name), 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else orc_por_obra_mes.get((comp, obra_name), 0.0)
         html_fluxo += f"<td style='font-size:10px;color:#64748b'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
     html_fluxo += "</tr>"
 html_fluxo += "</tbody>"
 
 html_fluxo += "<tr><td class='row-label' style='font-weight:800'>(=) Saldo Final</td>"
-for m_num, val in enumerate(s_fim_list, start=1):
-    css_class = "val-real" if m_num <= max_mes_realizado else "val-orc"
+for idx, val in enumerate(s_fim_list):
+    css_class = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
     html_fluxo += f"<td class='{css_class}'><b>{formatar_moeda_curta(val)}</b></td>"
 html_fluxo += "</tr></tbody></table></div>"
 st.markdown(html_fluxo, unsafe_allow_html=True)
@@ -772,21 +748,21 @@ st.markdown("<div class='section-title'>Detalhamento do orçamento por obra</div
 if not df_orc_filtrado.empty:
     df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy()
     if not df_orc_tab.empty:
-        pivot_orc = pd.pivot_table(df_orc_tab, index='Obra', columns='Mes', values='Valor_Orcado', aggfunc='sum', fill_value=0.0)
-        for m in range(1, 13):
-            if m not in pivot_orc.columns:
-                pivot_orc[m] = 0.0
-        pivot_orc = pivot_orc[sorted(pivot_orc.columns)]
+        df_orc_tab['Competencia'] = [f"{meses_nomes.get(int(m), '?')}-{int(a)}" for a,m in zip(df_orc_tab['Ano'], df_orc_tab['Mes'])]
+        pivot_orc = pd.pivot_table(df_orc_tab, index='Obra', columns='Competencia', values='Valor_Orcado', aggfunc='sum', fill_value=0.0)
+        for comp in periodos_labels:
+            if comp not in pivot_orc.columns: pivot_orc[comp] = 0.0
+        pivot_orc = pivot_orc[periodos_labels]
         pivot_orc['Total_Geral'] = pivot_orc.sum(axis=1)
         pivot_orc = pivot_orc.sort_values(by='Total_Geral', ascending=False)
 
         html_orc_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / FASE DA OBRA</th>"
         html_orc_det += "<th>TOTAL ORÇADO</th>"
-        for m_num in range(1, 13):
-            html_orc_det += f"<th>{meses_nomes[m_num].upper()}</th>"
+        for comp in periodos_labels:
+            html_orc_det += f"<th>{comp.upper()}</th>"
         html_orc_det += "</tr></thead>"
 
-        totais_col_orc = {m: 0.0 for m in range(1, 13)}
+        totais_col_orc = {comp: 0.0 for comp in periodos_labels}
         total_geral_orc = 0.0
 
         for obra_name, row in pivot_orc.iterrows():
@@ -810,9 +786,9 @@ if not df_orc_filtrado.empty:
             )
             # TOTAL ORÇADO em preto
             html_orc_det += f"<td style='font-weight:800;color:{TXT}'>{formatar_moeda(tot_obra)}</td>"
-            for m_num in range(1, 13):
-                val_m = row.get(m_num, 0.0)
-                totais_col_orc[m_num] += val_m
+            for comp in periodos_labels:
+                val_m = row.get(comp, 0.0)
+                totais_col_orc[comp] += val_m
                 html_orc_det += f"<td style='font-weight:700'>{formatar_moeda(val_m) if val_m > 0 else '-'}</td>"
             html_orc_det += "</tr>"
 
@@ -827,16 +803,16 @@ if not df_orc_filtrado.empty:
                     )
                     val_sub_total = tot_obra / num_fases if num_fases > 0 else 0
                     html_orc_det += f"<td style='font-size:11px;font-weight:600;color:#64748b'>{formatar_moeda(val_sub_total)}</td>"
-                    for m_num in range(1, 13):
-                        val_m_sub = row.get(m_num, 0.0) / num_fases if num_fases > 0 else 0
+                    for comp in periodos_labels:
+                        val_m_sub = row.get(comp, 0.0) / num_fases if num_fases > 0 else 0
                         html_orc_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(val_m_sub) if val_m_sub > 0 else '-'}</td>"
                     html_orc_det += "</tr>"
             html_orc_det += "</tbody>"
 
         html_orc_det += "<tr class='total-geral-row'><td>TOTAL GERAL ORÇADO</td>"
         html_orc_det += f"<td style='font-weight:900;color:{TXT}'>{formatar_moeda(total_geral_orc)}</td>"
-        for m_num in range(1, 13):
-            t_col = totais_col_orc[m_num]
+        for comp in periodos_labels:
+            t_col = totais_col_orc[comp]
             html_orc_det += f"<td style='font-weight:900'>{formatar_moeda(t_col) if t_col > 0 else '-'}</td>"
         html_orc_det += "</tr></table></div>"
         st.markdown(html_orc_det, unsafe_allow_html=True)
@@ -848,43 +824,44 @@ st.markdown("<div class='section-title'>Detalhamento de pagamentos realizados</d
 
 if not df_real_filtrado.empty:
     df_real_tab = df_real_filtrado[df_real_filtrado['Mes'] > 0].copy()
+    df_real_tab['Competencia'] = [f"{meses_nomes.get(int(m), '?')}-{int(a)}" for a,m in zip(df_real_tab['Ano'], df_real_tab['Mes'])]
     df_orc_tab = df_orc_filtrado[df_orc_filtrado['Mes'] > 0].copy() if not df_orc_filtrado.empty else pd.DataFrame()
+    if not df_orc_tab.empty:
+        df_orc_tab['Competencia'] = [f"{meses_nomes.get(int(m), '?')}-{int(a)}" for a,m in zip(df_orc_tab['Ano'], df_orc_tab['Mes'])]
 
     if not df_real_tab.empty:
         orc_obra_mes, orc_obra_tot = {}, {}
-        orc_mes_tot = {m: 0.0 for m in range(1, 13)}
+        orc_mes_tot = {comp: 0.0 for comp in periodos_labels}
         if not df_orc_tab.empty:
-            df_orc_grp = df_orc_tab.groupby(['Obra', 'Mes'])['Valor_Orcado'].sum().reset_index()
+            df_orc_grp = df_orc_tab.groupby(['Obra', 'Competencia'])['Valor_Orcado'].sum().reset_index()
             for _, r in df_orc_grp.iterrows():
-                orc_obra_mes[(r['Obra'], r['Mes'])] = r['Valor_Orcado']
+                orc_obra_mes[(r['Obra'], r['Competencia'])] = r['Valor_Orcado']
                 orc_obra_tot[r['Obra']] = orc_obra_tot.get(r['Obra'], 0.0) + r['Valor_Orcado']
-                orc_mes_tot[r['Mes']] = orc_mes_tot.get(r['Mes'], 0.0) + r['Valor_Orcado']
+                orc_mes_tot[r['Competencia']] = orc_mes_tot.get(r['Competencia'], 0.0) + r['Valor_Orcado']
         total_orcado_geral = sum(orc_mes_tot.values())
 
-        pivot_real = pd.pivot_table(df_real_tab, index='Obra', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
-        for m in range(1, 13):
-            if m not in pivot_real.columns:
-                pivot_real[m] = 0.0
-        pivot_real = pivot_real[sorted(pivot_real.columns)]
+        pivot_real = pd.pivot_table(df_real_tab, index='Obra', columns='Competencia', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
+        for comp in periodos_labels:
+            if comp not in pivot_real.columns: pivot_real[comp] = 0.0
+        pivot_real = pivot_real[periodos_labels]
         pivot_real['Total_Geral'] = pivot_real.sum(axis=1)
         pivot_real = pivot_real.sort_values(by='Total_Geral', ascending=False)
 
         html_real_det = "<div class='fases-table-container'><table class='fases-table'><thead><tr><th>OBRA / CATEGORIA</th>"
         html_real_det += "<th>TOTAL</th>"
-        for m_num in range(1, 13):
-            html_real_det += f"<th>{meses_nomes[m_num].upper()}</th>"
+        for comp in periodos_labels:
+            html_real_det += f"<th>{comp.upper()}</th>"
         html_real_det += "</tr></thead>"
 
-        totais_col_real = {m: 0.0 for m in range(1, 13)}
+        totais_col_real = {comp: 0.0 for comp in periodos_labels}
         totais_geral_real = 0.0
 
         for obra_name, row in pivot_real.iterrows():
             sub_df = df_real_tab[df_real_tab['Obra'] == obra_name]
-            pivot_sub = pd.pivot_table(sub_df, index='Fornecedor', columns='Mes', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
-            for m in range(1, 13):
-                if m not in pivot_sub.columns:
-                    pivot_sub[m] = 0.0
-            pivot_sub = pivot_sub[sorted(pivot_sub.columns)]
+            pivot_sub = pd.pivot_table(sub_df, index='Fornecedor', columns='Competencia', values='Valor_Realizado', aggfunc='sum', fill_value=0.0)
+            for comp in periodos_labels:
+                if comp not in pivot_sub.columns: pivot_sub[comp] = 0.0
+            pivot_sub = pivot_sub[periodos_labels]
             pivot_sub['Total_Geral'] = pivot_sub.sum(axis=1)
             pivot_sub = pivot_sub.sort_values(by='Total_Geral', ascending=False)
 
@@ -903,10 +880,10 @@ if not df_real_filtrado.empty:
                 f"<td><span style='font-weight:800;color:{cor_tot_obra}'>{formatar_moeda(tot_obra_real)}</span>"
                 f"<span class='orcado-indicator'>{str_orc_tot_obra}</span></td>"
             )
-            for m_num in range(1, 13):
-                val_m_real = row.get(m_num, 0.0)
-                totais_col_real[m_num] += val_m_real
-                val_m_orc = orc_obra_mes.get((obra_name, m_num), 0.0)
+            for comp in periodos_labels:
+                val_m_real = row.get(comp, 0.0)
+                totais_col_real[comp] += val_m_real
+                val_m_orc = orc_obra_mes.get((obra_name, comp), 0.0)
                 if val_m_real > 0 and val_m_orc > 0:
                     cor_m = VERDE if val_m_real <= val_m_orc else VERMELHO
                 else:
@@ -928,8 +905,8 @@ if not df_real_filtrado.empty:
                     f"white-space:nowrap'>↳ {forn_name}</td>"
                 )
                 html_real_det += f"<td style='font-size:11px;font-weight:700'>{formatar_moeda(tot_sub_geral)}</td>"
-                for m_num in range(1, 13):
-                    v_sub = sub_row.get(m_num, 0.0)
+                for comp in periodos_labels:
+                    v_sub = sub_row.get(comp, 0.0)
                     html_real_det += f"<td style='font-size:11px;color:#64748b'>{formatar_moeda(v_sub) if v_sub > 0 else '-'}</td>"
                 html_real_det += "</tr>"
             html_real_det += "</tbody>"
@@ -940,9 +917,9 @@ if not df_real_filtrado.empty:
             f"<td><span style='font-weight:900'>{formatar_moeda(totais_geral_real)}</span>"
             f"<span class='orcado-indicator'>{str_orc_tot_geral}</span></td>"
         )
-        for m_num in range(1, 13):
-            t_col_real = totais_col_real[m_num]
-            t_col_orc = orc_mes_tot.get(m_num, 0.0)
+        for comp in periodos_labels:
+            t_col_real = totais_col_real[comp]
+            t_col_orc = orc_mes_tot.get(comp, 0.0)
             str_orc_col = f"Orç: {formatar_moeda_curta(t_col_orc)}" if t_col_orc > 0 else "Orç: -"
             html_real_det += (
                 f"<td><span style='font-weight:900'>{formatar_moeda(t_col_real) if t_col_real > 0 else '-'}</span>"
