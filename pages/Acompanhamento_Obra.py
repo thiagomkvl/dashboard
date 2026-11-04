@@ -118,6 +118,7 @@ css = """
     }
     .unified-table th:last-child { border-right: none; }
     .unified-table td {
+        color: #111827 !important;
         padding: 10px 8px; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9;
         background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;
     }
@@ -144,8 +145,11 @@ css = """
     .val-orc { font-weight: 800; color: #2563eb; }
 
     .fases-table-container {
-        max-height: 300px; overflow-x: auto; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px;
+        width: 100%; max-height: none; height: auto;
+        overflow-x: auto; overflow-y: hidden;
+        border: 1px solid #e2e8f0; border-radius: 12px;
         background: #ffffff; box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+        scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
     }
     .fases-table {
         width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
@@ -158,6 +162,7 @@ css = """
         position: sticky; top: 0; z-index: 15;
     }
     .fases-table td {
+        color: #111827 !important;
         padding: 10px; border-bottom: 1px solid #f1f5f9; color: #334155;
         background: #ffffff; text-align: left;
     }
@@ -380,7 +385,7 @@ def carregar_dados_obras_detalhado():
                 if str(c).strip() and not str(c).strip().lower().startswith('unnamed')
             ]
             df_fases_raw = df_fases_raw[valid_cols].copy()
-            df_fases_raw = df_fases_raw.replace(r'^\\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
+            df_fases_raw = df_fases_raw.replace(r'^\s*$', pd.NA, regex=True).dropna(axis=1, how='all')
 
             if not df_fases_raw.empty and len(df_fases_raw.columns) >= 2:
                 col_obra_fase = df_fases_raw.columns[0]
@@ -440,6 +445,19 @@ def carregar_dados_obras_detalhado():
             df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
             valid_cols_rec = [c for c in df_recursos_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_recursos = df_recursos_raw[valid_cols_rec].copy()
+            # Normaliza as captações pela data efetiva e pelo valor alocado à obra.
+            col_data_rec = next((c for c in df_recursos.columns if str(c).strip().lower() in ['data', 'data alocacao', 'data alocação']), None)
+            col_valor_rec = next((c for c in df_recursos.columns if 'recurso' in str(c).lower() and 'aloc' in str(c).lower()), None)
+            if col_data_rec and col_valor_rec:
+                df_recursos['_Data_Alocacao'] = pd.to_datetime(df_recursos[col_data_rec], errors='coerce', dayfirst=True)
+                df_recursos['_Valor_Alocado'] = df_recursos[col_valor_rec].apply(limpa_valor)
+                df_recursos['_Ano'] = df_recursos['_Data_Alocacao'].dt.year
+                df_recursos['_Mes'] = df_recursos['_Data_Alocacao'].dt.month
+                df_recursos = df_recursos[df_recursos['_Data_Alocacao'].notna() & (df_recursos['_Valor_Alocado'] != 0)].copy()
+            else:
+                df_recursos['_Ano'] = pd.Series(dtype='int64')
+                df_recursos['_Mes'] = pd.Series(dtype='int64')
+                df_recursos['_Valor_Alocado'] = pd.Series(dtype='float64')
         except Exception:
             df_recursos = pd.DataFrame()
 
@@ -533,14 +551,11 @@ total_realizado = df_real_filtrado['Valor_Realizado'].sum()
 saldo_orcamento = total_orcado - total_realizado
 consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
 
-caixa_inicial_base = 10_000_000.0
-if not df_recursos.empty:
-    col_rec = next((c for c in df_recursos.columns if 'recurso' in c.lower() or 'alocado' in c.lower()), None)
-    if col_rec:
-        val_rec = df_recursos[col_rec].apply(limpa_valor).sum()
-        if val_rec > 0:
-            caixa_inicial_base = val_rec
-
+# Total captado continua sendo exibido no KPI; no fluxo, cada captação
+# entra somente na competência da sua data (não no saldo inicial).
+caixa_inicial_base = float(df_recursos['_Valor_Alocado'].sum()) if not df_recursos.empty and '_Valor_Alocado' in df_recursos.columns else 0.0
+if caixa_inicial_base <= 0:
+    caixa_inicial_base = 10_000_000.0  # compatibilidade caso a aba não esteja disponível
 caixa_disponivel = caixa_inicial_base - total_realizado
 df_real_ano = df_realizado.copy()
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_real_ano['Mes'].max()) if not df_real_ano.empty else 0)
@@ -616,7 +631,6 @@ st.markdown(f"""
     <div class='kpi'>
         <div class='kpi-t'>Caixa disponível</div>
         <div class='kpi-v' style='color:{caixa_disp_color}'>{formatar_moeda(caixa_disponivel)}</div>
-        <div class='kpi-sub {mom_cls}'>{mom_str}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -636,6 +650,8 @@ periodos_set = set()
 for dfx in (df_orc_m_base, df_real_m_base):
     if not dfx.empty:
         periodos_set.update((int(r.Ano), int(r.Mes)) for r in dfx[['Ano','Mes']].dropna().itertuples(index=False) if int(r.Mes) > 0)
+if not df_recursos.empty and {'_Ano', '_Mes'}.issubset(df_recursos.columns):
+    periodos_set.update((int(a), int(m)) for a, m in zip(df_recursos['_Ano'].dropna(), df_recursos.loc[df_recursos['_Ano'].notna(), '_Mes']) if int(m) > 0)
 periodos = sorted(periodos_set)
 if not periodos:
     periodos = [(2026, m) for m in range(1, 13)]
@@ -672,12 +688,18 @@ tot_real_linha = float(df_linha['Valor_Realizado'].fillna(0).sum())
 tot_orc_linha = float(df_linha['Valor_Orcado'].fillna(0).sum())
 
 st.markdown("<div class='section-title'>Evolução mensal · Orçado vs Realizado</div>", unsafe_allow_html=True)
+st.markdown(f"""
+<div style='display:flex;justify-content:flex-end;align-items:center;gap:18px;flex-wrap:wrap;
+            margin:-2px 2px 8px;padding:7px 12px;background:#ffffff;border:1px solid #e2e8f0;
+            border-radius:8px;font-size:12px;font-weight:700'>
+  <span style='color:{AZUL}'>Total orçado: {formatar_moeda(tot_orc_linha)}</span>
+  <span style='color:{VERDE}'>Total realizado: {formatar_moeda(tot_real_linha)}</span>
+</div>
+""", unsafe_allow_html=True)
 fig_linha = go.Figure()
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Orcado'], mode='lines+markers', name='Orçado', line=dict(color=AZUL, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(37,99,235,0.10)', hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Orçado</extra>"))
 fig_linha.add_trace(go.Scatter(x=df_linha['Competencia'], y=df_linha['Valor_Realizado'], mode='lines+markers', name='Realizado', line=dict(color=VERDE, width=2.5), marker=dict(size=6), fill='tozeroy', fillcolor='rgba(5,150,105,0.12)', connectgaps=False, hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Realizado</extra>"))
-fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=48,b=48))
-fig_linha.add_annotation(x=0.01,y=1.16,xref='paper',yref='paper',text=f"<b>Total orçado: {formatar_moeda_curta(tot_orc_linha)}</b>",showarrow=False,font=dict(color=AZUL,size=12),xanchor='left')
-fig_linha.add_annotation(x=0.99,y=1.16,xref='paper',yref='paper',text=f"<b>Total realizado: {formatar_moeda_curta(tot_real_linha)}</b>",showarrow=False,font=dict(color=VERDE,size=12),xanchor='right')
+fig_linha.update_layout(xaxis=dict(type='category', tickangle=-45), margin=dict(l=8,r=8,t=20,b=48))
 st.plotly_chart(layout_fig(fig_linha, 300, True), use_container_width=True, config={'displayModeBar': False})
 
 html_unified = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Competência</th>"
@@ -739,6 +761,95 @@ with col_g2:
 
 # ==============================================================================
 # FLUXO DE CAIXA DA OBRA
+# ==============================================================================
+st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
+
+# Fluxo híbrido: competências até o último mês com pagamento registrado
+# usam exclusivamente Realizado_Obra; competências posteriores usam
+# exclusivamente Orçamento_Obra. Nunca somar realizado + orçamento no mesmo mês.
+saidas_real_dict = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum().to_dict()
+saidas_orc_dict = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum().to_dict()
+max_comp_real = max_periodo_real
+if max_comp_real:
+    corte_label = f"{meses_nomes[max_comp_real[1]]}-{max_comp_real[0]}"
+    st.caption(f"Fluxo calculado com pagamentos realizados até {corte_label}; a partir da competência seguinte, utiliza o orçamento previsto.")
+else:
+    st.caption("Ainda não há pagamentos realizados válidos; o fluxo utiliza o orçamento previsto em todas as competências.")
+
+todas_obras_fluxo = set(df_real_m_base['Obra'].unique()) if not df_real_m_base.empty else set()
+if not df_orc_m_base.empty:
+    todas_obras_fluxo = todas_obras_fluxo.union(set(df_orc_m_base['Obra'].unique()))
+obras_fluxo = sorted(list(todas_obras_fluxo))
+if obra_selecionada != "Todas":
+    obras_fluxo = [obra_selecionada]
+
+real_por_obra_mes = df_real_m_base.groupby(['Competencia', 'Obra'])['Valor_Realizado'].sum().to_dict()
+orc_por_obra_mes = df_orc_m_base.groupby(['Competencia', 'Obra'])['Valor_Orcado'].sum().to_dict()
+
+s_ini_list, recursos_mes_list, saidas_tot_list, s_fim_list = [], [], [], []
+recursos_por_comp = {}
+if not df_recursos.empty and {'_Ano', '_Mes', '_Valor_Alocado'}.issubset(df_recursos.columns):
+    for _, rr in df_recursos.iterrows():
+        if pd.notna(rr['_Ano']) and pd.notna(rr['_Mes']):
+            label_rec = f"{meses_nomes[int(rr['_Mes'])]}-{int(rr['_Ano'])}"
+            recursos_por_comp[label_rec] = recursos_por_comp.get(label_rec, 0.0) + float(rr['_Valor_Alocado'])
+
+# O saldo começa zerado. As captações entram na competência indicada em Recursos_Obra.
+curr_saldo = 0.0
+for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
+    s_ini_list.append(curr_saldo)
+    recurso_m = recursos_por_comp.get(comp, 0.0)
+    recursos_mes_list.append(recurso_m)
+    saida_m = saidas_real_dict.get(comp, 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else saidas_orc_dict.get(comp, 0.0)
+    saidas_tot_list.append(saida_m)
+    curr_saldo += recurso_m - saida_m
+    s_fim_list.append(curr_saldo)
+
+html_fluxo = "<div class='unified-summary-box'><table class='unified-table'><thead><tr><th class='row-label'>Fluxo de Caixa</th>"
+for comp in periodos_labels:
+    html_fluxo += f"<th>{comp}</th>"
+html_fluxo += "</tr></thead><tbody>"
+html_fluxo += "<tr><td colspan='" + str(len(periodos_labels)+1) + "' style='background:#fff;text-align:left;font-weight:800;color:#0f172a'>"
+html_fluxo += "<span style='color:#059669;margin-right:18px'>● REALIZADO</span><span style='color:#dc2626'>● PROJETADO</span></td></tr>"
+
+html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
+for val in s_ini_list:
+    html_fluxo += f"<td style='color:{VERMELHO if val < 0 else TXT};font-weight:700'>{formatar_moeda_curta(val)}</td>"
+html_fluxo += "</tr>"
+
+html_fluxo += "<tr><td class='row-label'>(+) Recursos Alocados</td>"
+for val in recursos_mes_list:
+    html_fluxo += f"<td style='color:#059669;font-weight:800'>{formatar_moeda_curta(val) if val else '-'} </td>"
+html_fluxo += "</tr>"
+
+html_fluxo += "<tbody class='obra-group'><tr>"
+html_fluxo += (
+    "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
+    "<input type='checkbox' class='toggle-checkbox'><span class='indicator'>▶</span> "
+    "<b>(-) Saídas Totais</b></label></td>"
+)
+for val in saidas_tot_list:
+    html_fluxo += f"<td style='color:#dc2626;font-weight:800'>{formatar_moeda_curta(val)}</td>"
+html_fluxo += "</tr>"
+
+for obra_name in obras_fluxo:
+    html_fluxo += (
+        f"<tr class='sub-row'><td class='row-label' style='padding-left:28px;font-size:10px;"
+        f"font-weight:normal;color:#64748b;border-right:2px solid #e2e8f0'>↳ {obra_name}</td>"
+    )
+    for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
+        v_obra = real_por_obra_mes.get((comp, obra_name), 0.0) if max_comp_real and (ano_p, mes_p) <= max_comp_real else orc_por_obra_mes.get((comp, obra_name), 0.0)
+        html_fluxo += f"<td style='font-size:10px;color:#64748b'>{formatar_moeda_curta(v_obra) if v_obra > 0 else '-'}</td>"
+    html_fluxo += "</tr>"
+html_fluxo += "</tbody>"
+
+html_fluxo += "<tr><td class='row-label' style='font-weight:800'>(=) Saldo Final</td>"
+for idx, val in enumerate(s_fim_list):
+    css_class = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
+    html_fluxo += f"<td class='{css_class}' style='color:{VERMELHO if val < 0 else (VERDE if css_class == 'val-real' else VERMELHO)}'><b>{formatar_moeda_curta(val)}</b></td>"
+html_fluxo += "</tr></tbody></table></div>"
+st.markdown(html_fluxo, unsafe_allow_html=True)
+
 # ==============================================================================
 # DETALHAMENTO ORÇAMENTO — valores reais por fase, lidos da aba Fases_Obra
 # ==============================================================================
