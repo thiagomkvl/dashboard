@@ -281,7 +281,9 @@ def limpa_valor_bruto(valor):
 
 def formatar_moeda(valor, exibir_traco_zero=True):
     try:
-        val = float(valor)
+        val = round(float(valor), 2)
+        if abs(val) < 0.005:
+            val = 0.0
         if val == 0 and exibir_traco_zero:
             return "R$ 0,00"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
