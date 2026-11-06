@@ -283,10 +283,10 @@ def formatar_moeda(valor, exibir_traco_zero=True):
     try:
         val = float(valor)
         if val == 0 and exibir_traco_zero:
-            return "-"
+            return "R$ 0,00"
         return f"R$ {val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception:
-        return "-" if exibir_traco_zero else "R$ 0,00"
+        return "R$ 0,00"
 
 
 def formatar_abreviado(valor):
