@@ -311,6 +311,44 @@ def normalizar_texto(txt):
     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
 
 
+def _df_tx_view(df_tx):
+    """Prepara o dataframe de transações para exibição no modal."""
+    if df_tx is None or df_tx.empty:
+        return pd.DataFrame()
+    view = df_tx.copy()
+    if 'Data' in view.columns:
+        view['Data'] = pd.to_datetime(view['Data'], errors='coerce').dt.strftime('%d/%m/%Y')
+    cols = [c for c in ['Data', 'Conta Bancária', 'Historico', 'SubGrupo', 'Vl Crédito', 'Vl Débito'] if c in view.columns]
+    view = view[cols]
+    if 'Data' in view.columns:
+        view = view.sort_values(by='Data', ascending=False)
+    view = view.rename(columns={
+        'Conta Bancária': 'Conta',
+        'Historico': 'Histórico',
+        'SubGrupo': 'Subgrupo',
+        'Vl Crédito': 'Crédito',
+        'Vl Débito': 'Débito',
+    })
+    for c in ['Crédito', 'Débito']:
+        if c in view.columns:
+            view[c] = view[c].apply(lambda x: formatar_moeda(x, False))
+    return view
+
+
+@st.dialog("Composição do indicador", width="large")
+def dialog_transacoes(titulo, df_tx, total_txt=""):
+    st.markdown(f"**{titulo}**")
+    if total_txt:
+        st.caption(total_txt)
+    view = _df_tx_view(df_tx)
+    if view.empty:
+        st.info("Nenhuma transação neste indicador.")
+    else:
+        st.dataframe(view, use_container_width=True, hide_index=True)
+    if st.button("Fechar", use_container_width=True):
+        st.rerun()
+
+
 def layout_fig(fig, h=220, legenda=True):
     fig.update_layout(
         height=h,
@@ -448,11 +486,20 @@ def resumo_comp(atual, anterior, bom_se_subir):
 # ==============================================================================
 # CARGA DE DADOS
 # ==============================================================================
+_RETORNO_VAZIO = (
+    pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária',
+    0.0, 0.0, None, None, pd.DataFrame(),
+)
+
+
 @st.cache_data(ttl=60, show_spinner="Carregando dados…")
 def carregar_dados(data_inicio, data_fim):
     conn = conectar_sheets()
     if conn is None:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
+        return (
+            pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária',
+            0.0, 0.0, data_inicio, data_fim, pd.DataFrame(),
+        )
 
     try:
         df_saldo_inicial = pd.DataFrame(columns=['Conta Bancária', 'Saldo Inicial', 'Conta Garantida'])
@@ -511,6 +558,7 @@ def carregar_dados(data_inicio, data_fim):
                 df_process['Vl Débito'] = df_ext[col_deb].apply(limpa_valor_bruto)
                 df_process['Vl Crédito'] = df_ext[col_cred].apply(limpa_valor_bruto)
                 df_process['SubGrupo'] = df_ext[col_subgrupo].astype(str).str.strip()
+                df_process['Historico'] = df_ext[col_tipo].astype(str).str.strip()
                 df_process['Mov_Total'] = df_process['Vl Crédito'] - df_process['Vl Débito']
                 df_process['Vl_Absoluto'] = df_process['Vl Crédito'] + df_process['Vl Débito']
 
@@ -605,8 +653,6 @@ def carregar_dados(data_inicio, data_fim):
             df_graficos['Entrada Op'] = df_graficos['Cred_Op']
             df_graficos['Saída Op'] = df_graficos['Deb_Op']
 
-            # Delta NÃO inclui Liberação de Empréstimo (coluna H).
-            # Saldo Final continua refletindo o caixa real (com empréstimo).
             saldos_iniciais, saldos_finais, delta_rs, delta_pct = [], [], [], []
             saldo_atual_iter = saldo_inicial_caixa
             saldo_para_delta = saldo_inicial_caixa
@@ -684,18 +730,33 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Erro ao processar Aplicações do Extrato:", e)
 
+        # Detalhe de transações do período (caixa: Disponível + Aplicação)
+        df_detalhe = pd.DataFrame()
+        try:
+            if df_extratos is not None and not df_extratos.empty:
+                df_detalhe = df_extratos[
+                    df_extratos['Conta Bancária'].apply(definir_tipo).isin(['Disponível', 'Aplicação'])
+                ].copy()
+        except Exception:
+            df_detalhe = pd.DataFrame()
+
         return (
             df_fim_mes, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi,
             'Conta Bancária', entradas_periodo, saidas_periodo, data_inicio, data_fim,
+            df_detalhe,
         )
     except Exception as e:
         st.error(f"Erro fatal ao carregar dados: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária', 0.0, 0.0, data_inicio, data_fim
+        return (
+            pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária',
+            0.0, 0.0, data_inicio, data_fim, pd.DataFrame(),
+        )
 
 
 (
     df_consolidado, df_graficos, df_aplicacoes_nova, saldo_aplicado_kpi, col_conta,
     entradas_operacionais, saidas_operacionais, data_ini_painel, data_fim_painel,
+    df_detalhe,
 ) = carregar_dados(data_inicio_filtro, data_fim_filtro)
 
 if not col_conta:
@@ -704,6 +765,9 @@ if not col_conta:
 if df_consolidado.empty:
     st.warning("⚠️ Os dados não foram carregados ou a planilha está vazia.")
     st.stop()
+
+if df_detalhe is None:
+    df_detalhe = pd.DataFrame()
 
 # ==============================================================================
 # KPIs
@@ -834,6 +898,37 @@ with c2:
         f"<div style='color:{cor_res}'>{formatar_moeda(resultado_liquido_mes, False)}</div></div>",
         unsafe_allow_html=True,
     )
+
+    # Modais de composição dos indicadores
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("Ver entradas", use_container_width=True, key="btn_ent_op"):
+            tx = (
+                df_detalhe[df_detalhe['Cred_Op'] > 0]
+                if (not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns)
+                else pd.DataFrame()
+            )
+            dialog_transacoes("Entradas operacionais", tx, f"Total: {formatar_moeda(entradas_mes, False)}")
+    with b2:
+        if st.button("Ver saídas", use_container_width=True, key="btn_sai_op"):
+            tx = (
+                df_detalhe[df_detalhe['Deb_Op'] > 0]
+                if (not df_detalhe.empty and 'Deb_Op' in df_detalhe.columns)
+                else pd.DataFrame()
+            )
+            dialog_transacoes("Saídas operacionais", tx, f"Total: {formatar_moeda(saidas_mes, False)}")
+    with b3:
+        if st.button("Ver resultado", use_container_width=True, key="btn_res_op"):
+            if not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns and 'Deb_Op' in df_detalhe.columns:
+                tx = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)].copy()
+            else:
+                tx = pd.DataFrame()
+            dialog_transacoes(
+                "Resultado líquido",
+                tx,
+                f"Resultado: {formatar_moeda(resultado_liquido_mes, False)}",
+            )
+
     st.markdown(
         "<div class='section-title' style='margin-top:10px'>Evolução diária do saldo total</div>",
         unsafe_allow_html=True,
@@ -1017,3 +1112,43 @@ with col_diario:
             )
     tb_d += "</tbody></table></div>"
     st.markdown(tb_d, unsafe_allow_html=True)
+
+    # Modal por dia (composição entradas/saídas da linha)
+    if not df_graficos.empty:
+        opcoes = (
+            df_graficos.sort_values('Data', ascending=False)
+            .assign(_lab=lambda d: d['Data'].dt.strftime('%d/%m/%Y'))
+        )
+        lab_map = dict(zip(opcoes['_lab'], opcoes['Data']))
+        c_dia, c_ent, c_sai = st.columns([2, 1, 1])
+        with c_dia:
+            dia_lab = st.selectbox(
+                "Dia",
+                options=list(lab_map.keys()),
+                key="dia_modal_saldo",
+                label_visibility="collapsed",
+            )
+        dia_sel = pd.Timestamp(lab_map[dia_lab]).normalize()
+        row_dia = df_graficos[df_graficos['Data'] == dia_sel]
+        ent_dia = float(row_dia['Entrada Op'].sum()) if not row_dia.empty else 0.0
+        sai_dia = float(row_dia['Saída Op'].sum()) if not row_dia.empty else 0.0
+        if not df_detalhe.empty and 'Data' in df_detalhe.columns:
+            base_dia = df_detalhe[pd.to_datetime(df_detalhe['Data']).dt.normalize() == dia_sel]
+        else:
+            base_dia = pd.DataFrame()
+        with c_ent:
+            if st.button("Entradas do dia", use_container_width=True, key="btn_ent_dia"):
+                tx = (
+                    base_dia[base_dia['Cred_Op'] > 0]
+                    if (not base_dia.empty and 'Cred_Op' in base_dia.columns)
+                    else pd.DataFrame()
+                )
+                dialog_transacoes(f"Entradas · {dia_lab}", tx, f"Total: {formatar_moeda(ent_dia, False)}")
+        with c_sai:
+            if st.button("Saídas do dia", use_container_width=True, key="btn_sai_dia"):
+                tx = (
+                    base_dia[base_dia['Deb_Op'] > 0]
+                    if (not base_dia.empty and 'Deb_Op' in base_dia.columns)
+                    else pd.DataFrame()
+                )
+                dialog_transacoes(f"Saídas · {dia_lab}", tx, f"Total: {formatar_moeda(sai_dia, False)}")
