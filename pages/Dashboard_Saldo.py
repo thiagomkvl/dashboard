@@ -57,6 +57,7 @@ css = """
     [data-testid="stMarkdownContainer"] { color: #0f172a; }
     [data-testid="stCaptionContainer"] { color: #64748b !important; }
 
+    /* Sidebar */
     [data-testid="stSidebar"] {
         background: #ffffff !important;
         border-right: 1px solid #e2e8f0;
@@ -74,6 +75,7 @@ css = """
     .side-card small { display: block; color: #64748b; font-size: 11px; }
     .side-card b { color: #0f172a; font-size: 13px; }
 
+    /* Widgets claros */
     [data-baseweb="select"] > div,
     [data-testid="stDateInput"] > div > div {
         background: #ffffff !important;
@@ -91,26 +93,7 @@ css = """
     }
     .stButton > button:hover { filter: brightness(1.06); color: #fff; border: none; }
 
-    /* Botões-lupa discretos */
-    div[data-testid="stButton"] > button[kind="secondary"] {
-        background: transparent !important;
-        color: #64748b !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-        min-height: 28px !important;
-        height: 28px !important;
-        padding: 0 8px !important;
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        box-shadow: none !important;
-    }
-    div[data-testid="stButton"] > button[kind="secondary"]:hover {
-        background: #f1f5f9 !important;
-        color: #2563eb !important;
-        border-color: #cbd5e1 !important;
-        filter: none !important;
-    }
-
+    /* Cabeçalho */
     .top {
         display: flex; justify-content: space-between; align-items: center; gap: 16px;
         padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0;
@@ -128,6 +111,7 @@ css = """
     .pill small { display: block; font-size: 10px; color: #64748b; }
     .pill b { font-size: 13px; color: #0f172a; white-space: nowrap; }
 
+    /* KPIs */
     .kpi {
         padding: 12px 14px; border-radius: 12px; min-height: 96px;
         background: #ffffff;
@@ -163,6 +147,7 @@ css = """
         background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
     }
 
+    /* Seções */
     .section-title {
         font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
         color: #0f172a; margin: 10px 0 8px; padding-left: 10px;
@@ -178,6 +163,7 @@ css = """
         text-transform: uppercase; letter-spacing: 0.45px; margin-bottom: 2px;
     }
 
+    /* Cards movimento */
     .movement-card {
         padding: 10px 12px; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
         border-radius: 10px; background: #ffffff; min-height: 56px;
@@ -187,6 +173,7 @@ css = """
         font-variant-numeric: tabular-nums; color: #0f172a; font-weight: 800; font-size: 14px;
     }
 
+    /* Tabelas */
     .tabela-container, .tabela-container-scroll {
         overflow: auto; border: 1px solid #e2e8f0; border-radius: 12px;
         background: #ffffff; width: 100%;
@@ -220,19 +207,6 @@ css = """
         border-top: 1px solid rgba(217, 119, 6, 0.25);
     }
     .tabela-financeira td.valor-destaque { font-weight: 800; color: #0f172a; }
-
-    .row-cell {
-        font-size: 11px; color: #334155; padding-top: 6px; padding-bottom: 6px;
-        font-variant-numeric: tabular-nums; white-space: nowrap;
-        border-bottom: 1px solid #f1f5f9;
-    }
-    .row-head {
-        font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;
-        padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
-    }
-    .row-total {
-        font-size: 11px; font-weight: 800; color: #0f172a; padding-top: 8px;
-    }
 
     [data-testid="stInfo"] {
         background: #ffffff; border: 1px solid #e2e8f0; color: #64748b;
@@ -338,6 +312,7 @@ def normalizar_texto(txt):
 
 
 def _df_tx_view(df_tx):
+    """Prepara o dataframe de transações para exibição no modal."""
     if df_tx is None or df_tx.empty:
         return pd.DataFrame()
     view = df_tx.copy()
@@ -370,7 +345,7 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
         st.info("Nenhuma transação neste indicador.")
     else:
         st.dataframe(view, use_container_width=True, hide_index=True)
-    if st.button("Fechar", use_container_width=True, type="secondary"):
+    if st.button("Fechar", use_container_width=True):
         st.rerun()
 
 
@@ -390,6 +365,7 @@ def layout_fig(fig, h=220, legenda=True):
     return fig
 
 
+# --- COMPARATIVO COM O MÊS ANTERIOR ------------------------------------------
 def rgba(hex_cor, a):
     h = hex_cor.lstrip("#")
     return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a})"
@@ -510,6 +486,12 @@ def resumo_comp(atual, anterior, bom_se_subir):
 # ==============================================================================
 # CARGA DE DADOS
 # ==============================================================================
+_RETORNO_VAZIO = (
+    pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária',
+    0.0, 0.0, None, None, pd.DataFrame(),
+)
+
+
 @st.cache_data(ttl=60, show_spinner="Carregando dados…")
 def carregar_dados(data_inicio, data_fim):
     conn = conectar_sheets()
@@ -527,10 +509,7 @@ def carregar_dados(data_inicio, data_fim):
                 df_si.columns = [str(c).strip() for c in df_si.columns]
                 df_si = df_si.loc[:, ~df_si.columns.duplicated()].copy()
                 col_si_conta = next((c for c in df_si.columns if 'banco' in c.lower() or 'conta' in c.lower()), df_si.columns[0])
-                col_si_valor = next(
-                    (c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()),
-                    df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0],
-                )
+                col_si_valor = next((c for c in df_si.columns if 'saldo' in c.lower() or 'inicial' in c.lower() or 'valor' in c.lower()), df_si.columns[1] if len(df_si.columns) > 1 else df_si.columns[0])
                 col_si_garantida = next((c for c in df_si.columns if 'garantida' in c.lower() or 'limite' in c.lower()), None)
 
                 df_si[col_si_valor] = df_si[col_si_valor].apply(limpa_valor_bruto)
@@ -570,7 +549,7 @@ def carregar_dados(data_inicio, data_fim):
                 col_data = df_ext.columns[1]
                 col_deb = df_ext.columns[4]
                 col_cred = df_ext.columns[5]
-                col_tipo = df_ext.columns[7]
+                col_tipo = df_ext.columns[7]       # Coluna H — tipo (Liberação de Empréstimo, etc.)
                 col_operac = df_ext.columns[10]
                 col_subgrupo = df_ext.columns[11]
 
@@ -751,6 +730,7 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Erro ao processar Aplicações do Extrato:", e)
 
+        # Detalhe de transações do período (caixa: Disponível + Aplicação)
         df_detalhe = pd.DataFrame()
         try:
             if df_extratos is not None and not df_extratos.empty:
@@ -901,70 +881,53 @@ with c2:
         f"<div class='section-title'>Movimentação operacional <span>REF: {periodo_str}</span></div>",
         unsafe_allow_html=True,
     )
-    st.caption("🔍 Clique na lupa do indicador para ver as transações")
-
-    cor_res = VERDE if resultado_liquido_mes >= 0 else VERMELHO
     m1, m2, m3 = st.columns(3)
+    m1.markdown(
+        f"<div class='movement-card'><div class='section-title-inline' style='color:{VERDE}'>Entradas</div>"
+        f"<div>{formatar_moeda(entradas_mes, False)}</div></div>",
+        unsafe_allow_html=True,
+    )
+    m2.markdown(
+        f"<div class='movement-card'><div class='section-title-inline' style='color:{VERMELHO}'>Saídas</div>"
+        f"<div>{formatar_moeda(saidas_mes, False)}</div></div>",
+        unsafe_allow_html=True,
+    )
+    cor_res = VERDE if resultado_liquido_mes >= 0 else VERMELHO
+    m3.markdown(
+        f"<div class='movement-card'><div class='section-title-inline' style='color:{cor_res}'>Resultado líquido</div>"
+        f"<div style='color:{cor_res}'>{formatar_moeda(resultado_liquido_mes, False)}</div></div>",
+        unsafe_allow_html=True,
+    )
 
-    with m1:
-        head, lupa = st.columns([5, 1])
-        with head:
-            st.markdown(
-                f"<div class='movement-card' style='margin-bottom:0'>"
-                f"<div class='section-title-inline' style='color:{VERDE}'>Entradas</div>"
-                f"<div>{formatar_moeda(entradas_mes, False)}</div></div>",
-                unsafe_allow_html=True,
+    # Modais de composição dos indicadores
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("Ver entradas", use_container_width=True, key="btn_ent_op"):
+            tx = (
+                df_detalhe[df_detalhe['Cred_Op'] > 0]
+                if (not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns)
+                else pd.DataFrame()
             )
-        with lupa:
-            st.write("")
-            if st.button("🔍", key="btn_ent_op", help="Ver transações de entradas", type="secondary"):
-                tx = (
-                    df_detalhe[df_detalhe['Cred_Op'] > 0]
-                    if (not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns)
-                    else pd.DataFrame()
-                )
-                dialog_transacoes("Entradas operacionais", tx, f"Total: {formatar_moeda(entradas_mes, False)}")
-
-    with m2:
-        head, lupa = st.columns([5, 1])
-        with head:
-            st.markdown(
-                f"<div class='movement-card' style='margin-bottom:0'>"
-                f"<div class='section-title-inline' style='color:{VERMELHO}'>Saídas</div>"
-                f"<div>{formatar_moeda(saidas_mes, False)}</div></div>",
-                unsafe_allow_html=True,
+            dialog_transacoes("Entradas operacionais", tx, f"Total: {formatar_moeda(entradas_mes, False)}")
+    with b2:
+        if st.button("Ver saídas", use_container_width=True, key="btn_sai_op"):
+            tx = (
+                df_detalhe[df_detalhe['Deb_Op'] > 0]
+                if (not df_detalhe.empty and 'Deb_Op' in df_detalhe.columns)
+                else pd.DataFrame()
             )
-        with lupa:
-            st.write("")
-            if st.button("🔍", key="btn_sai_op", help="Ver transações de saídas", type="secondary"):
-                tx = (
-                    df_detalhe[df_detalhe['Deb_Op'] > 0]
-                    if (not df_detalhe.empty and 'Deb_Op' in df_detalhe.columns)
-                    else pd.DataFrame()
-                )
-                dialog_transacoes("Saídas operacionais", tx, f"Total: {formatar_moeda(saidas_mes, False)}")
-
-    with m3:
-        head, lupa = st.columns([5, 1])
-        with head:
-            st.markdown(
-                f"<div class='movement-card' style='margin-bottom:0'>"
-                f"<div class='section-title-inline' style='color:{cor_res}'>Resultado líquido</div>"
-                f"<div style='color:{cor_res}'>{formatar_moeda(resultado_liquido_mes, False)}</div></div>",
-                unsafe_allow_html=True,
+            dialog_transacoes("Saídas operacionais", tx, f"Total: {formatar_moeda(saidas_mes, False)}")
+    with b3:
+        if st.button("Ver resultado", use_container_width=True, key="btn_res_op"):
+            if not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns and 'Deb_Op' in df_detalhe.columns:
+                tx = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)].copy()
+            else:
+                tx = pd.DataFrame()
+            dialog_transacoes(
+                "Resultado líquido",
+                tx,
+                f"Resultado: {formatar_moeda(resultado_liquido_mes, False)}",
             )
-        with lupa:
-            st.write("")
-            if st.button("🔍", key="btn_res_op", help="Ver transações do resultado", type="secondary"):
-                if not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns and 'Deb_Op' in df_detalhe.columns:
-                    tx = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)].copy()
-                else:
-                    tx = pd.DataFrame()
-                dialog_transacoes(
-                    "Resultado líquido",
-                    tx,
-                    f"Resultado: {formatar_moeda(resultado_liquido_mes, False)}",
-                )
 
     st.markdown(
         "<div class='section-title' style='margin-top:10px'>Evolução diária do saldo total</div>",
@@ -1067,27 +1030,21 @@ col_bancos, col_diario = st.columns([1.75, 1.0], gap="small")
 
 with col_bancos:
     st.markdown("<div class='section-title'>Saldo de todos os bancos</div>", unsafe_allow_html=True)
-    st.caption("🔍 Clique na lupa da linha para ver as transações da conta")
-
     df_padrao = df_consolidado[df_consolidado['Tipo'] != 'Limite'].copy()
     df_limite = df_consolidado[df_consolidado['Tipo'] == 'Limite'].copy()
     df_padrao['Ordem'] = df_padrao['Tipo'].map({'Disponível': 1, 'Aplicação': 2}).fillna(3)
     df_padrao = df_padrao.sort_values(by=['Ordem', 'Saldo Final'], ascending=[True, False]).reset_index(drop=True)
 
-    pesos = [0.4, 2.2, 1.0, 1.3, 1.2, 1.2, 1.2, 1.2, 1.3, 0.45]
-    h = st.columns(pesos)
-    headers = [
-        "#", "Conta bancária", "Tipo", f"Saldo inicial {dt_ini_short}",
-        "Entrada (op.)", "Saída (op.)", "Entrada (int.)", "Saída (int.)",
-        f"Saldo atual {dt_fim_short}", "",
-    ]
-    for col, title in zip(h, headers):
-        col.markdown(f"<div class='row-head'>{title}</div>", unsafe_allow_html=True)
-
+    tb = (
+        "<div class='tabela-container'><table class='tabela-financeira'><thead><tr>"
+        f"<th>#</th><th>Conta bancária</th><th>Tipo</th>"
+        f"<th>Saldo inicial {dt_ini_short}</th><th>Entrada (op.)</th><th>Saída (op.)</th>"
+        f"<th>Entrada (int.)</th><th>Saída (int.)</th><th>Saldo atual {dt_fim_short}</th>"
+        "</tr></thead><tbody>"
+    )
     tot_banco_ini = tot_banco_ent_op = tot_banco_sai_op = 0.0
     tot_banco_ent_tr = tot_banco_sai_tr = tot_banco_atu = 0.0
     idx_count = 1
-
     for _, row in df_padrao.iterrows():
         si = row.get('Saldo Inicial', 0)
         e_op = row.get('Entrada Op', 0)
@@ -1095,155 +1052,103 @@ with col_bancos:
         e_tr = row.get('Entrada Tr', 0) + row.get('Entrada Emp', 0)
         s_tr = row.get('Saída Tr', 0) + row.get('Saída Emp', 0)
         sf = row.get('Saldo Final', 0)
-        tot_banco_ini += si
-        tot_banco_ent_op += e_op
-        tot_banco_sai_op += s_op
-        tot_banco_ent_tr += e_tr
-        tot_banco_sai_tr += s_tr
-        tot_banco_atu += sf
-
-        cols = st.columns(pesos)
-        vals = [
-            str(idx_count),
-            str(row['Conta Bancária']).title(),
-            str(row['Tipo']).capitalize(),
-            formatar_moeda(si),
-            formatar_moeda(e_op),
-            formatar_moeda(s_op),
-            formatar_moeda(e_tr),
-            formatar_moeda(s_tr),
-            formatar_moeda(sf),
-        ]
-        for c, v in zip(cols[:-1], vals):
-            c.markdown(f"<div class='row-cell'>{v}</div>", unsafe_allow_html=True)
-
-        conta = row['Conta Bancária']
-        key_safe = re.sub(r'[^a-zA-Z0-9]', '_', str(conta))[:40]
-        with cols[-1]:
-            if st.button("🔍", key=f"lupa_conta_{key_safe}_{idx_count}", help=f"Transações · {conta}", type="secondary"):
-                if not df_detalhe.empty and 'Conta Bancária' in df_detalhe.columns:
-                    tx = df_detalhe[
-                        df_detalhe['Conta Bancária'].astype(str).str.strip().str.upper()
-                        == str(conta).strip().upper()
-                    ].copy()
-                else:
-                    tx = pd.DataFrame()
-                tot_conta = 0.0
-                if not tx.empty:
-                    tot_conta = float(
-                        tx.get('Vl Crédito', pd.Series(dtype=float)).sum()
-                        - tx.get('Vl Débito', pd.Series(dtype=float)).sum()
-                    )
-                dialog_transacoes(
-                    f"Transações · {str(conta).title()}",
-                    tx,
-                    f"Movimentação líquida no período: {formatar_moeda(tot_conta, False)}",
-                )
+        tot_banco_ini += si; tot_banco_ent_op += e_op; tot_banco_sai_op += s_op
+        tot_banco_ent_tr += e_tr; tot_banco_sai_tr += s_tr; tot_banco_atu += sf
+        tb += (
+            f"<tr><td><span style='color:#94a3b8'>{idx_count}</span></td>"
+            f"<td><b>{str(row['Conta Bancária']).title()}</b></td>"
+            f"<td>{str(row['Tipo']).capitalize()}</td>"
+            f"<td>{formatar_moeda(si)}</td>"
+            f"<td style='color:{AZUL}'>{formatar_moeda(e_op)}</td>"
+            f"<td style='color:{VERMELHO}'>{formatar_moeda(s_op)}</td>"
+            f"<td>{formatar_moeda(e_tr)}</td><td>{formatar_moeda(s_tr)}</td>"
+            f"<td class='valor-destaque'>{formatar_moeda(sf)}</td></tr>"
+        )
         idx_count += 1
 
-    tcols = st.columns(pesos)
-    totais = [
-        "", "TOTAL", "",
-        formatar_moeda(tot_banco_ini),
-        formatar_moeda(tot_banco_ent_op),
-        formatar_moeda(tot_banco_sai_op),
-        "-", "-",
-        formatar_moeda(tot_banco_atu),
-        "",
-    ]
-    for c, v in zip(tcols, totais):
-        c.markdown(f"<div class='row-total'>{v}</div>", unsafe_allow_html=True)
-
+    tb += (
+        f"<tr class='linha-total'><td colspan='3'><b>TOTAL</b></td>"
+        f"<td>{formatar_moeda(tot_banco_ini)}</td>"
+        f"<td>{formatar_moeda(tot_banco_ent_op)}</td>"
+        f"<td>{formatar_moeda(tot_banco_sai_op)}</td>"
+        f"<td>-</td><td>-</td>"
+        f"<td class='valor-destaque'>{formatar_moeda(tot_banco_atu)}</td></tr>"
+    )
     if not df_limite.empty:
         for _, row_lim in df_limite.iterrows():
             garantida_val = row_lim.get('Conta Garantida', 0) or row_lim.get('Saldo Inicial', 0)
-            cols = st.columns(pesos)
-            vals = [
-                str(idx_count),
-                str(row_lim['Conta Bancária']).title(),
-                "Limite",
-                formatar_moeda(garantida_val),
-                "-", "-", "-", "-",
-                formatar_moeda(garantida_val),
-            ]
-            for c, v in zip(cols[:-1], vals):
-                c.markdown(
-                    f"<div class='row-cell' style='color:#b45309'>{v}</div>",
-                    unsafe_allow_html=True,
-                )
-            conta = row_lim['Conta Bancária']
-            key_safe = re.sub(r'[^a-zA-Z0-9]', '_', str(conta))[:40]
-            with cols[-1]:
-                if st.button("🔍", key=f"lupa_lim_{key_safe}_{idx_count}", help=f"Transações · {conta}", type="secondary"):
-                    if not df_detalhe.empty and 'Conta Bancária' in df_detalhe.columns:
-                        tx = df_detalhe[
-                            df_detalhe['Conta Bancária'].astype(str).str.strip().str.upper()
-                            == str(conta).strip().upper()
-                        ].copy()
-                    else:
-                        tx = pd.DataFrame()
-                    dialog_transacoes(f"Transações · {str(conta).title()}", tx)
+            tb += (
+                f"<tr class='linha-limite'><td>{idx_count}</td>"
+                f"<td><b>{str(row_lim['Conta Bancária']).title()}</b></td>"
+                f"<td>Limite</td><td>{formatar_moeda(garantida_val)}</td>"
+                f"<td>-</td><td>-</td><td>-</td><td>-</td>"
+                f"<td class='valor-destaque'>{formatar_moeda(garantida_val)}</td></tr>"
+            )
             idx_count += 1
+    tb += "</tbody></table></div>"
+    st.markdown(tb, unsafe_allow_html=True)
 
 with col_diario:
     st.markdown("<div class='section-title'>Saldo diário consolidado</div>", unsafe_allow_html=True)
-    st.caption("🔍 Clique na lupa da linha para ver entradas e saídas do dia")
-
-    pesos_d = [1.0, 1.3, 1.2, 1.2, 1.3, 1.2, 0.55, 0.55]
-    hd = st.columns(pesos_d)
-    for c, t in zip(hd, ["Data", "Saldo inic.", "Entradas", "Saídas", "Saldo final", "Delta", "Ent.", "Saí."]):
-        c.markdown(f"<div class='row-head'>{t}</div>", unsafe_allow_html=True)
-
+    tb_d = (
+        "<div class='tabela-container-scroll'><table class='tabela-financeira'><thead><tr>"
+        "<th>Data</th><th>Saldo inic.</th><th>Entradas</th><th>Saídas</th><th>Saldo final</th><th>Delta</th>"
+        "</tr></thead><tbody>"
+    )
     if df_graficos.empty:
-        st.caption("Sem movimentações no período")
+        tb_d += "<tr><td colspan='6' style='text-align:center;color:#64748b'>Sem movimentações no período</td></tr>"
     else:
         for _, row_d in df_graficos.sort_values(by='Data', ascending=False).iterrows():
             delta = row_d.get('Delta R$', 0)
             cor_delta = VERDE if delta >= 0 else VERMELHO
             sinal = "+" if delta > 0 else ""
-            data_ts = pd.Timestamp(row_d['Data']).normalize()
-            data_lab = row_d.get('Data_Label', data_ts.strftime('%d/%m'))
-            data_full = data_ts.strftime('%d/%m/%Y')
+            tb_d += (
+                f"<tr><td><b>{row_d.get('Data_Label','')}</b></td>"
+                f"<td>{formatar_moeda(row_d.get('Saldo Inicial', 0), False)}</td>"
+                f"<td style='color:{VERDE}'>{formatar_moeda(row_d.get('Entrada Op', 0), False)}</td>"
+                f"<td style='color:{VERMELHO}'>{formatar_moeda(row_d.get('Saída Op', 0), False)}</td>"
+                f"<td class='valor-destaque'>{formatar_moeda(row_d.get('Saldo Final', 0), False)}</td>"
+                f"<td style='color:{cor_delta};font-weight:800'>{sinal}{formatar_moeda(delta, False)}</td></tr>"
+            )
+    tb_d += "</tbody></table></div>"
+    st.markdown(tb_d, unsafe_allow_html=True)
 
-            cols = st.columns(pesos_d)
-            vals = [
-                f"<b>{data_lab}</b>",
-                formatar_moeda(row_d.get('Saldo Inicial', 0), False),
-                f"<span style='color:{VERDE}'>{formatar_moeda(row_d.get('Entrada Op', 0), False)}</span>",
-                f"<span style='color:{VERMELHO}'>{formatar_moeda(row_d.get('Saída Op', 0), False)}</span>",
-                formatar_moeda(row_d.get('Saldo Final', 0), False),
-                f"<span style='color:{cor_delta};font-weight:800'>{sinal}{formatar_moeda(delta, False)}</span>",
-            ]
-            for c, v in zip(cols[:6], vals):
-                c.markdown(f"<div class='row-cell'>{v}</div>", unsafe_allow_html=True)
-
-            if not df_detalhe.empty and 'Data' in df_detalhe.columns:
-                base_dia = df_detalhe[pd.to_datetime(df_detalhe['Data']).dt.normalize() == data_ts]
-            else:
-                base_dia = pd.DataFrame()
-
-            key_d = data_ts.strftime('%Y%m%d')
-            with cols[6]:
-                if st.button("🔍", key=f"ent_{key_d}", help=f"Entradas · {data_full}", type="secondary"):
-                    tx = (
-                        base_dia[base_dia['Cred_Op'] > 0]
-                        if (not base_dia.empty and 'Cred_Op' in base_dia.columns)
-                        else pd.DataFrame()
-                    )
-                    dialog_transacoes(
-                        f"Entradas · {data_full}",
-                        tx,
-                        f"Total: {formatar_moeda(row_d.get('Entrada Op', 0), False)}",
-                    )
-            with cols[7]:
-                if st.button("🔍", key=f"sai_{key_d}", help=f"Saídas · {data_full}", type="secondary"):
-                    tx = (
-                        base_dia[base_dia['Deb_Op'] > 0]
-                        if (not base_dia.empty and 'Deb_Op' in base_dia.columns)
-                        else pd.DataFrame()
-                    )
-                    dialog_transacoes(
-                        f"Saídas · {data_full}",
-                        tx,
-                        f"Total: {formatar_moeda(row_d.get('Saída Op', 0), False)}",
-                    )
+    # Modal por dia (composição entradas/saídas da linha)
+    if not df_graficos.empty:
+        opcoes = (
+            df_graficos.sort_values('Data', ascending=False)
+            .assign(_lab=lambda d: d['Data'].dt.strftime('%d/%m/%Y'))
+        )
+        lab_map = dict(zip(opcoes['_lab'], opcoes['Data']))
+        c_dia, c_ent, c_sai = st.columns([2, 1, 1])
+        with c_dia:
+            dia_lab = st.selectbox(
+                "Dia",
+                options=list(lab_map.keys()),
+                key="dia_modal_saldo",
+                label_visibility="collapsed",
+            )
+        dia_sel = pd.Timestamp(lab_map[dia_lab]).normalize()
+        row_dia = df_graficos[df_graficos['Data'] == dia_sel]
+        ent_dia = float(row_dia['Entrada Op'].sum()) if not row_dia.empty else 0.0
+        sai_dia = float(row_dia['Saída Op'].sum()) if not row_dia.empty else 0.0
+        if not df_detalhe.empty and 'Data' in df_detalhe.columns:
+            base_dia = df_detalhe[pd.to_datetime(df_detalhe['Data']).dt.normalize() == dia_sel]
+        else:
+            base_dia = pd.DataFrame()
+        with c_ent:
+            if st.button("Entradas do dia", use_container_width=True, key="btn_ent_dia"):
+                tx = (
+                    base_dia[base_dia['Cred_Op'] > 0]
+                    if (not base_dia.empty and 'Cred_Op' in base_dia.columns)
+                    else pd.DataFrame()
+                )
+                dialog_transacoes(f"Entradas · {dia_lab}", tx, f"Total: {formatar_moeda(ent_dia, False)}")
+        with c_sai:
+            if st.button("Saídas do dia", use_container_width=True, key="btn_sai_dia"):
+                tx = (
+                    base_dia[base_dia['Deb_Op'] > 0]
+                    if (not base_dia.empty and 'Deb_Op' in base_dia.columns)
+                    else pd.DataFrame()
+                )
+                dialog_transacoes(f"Saídas · {dia_lab}", tx, f"Total: {formatar_moeda(sai_dia, False)}")
