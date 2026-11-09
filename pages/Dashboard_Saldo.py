@@ -87,11 +87,31 @@ css = """
     li[role="option"] { color: #0f172a !important; }
     li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
 
+    /* Botões discretos (ver composição / ver transações) */
     .stButton > button {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff;
-        border: none; border-radius: 10px; font-weight: 700;
+        background: transparent; color: #64748b; border: none; box-shadow: none;
+        border-radius: 8px; font-weight: 600; min-height: 0;
+        padding: 3px 6px; justify-content: flex-start;
     }
-    .stButton > button:hover { filter: brightness(1.06); color: #fff; border: none; }
+    .stButton > button p { font-size: 11px; }
+    .stButton > button:hover {
+        background: #f1f5f9; color: #2563eb; border: none; filter: none;
+    }
+    .stButton > button:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+
+    /* Cards de movimentação com ação embutida */
+    div[data-testid="stVerticalBlock"][class*="st-key-card_"] {
+        background: #ffffff; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
+        border-radius: 10px; padding: 10px 12px 6px; gap: 0.15rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    div[data-testid="stVerticalBlock"].st-key-card_ent { border-left-color: #059669; }
+    div[data-testid="stVerticalBlock"].st-key-card_sai { border-left-color: #dc2626; }
+    div[data-testid="stVerticalBlock"].st-key-card_res { border-left-color: #2563eb; }
+    .card-val {
+        font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14px;
+        white-space: nowrap; margin-bottom: 2px;
+    }
 
     /* Cabeçalho */
     .top {
@@ -161,16 +181,6 @@ css = """
     .section-title-inline {
         font-size: 9px; font-weight: 800; color: #64748b;
         text-transform: uppercase; letter-spacing: 0.45px; margin-bottom: 2px;
-    }
-
-    /* Cards movimento */
-    .movement-card {
-        padding: 10px 12px; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
-        border-radius: 10px; background: #ffffff; min-height: 56px;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    }
-    .movement-card div:last-child {
-        font-variant-numeric: tabular-nums; color: #0f172a; font-weight: 800; font-size: 14px;
     }
 
     /* Tabelas */
@@ -311,18 +321,32 @@ def normalizar_texto(txt):
     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
 
 
+# --- COMPOSIÇÃO DOS INDICADORES (modais) -------------------------------------
+def _natureza(row):
+    """Explica por que o lançamento entra (ou não) nos indicadores operacionais."""
+    if row.get('Cred_Op', 0) > 0 or row.get('Deb_Op', 0) > 0:
+        return 'Operacional'
+    if row.get('É Transf', False):
+        return 'Transf. interna'
+    if row.get('É Emprestimo', False):
+        return 'Empréstimo'
+    return 'Outros'
+
+
 def _df_tx_view(df_tx):
     """Prepara o dataframe de transações para exibição no modal."""
     if df_tx is None or df_tx.empty:
         return pd.DataFrame()
     view = df_tx.copy()
     if 'Data' in view.columns:
-        view['Data'] = pd.to_datetime(view['Data'], errors='coerce').dt.strftime('%d/%m/%Y')
-    cols = [c for c in ['Data', 'Conta Bancária', 'Historico', 'SubGrupo', 'Vl Crédito', 'Vl Débito'] if c in view.columns]
-    view = view[cols]
-    if 'Data' in view.columns:
+        # ordena ANTES de formatar (evita ordenar texto dd/mm/aaaa)
+        view['Data'] = pd.to_datetime(view['Data'], errors='coerce')
         view = view.sort_values(by='Data', ascending=False)
-    view = view.rename(columns={
+        view['Data'] = view['Data'].dt.strftime('%d/%m/%Y')
+    view['Natureza'] = view.apply(_natureza, axis=1)
+    cols = [c for c in ['Data', 'Conta Bancária', 'Historico', 'SubGrupo',
+                        'Natureza', 'Vl Crédito', 'Vl Débito'] if c in view.columns]
+    view = view[cols].rename(columns={
         'Conta Bancária': 'Conta',
         'Historico': 'Histórico',
         'SubGrupo': 'Subgrupo',
@@ -338,15 +362,52 @@ def _df_tx_view(df_tx):
 @st.dialog("Composição do indicador", width="large")
 def dialog_transacoes(titulo, df_tx, total_txt=""):
     st.markdown(f"**{titulo}**")
+    qtd = 0 if df_tx is None else len(df_tx)
     if total_txt:
-        st.caption(total_txt)
+        st.caption(f"{total_txt} · {qtd} lançamentos")
     view = _df_tx_view(df_tx)
     if view.empty:
         st.info("Nenhuma transação neste indicador.")
     else:
         st.dataframe(view, use_container_width=True, hide_index=True)
-    if st.button("Fechar", use_container_width=True):
-        st.rerun()
+
+
+@st.dialog("Transações do banco", width="large")
+def dialog_banco(banco, df_tx, periodo_txt=""):
+    st.markdown(f"**{str(banco).title()}**")
+    if df_tx is None or df_tx.empty:
+        st.caption(periodo_txt)
+        st.info("Nenhuma transação deste banco no período.")
+        return
+    ent = float(df_tx['Vl Crédito'].sum())
+    sai = float(df_tx['Vl Débito'].sum())
+    st.caption(
+        f"{periodo_txt} · {len(df_tx)} lançamentos · "
+        f"Entradas {formatar_moeda(ent, False)} · Saídas {formatar_moeda(sai, False)}"
+    )
+    tab_t, tab_e, tab_s = st.tabs(["Todas", "Entradas", "Saídas"])
+    with tab_t:
+        st.dataframe(_df_tx_view(df_tx), use_container_width=True, hide_index=True)
+    with tab_e:
+        st.dataframe(_df_tx_view(df_tx[df_tx['Vl Crédito'] > 0]), use_container_width=True, hide_index=True)
+    with tab_s:
+        st.dataframe(_df_tx_view(df_tx[df_tx['Vl Débito'] > 0]), use_container_width=True, hide_index=True)
+
+
+def card_movimento(chave, titulo, valor_txt, cor_titulo, cor_valor, df_tx, total_txt):
+    """Card do indicador com o acesso à composição embutido."""
+    try:
+        box = st.container(key=f"card_{chave}")
+    except TypeError:  # Streamlit antigo, sem key em container
+        box = st.container()
+    with box:
+        st.markdown(
+            f"<div class='section-title-inline' style='color:{cor_titulo}'>{titulo}</div>"
+            f"<div class='card-val' style='color:{cor_valor}'>{valor_txt}</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Ver composição", key=f"ver_{chave}"):
+            dialog_transacoes(titulo, df_tx, total_txt)
 
 
 def layout_fig(fig, h=220, legenda=True):
@@ -881,53 +942,34 @@ with c2:
         f"<div class='section-title'>Movimentação operacional <span>REF: {periodo_str}</span></div>",
         unsafe_allow_html=True,
     )
-    m1, m2, m3 = st.columns(3)
-    m1.markdown(
-        f"<div class='movement-card'><div class='section-title-inline' style='color:{VERDE}'>Entradas</div>"
-        f"<div>{formatar_moeda(entradas_mes, False)}</div></div>",
-        unsafe_allow_html=True,
-    )
-    m2.markdown(
-        f"<div class='movement-card'><div class='section-title-inline' style='color:{VERMELHO}'>Saídas</div>"
-        f"<div>{formatar_moeda(saidas_mes, False)}</div></div>",
-        unsafe_allow_html=True,
-    )
-    cor_res = VERDE if resultado_liquido_mes >= 0 else VERMELHO
-    m3.markdown(
-        f"<div class='movement-card'><div class='section-title-inline' style='color:{cor_res}'>Resultado líquido</div>"
-        f"<div style='color:{cor_res}'>{formatar_moeda(resultado_liquido_mes, False)}</div></div>",
-        unsafe_allow_html=True,
-    )
 
-    # Modais de composição dos indicadores
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        if st.button("Ver entradas", use_container_width=True, key="btn_ent_op"):
-            tx = (
-                df_detalhe[df_detalhe['Cred_Op'] > 0]
-                if (not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns)
-                else pd.DataFrame()
-            )
-            dialog_transacoes("Entradas operacionais", tx, f"Total: {formatar_moeda(entradas_mes, False)}")
-    with b2:
-        if st.button("Ver saídas", use_container_width=True, key="btn_sai_op"):
-            tx = (
-                df_detalhe[df_detalhe['Deb_Op'] > 0]
-                if (not df_detalhe.empty and 'Deb_Op' in df_detalhe.columns)
-                else pd.DataFrame()
-            )
-            dialog_transacoes("Saídas operacionais", tx, f"Total: {formatar_moeda(saidas_mes, False)}")
-    with b3:
-        if st.button("Ver resultado", use_container_width=True, key="btn_res_op"):
-            if not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns and 'Deb_Op' in df_detalhe.columns:
-                tx = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)].copy()
-            else:
-                tx = pd.DataFrame()
-            dialog_transacoes(
-                "Resultado líquido",
-                tx,
-                f"Resultado: {formatar_moeda(resultado_liquido_mes, False)}",
-            )
+    # Composição de cada indicador (acesso embutido no próprio card)
+    _tem_op = (
+        not df_detalhe.empty
+        and 'Cred_Op' in df_detalhe.columns
+        and 'Deb_Op' in df_detalhe.columns
+    )
+    tx_ent = df_detalhe[df_detalhe['Cred_Op'] > 0] if _tem_op else pd.DataFrame()
+    tx_sai = df_detalhe[df_detalhe['Deb_Op'] > 0] if _tem_op else pd.DataFrame()
+    tx_res = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)] if _tem_op else pd.DataFrame()
+    cor_res = VERDE if resultado_liquido_mes >= 0 else VERMELHO
+
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        card_movimento(
+            "ent", "Entradas", formatar_moeda(entradas_mes, False),
+            VERDE, TXT, tx_ent, f"Total: {formatar_moeda(entradas_mes, False)}",
+        )
+    with m2:
+        card_movimento(
+            "sai", "Saídas", formatar_moeda(saidas_mes, False),
+            VERMELHO, TXT, tx_sai, f"Total: {formatar_moeda(saidas_mes, False)}",
+        )
+    with m3:
+        card_movimento(
+            "res", "Resultado líquido", formatar_moeda(resultado_liquido_mes, False),
+            cor_res, cor_res, tx_res, f"Resultado: {formatar_moeda(resultado_liquido_mes, False)}",
+        )
 
     st.markdown(
         "<div class='section-title' style='margin-top:10px'>Evolução diária do saldo total</div>",
@@ -1088,6 +1130,23 @@ with col_bancos:
     tb += "</tbody></table></div>"
     st.markdown(tb, unsafe_allow_html=True)
 
+    # Composição por banco (mesma funcionalidade dos cards, filtrada pelo banco)
+    bancos_lista = df_padrao['Conta Bancária'].tolist()
+    if bancos_lista and not df_detalhe.empty:
+        cb1, cb2 = st.columns([2.4, 1])
+        with cb1:
+            banco_sel = st.selectbox(
+                "Banco",
+                options=bancos_lista,
+                key="banco_modal_saldo",
+                label_visibility="collapsed",
+                format_func=lambda b: str(b).title(),
+            )
+        with cb2:
+            if st.button("Ver transações", use_container_width=True, key="ver_tx_banco"):
+                tx_b = df_detalhe[df_detalhe['Conta Bancária'] == banco_sel]
+                dialog_banco(banco_sel, tx_b, periodo_str)
+
 with col_diario:
     st.markdown("<div class='section-title'>Saldo diário consolidado</div>", unsafe_allow_html=True)
     tb_d = (
@@ -1113,14 +1172,14 @@ with col_diario:
     tb_d += "</tbody></table></div>"
     st.markdown(tb_d, unsafe_allow_html=True)
 
-    # Modal por dia (composição entradas/saídas da linha)
+    # Composição por dia (entradas/saídas da linha selecionada)
     if not df_graficos.empty:
         opcoes = (
             df_graficos.sort_values('Data', ascending=False)
             .assign(_lab=lambda d: d['Data'].dt.strftime('%d/%m/%Y'))
         )
         lab_map = dict(zip(opcoes['_lab'], opcoes['Data']))
-        c_dia, c_ent, c_sai = st.columns([2, 1, 1])
+        c_dia, c_ent, c_sai = st.columns([1.5, 1, 1])
         with c_dia:
             dia_lab = st.selectbox(
                 "Dia",
@@ -1137,7 +1196,7 @@ with col_diario:
         else:
             base_dia = pd.DataFrame()
         with c_ent:
-            if st.button("Entradas do dia", use_container_width=True, key="btn_ent_dia"):
+            if st.button("Entradas", use_container_width=True, key="btn_ent_dia"):
                 tx = (
                     base_dia[base_dia['Cred_Op'] > 0]
                     if (not base_dia.empty and 'Cred_Op' in base_dia.columns)
@@ -1145,7 +1204,7 @@ with col_diario:
                 )
                 dialog_transacoes(f"Entradas · {dia_lab}", tx, f"Total: {formatar_moeda(ent_dia, False)}")
         with c_sai:
-            if st.button("Saídas do dia", use_container_width=True, key="btn_sai_dia"):
+            if st.button("Saídas", use_container_width=True, key="btn_sai_dia"):
                 tx = (
                     base_dia[base_dia['Deb_Op'] > 0]
                     if (not base_dia.empty and 'Deb_Op' in base_dia.columns)
