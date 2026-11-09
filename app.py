@@ -156,7 +156,7 @@ candidatos = [
     ),
     (
         "pages/Fluxo_de_Caixa.py",
-        "Fluxo de Caixa",
+        "Fluxo de Caixa Realizado",
         "Fluxo_de_Caixa",
     ),
     (
