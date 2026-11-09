@@ -101,28 +101,33 @@ css = """
 
     /* Cards de movimentação com ação embutida */
     div[data-testid="stVerticalBlock"][class*="st-key-card_"] {
-        position: relative;
+        position: relative; min-height: 78px; justify-content: center;
         background: #ffffff; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
-        border-radius: 10px; padding: 10px 12px 10px; gap: 0.15rem;
+        border-radius: 10px; padding: 12px 14px 12px; gap: 0.2rem;
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    /* Lupa no canto superior direito do card */
-    div[data-testid="stVerticalBlock"][class*="st-key-card_"] div[class*="st-key-lupa_"] {
-        position: absolute; top: 5px; right: 5px; width: auto;
-    }
-    div[class*="st-key-lupa_"] .stButton > button {
-        width: 26px; height: 26px; padding: 0; justify-content: center;
-        color: #94a3b8; border-radius: 7px;
-    }
-    div[class*="st-key-lupa_"] .stButton > button span[data-testid="stIconMaterial"] { font-size: 17px; }
-    div[class*="st-key-lupa_"] .stButton > button:hover { background: #f1f5f9; color: #2563eb; }
     div[data-testid="stVerticalBlock"].st-key-card_ent { border-left-color: #059669; }
     div[data-testid="stVerticalBlock"].st-key-card_sai { border-left-color: #dc2626; }
     div[data-testid="stVerticalBlock"].st-key-card_res { border-left-color: #2563eb; }
     .card-val {
-        font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14px;
-        white-space: nowrap; margin-bottom: 2px;
+        font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px;
+        white-space: nowrap; margin: 4px 0 0;
     }
+
+    /* Lupa: parte do card, sem contorno, sem fundo, no canto superior direito */
+    div[class*="st-key-lupa_"] {
+        position: absolute !important; top: 4px; right: 4px; width: auto !important; z-index: 3;
+    }
+    div[class*="st-key-lupa_"] button {
+        width: 24px !important; height: 24px !important; min-height: 0 !important;
+        padding: 0 !important; justify-content: center !important;
+        background: transparent !important; border: 0 !important; border-color: transparent !important;
+        box-shadow: none !important; outline: none !important;
+        color: #94a3b8 !important; border-radius: 6px !important;
+    }
+    div[class*="st-key-lupa_"] button span[data-testid="stIconMaterial"] { font-size: 16px !important; }
+    div[class*="st-key-lupa_"] button:hover { background: #f1f5f9 !important; color: #2563eb !important; }
+    div[class*="st-key-lupa_"] button:focus-visible { outline: 2px solid #2563eb !important; outline-offset: 1px; }
 
     /* Cabeçalho */
     .top {
@@ -413,7 +418,7 @@ def card_movimento(chave, titulo, valor_txt, cor_titulo, cor_valor, df_tx, total
         box = st.container()
     with box:
         st.markdown(
-            f"<div class='section-title-inline' style='color:{cor_titulo};padding-right:26px'>{titulo}</div>"
+            f"<div class='section-title-inline' style='color:{cor_titulo};padding-right:24px'>{titulo}</div>"
             f"<div class='card-val' style='color:{cor_valor}'>{valor_txt}</div>",
             unsafe_allow_html=True,
         )
