@@ -101,10 +101,21 @@ css = """
 
     /* Cards de movimentação com ação embutida */
     div[data-testid="stVerticalBlock"][class*="st-key-card_"] {
+        position: relative;
         background: #ffffff; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
-        border-radius: 10px; padding: 10px 12px 6px; gap: 0.15rem;
+        border-radius: 10px; padding: 10px 12px 10px; gap: 0.15rem;
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
+    /* Lupa no canto superior direito do card */
+    div[data-testid="stVerticalBlock"][class*="st-key-card_"] div[class*="st-key-lupa_"] {
+        position: absolute; top: 5px; right: 5px; width: auto;
+    }
+    div[class*="st-key-lupa_"] .stButton > button {
+        width: 26px; height: 26px; padding: 0; justify-content: center;
+        color: #94a3b8; border-radius: 7px;
+    }
+    div[class*="st-key-lupa_"] .stButton > button span[data-testid="stIconMaterial"] { font-size: 17px; }
+    div[class*="st-key-lupa_"] .stButton > button:hover { background: #f1f5f9; color: #2563eb; }
     div[data-testid="stVerticalBlock"].st-key-card_ent { border-left-color: #059669; }
     div[data-testid="stVerticalBlock"].st-key-card_sai { border-left-color: #dc2626; }
     div[data-testid="stVerticalBlock"].st-key-card_res { border-left-color: #2563eb; }
@@ -402,11 +413,15 @@ def card_movimento(chave, titulo, valor_txt, cor_titulo, cor_valor, df_tx, total
         box = st.container()
     with box:
         st.markdown(
-            f"<div class='section-title-inline' style='color:{cor_titulo}'>{titulo}</div>"
+            f"<div class='section-title-inline' style='color:{cor_titulo};padding-right:26px'>{titulo}</div>"
             f"<div class='card-val' style='color:{cor_valor}'>{valor_txt}</div>",
             unsafe_allow_html=True,
         )
-        if st.button("Ver composição", key=f"ver_{chave}"):
+        try:
+            clicou = st.button("", key=f"lupa_{chave}", icon=":material/search:", help="Ver composição")
+        except TypeError:  # Streamlit antigo, sem parâmetro icon
+            clicou = st.button("🔍", key=f"lupa_{chave}", help="Ver composição")
+        if clicou:
             dialog_transacoes(titulo, df_tx, total_txt)
 
 
