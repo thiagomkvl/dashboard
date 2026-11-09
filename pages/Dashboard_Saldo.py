@@ -93,6 +93,26 @@ css = """
     }
     .stButton > button:hover { filter: brightness(1.06); color: #fff; border: none; }
 
+    /* Botões-lupa discretos */
+    div[data-testid="stButton"] > button[kind="secondary"] {
+        background: transparent !important;
+        color: #64748b !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        padding: 0 10px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        background: #f1f5f9 !important;
+        color: #2563eb !important;
+        border-color: #cbd5e1 !important;
+        filter: none !important;
+    }
+
     /* Cabeçalho */
     .top {
         display: flex; justify-content: space-between; align-items: center; gap: 16px;
@@ -345,7 +365,7 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
         st.info("Nenhuma transação neste indicador.")
     else:
         st.dataframe(view, use_container_width=True, hide_index=True)
-    if st.button("Fechar", use_container_width=True):
+    if st.button("Fechar", use_container_width=True, type="secondary"):
         st.rerun()
 
 
@@ -486,12 +506,6 @@ def resumo_comp(atual, anterior, bom_se_subir):
 # ==============================================================================
 # CARGA DE DADOS
 # ==============================================================================
-_RETORNO_VAZIO = (
-    pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), 0.0, 'Conta Bancária',
-    0.0, 0.0, None, None, pd.DataFrame(),
-)
-
-
 @st.cache_data(ttl=60, show_spinner="Carregando dados…")
 def carregar_dados(data_inicio, data_fim):
     conn = conectar_sheets()
@@ -549,7 +563,7 @@ def carregar_dados(data_inicio, data_fim):
                 col_data = df_ext.columns[1]
                 col_deb = df_ext.columns[4]
                 col_cred = df_ext.columns[5]
-                col_tipo = df_ext.columns[7]       # Coluna H — tipo (Liberação de Empréstimo, etc.)
+                col_tipo = df_ext.columns[7]
                 col_operac = df_ext.columns[10]
                 col_subgrupo = df_ext.columns[11]
 
@@ -730,7 +744,6 @@ def carregar_dados(data_inicio, data_fim):
         except Exception as e:
             print("Erro ao processar Aplicações do Extrato:", e)
 
-        # Detalhe de transações do período (caixa: Disponível + Aplicação)
         df_detalhe = pd.DataFrame()
         try:
             if df_extratos is not None and not df_extratos.empty:
@@ -899,10 +912,10 @@ with c2:
         unsafe_allow_html=True,
     )
 
-    # Modais de composição dos indicadores
+    st.caption("🔍 Clique na lupa para visualizar as transações")
     b1, b2, b3 = st.columns(3)
     with b1:
-        if st.button("Ver entradas", use_container_width=True, key="btn_ent_op"):
+        if st.button("🔍", key="btn_ent_op", help="Ver transações de entradas", type="secondary"):
             tx = (
                 df_detalhe[df_detalhe['Cred_Op'] > 0]
                 if (not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns)
@@ -910,7 +923,7 @@ with c2:
             )
             dialog_transacoes("Entradas operacionais", tx, f"Total: {formatar_moeda(entradas_mes, False)}")
     with b2:
-        if st.button("Ver saídas", use_container_width=True, key="btn_sai_op"):
+        if st.button("🔍", key="btn_sai_op", help="Ver transações de saídas", type="secondary"):
             tx = (
                 df_detalhe[df_detalhe['Deb_Op'] > 0]
                 if (not df_detalhe.empty and 'Deb_Op' in df_detalhe.columns)
@@ -918,7 +931,7 @@ with c2:
             )
             dialog_transacoes("Saídas operacionais", tx, f"Total: {formatar_moeda(saidas_mes, False)}")
     with b3:
-        if st.button("Ver resultado", use_container_width=True, key="btn_res_op"):
+        if st.button("🔍", key="btn_res_op", help="Ver transações do resultado", type="secondary"):
             if not df_detalhe.empty and 'Cred_Op' in df_detalhe.columns and 'Deb_Op' in df_detalhe.columns:
                 tx = df_detalhe[(df_detalhe['Cred_Op'] > 0) | (df_detalhe['Deb_Op'] > 0)].copy()
             else:
@@ -1088,6 +1101,47 @@ with col_bancos:
     tb += "</tbody></table></div>"
     st.markdown(tb, unsafe_allow_html=True)
 
+    # Lupas por conta
+    st.caption("🔍 Clique na lupa para visualizar as transações da conta")
+    contas_lupa = df_padrao['Conta Bancária'].tolist()
+    if not df_limite.empty:
+        contas_lupa += df_limite['Conta Bancária'].tolist()
+
+    n_cols = 3
+    for i in range(0, len(contas_lupa), n_cols):
+        cols_lupa = st.columns(n_cols)
+        for j, conta in enumerate(contas_lupa[i:i + n_cols]):
+            with cols_lupa[j]:
+                c_nome, c_btn = st.columns([4, 1])
+                with c_nome:
+                    st.markdown(
+                        f"<div style='font-size:11px;color:#64748b;padding-top:6px;"
+                        f"overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
+                        f"{str(conta).title()}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_btn:
+                    key_safe = re.sub(r'[^a-zA-Z0-9]', '_', str(conta))[:40]
+                    if st.button("🔍", key=f"lupa_conta_{key_safe}_{i}_{j}", help=f"Transações · {conta}", type="secondary"):
+                        if not df_detalhe.empty and 'Conta Bancária' in df_detalhe.columns:
+                            tx = df_detalhe[
+                                df_detalhe['Conta Bancária'].astype(str).str.strip().str.upper()
+                                == str(conta).strip().upper()
+                            ].copy()
+                        else:
+                            tx = pd.DataFrame()
+                        tot_conta = 0.0
+                        if not tx.empty:
+                            tot_conta = float(
+                                tx.get('Vl Crédito', pd.Series(dtype=float)).sum()
+                                - tx.get('Vl Débito', pd.Series(dtype=float)).sum()
+                            )
+                        dialog_transacoes(
+                            f"Transações · {str(conta).title()}",
+                            tx,
+                            f"Movimentação líquida no período: {formatar_moeda(tot_conta, False)}",
+                        )
+
 with col_diario:
     st.markdown("<div class='section-title'>Saldo diário consolidado</div>", unsafe_allow_html=True)
     tb_d = (
@@ -1113,14 +1167,14 @@ with col_diario:
     tb_d += "</tbody></table></div>"
     st.markdown(tb_d, unsafe_allow_html=True)
 
-    # Modal por dia (composição entradas/saídas da linha)
     if not df_graficos.empty:
+        st.caption("🔍 Clique na lupa para visualizar as transações do dia")
         opcoes = (
             df_graficos.sort_values('Data', ascending=False)
             .assign(_lab=lambda d: d['Data'].dt.strftime('%d/%m/%Y'))
         )
         lab_map = dict(zip(opcoes['_lab'], opcoes['Data']))
-        c_dia, c_ent, c_sai = st.columns([2, 1, 1])
+        c_dia, c_ent, c_sai = st.columns([3, 0.6, 0.6])
         with c_dia:
             dia_lab = st.selectbox(
                 "Dia",
@@ -1137,7 +1191,7 @@ with col_diario:
         else:
             base_dia = pd.DataFrame()
         with c_ent:
-            if st.button("Entradas do dia", use_container_width=True, key="btn_ent_dia"):
+            if st.button("🔍", key="btn_ent_dia", help=f"Entradas de {dia_lab}", type="secondary"):
                 tx = (
                     base_dia[base_dia['Cred_Op'] > 0]
                     if (not base_dia.empty and 'Cred_Op' in base_dia.columns)
@@ -1145,7 +1199,7 @@ with col_diario:
                 )
                 dialog_transacoes(f"Entradas · {dia_lab}", tx, f"Total: {formatar_moeda(ent_dia, False)}")
         with c_sai:
-            if st.button("Saídas do dia", use_container_width=True, key="btn_sai_dia"):
+            if st.button("🔍", key="btn_sai_dia", help=f"Saídas de {dia_lab}", type="secondary"):
                 tx = (
                     base_dia[base_dia['Deb_Op'] > 0]
                     if (not base_dia.empty and 'Deb_Op' in base_dia.columns)
