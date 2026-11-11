@@ -1523,73 +1523,58 @@ def linha_tot(label, s, cor, cls="tot"):
     )
 
 
+def entradas_saidas_resumo(dados, papeis, referencias):
+    """Compensa reclassificações por conta/mês antes de abrir entradas e saídas."""
+    movimentos = dados[dados["Papel"].isin(papeis)].copy()
+    # Mesma seleção aplicada nas fórmulas do FCF.
+    movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
+    movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
+        lambda papel: 1.0 if papel in ("receita_op", "captacao", "var_ap") else -1.0
+    )
+    liquidos = movimentos.groupby(["Ref", "Papel", "Categoria", "Detalhe"])["Caixa"].sum()
+    entradas = liquidos.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+    saidas = (-liquidos.clip(upper=0)).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+    return entradas, saidas
+
+
 if df.empty:
     st.markdown("<div class='vazio'>Sem dados no período</div>", unsafe_allow_html=True)
 else:
     html = []
 
-    # ---- 1. FCO ----
-    html.append(
-        "<tr class='sec'><td>1. FLUXO DE CAIXA OPERACIONAL (FCO)</td>"
-        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
-    )
-    html.extend(linhas_df(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", "r"))
-    html.append(linha_tot("Total receitas operacionais", s_rec, VERDE))
+    def cabecalho_total(label, valores):
+        cor = VERDE if float(valores.sum()) >= 0 else VERMELHO
+        return linha_tot(label, valores, cor, cls="sec")
 
-    html.extend(linhas_df(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", "c"))
-    html.append(linha_tot("Total custos e despesas operacionais", s_cus, VERMELHO))
+    def bloco_total(dados, label, valores, cor, uid, exibir_abs=False):
+        html.append(linha_tot(label, valores, cor, cls="subsec"))
+        html.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
-    html.extend(linhas_df(df[df["Papel"] == "imposto"], "(−) Impostos", "i"))
-    html.append(linha_tot("Total impostos", s_imp, VERMELHO))
+    # Os totais ficam nos cabeçalhos, sem repetir linhas ao pé dos blocos.
+    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco))
+    bloco_total(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
+    bloco_total(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
+    bloco_total(df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, "i")
+    bloco_total(df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
+                VERDE if float(s_vap.sum()) >= 0 else VERMELHO, "v")
 
-    html.extend(
-        linhas_df(
-            df_var_ap,
-            "(±) Variações de Ativos e Passivos",
-            "v",
-        )
-    )
-    html.append(
-        linha_tot(
-            "Total variações de ativos e passivos",
-            s_vap,
-            VERDE if float(s_vap.sum()) >= 0 else VERMELHO,
-        )
-    )
-
-    html.append(linha_tot("= FCO", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO))
-
-    # ---- 2. FCI ----
-    html.append(
-        "<tr class='sec'><td>2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)</td>"
-        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
-    )
+    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci))
     df_capex = df[df["Papel"] == "capex"].copy()
-    html.extend(linhas_df(df_capex, "(−) Desembolsos em CAPEX", "k", exibir_abs=True))
-
-    # As linhas de obras são uma abertura/segregação do CAPEX, não valores
-    # adicionais a somar ao grupo "Investimentos / CAPEX". Por isso, o total
-    # deve refletir o CAPEX líquido efetivamente considerado no FCI (s_cap),
-    # exibido como magnitude positiva, e não a soma dos valores absolutos de
-    # cada linha, que duplicaria as obras e outras compensações de sinal.
+    # Preserva a apresentação e a compensação existentes do CAPEX.
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
-    html.append(linha_tot("Total desembolsos em CAPEX", s_capex_visual, VERMELHO))
+    bloco_total(df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
 
-    # ---- 3. FCF ----
-    html.append(
-        "<tr class='sec'><td>3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)</td>"
-        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
-    )
-    html.extend(linhas_df(df_captacao, "(+) Novas captações (empréstimos)", "p"))
-    html.append(linha_tot("Total captações", s_cpt, VERDE))
-
-    html.extend(linhas_df(df_amort, "(−) Amortizações de empréstimos", "a"))
-    html.append(linha_tot("Total amortizações", s_amo, VERMELHO))
-
-    html.extend(linhas_df(df_juros, "(−) Juros e encargos financeiros", "j"))
-    html.append(linha_tot("Total juros e encargos", s_jur, VERMELHO))
-
-    html.append(linha_tot("= FCF", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO))
+    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf))
+    bloco_total(df_captacao, "(+) Novas captações (empréstimos)", s_cpt, VERDE, "p")
+    # Amortização e juros ficam consecutivos, com uma única soma abaixo.
+    html.append(linha_tot("(−) Amortizações de empréstimos", s_amo, VERMELHO, cls="subsec"))
+    html.append(linha_tot("(−) Juros e encargos financeiros", s_jur, VERMELHO, cls="subsec"))
+    html.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
+    detalhes_divida = linhas_df(df_amort, None, "a") + linhas_df(df_juros, None, "j")
+    if detalhes_divida:
+        html.append("<tr class='subsec'><td>Composição das amortizações e juros</td>"
+                    + "<td></td>" * (len(refs_sel) + 1) + "</tr>")
+        html.extend(detalhes_divida)
 
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
@@ -1642,6 +1627,24 @@ else:
         f"{''.join(html)}</table></div>",
         unsafe_allow_html=True,
     )
+
+
+    with st.expander("Resumo do fluxo de caixa", expanded=True):
+        resumo = [linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo")]
+        for nome, papeis, total in (
+            ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
+            ("2- (=) FCI", ["capex"], s_fci),
+            ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
+        ):
+            entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
+            resumo.append(linha_tot(nome, total, VERDE if float(total.sum()) >= 0 else VERMELHO, cls="sec"))
+            resumo.append(linha_tot("(+) Entrada", entradas, VERDE))
+            resumo.append(linha_tot("(−) Saída", saidas, VERMELHO))
+        resumo.append(linha_tot("(=) Saldo final", s_fim, VERDE if saldo_fim_periodo >= 0 else VERMELHO, cls="saldo"))
+        st.markdown(
+            f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+            f"{''.join(resumo)}</table></div>", unsafe_allow_html=True,
+        )
 
 
 with st.sidebar:
