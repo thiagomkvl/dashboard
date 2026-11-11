@@ -1575,7 +1575,7 @@ else:
     bloco_total(df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
 
     html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf))
-    bloco_total(df_captacao, "(+) Novas captações (empréstimos)", s_cpt, VERDE, "p")
+    bloco_total(df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, "p")
     # Mantém apenas as categorias com abertura, sem cabeçalhos duplicados.
     html.extend(linhas_df(df_amort, None, "a"))
     html.extend(linhas_df(df_juros, None, "j"))
