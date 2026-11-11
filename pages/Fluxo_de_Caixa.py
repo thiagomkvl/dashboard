@@ -49,6 +49,8 @@ ABA_SALDO_TASY = "Base_Saldo_FCx_Tasy"
 ABA_DEVOL = "FCx_Devolução_Adiantamento"
 ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"
 ABA_OBRA = "FCx_Obra"
+ABA_EXTRATOS = "Extratos_Bancos"
+INICIO_EXTRATOS = pd.Timestamp(2026, 11, 1)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -996,7 +998,7 @@ def papel_classif(classif, fluxo=""):
 # CARGA
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
-def carregar_fluxo():
+def carregar_fluxo_legado():
     cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     vazio = pd.DataFrame(columns=cols)
     avisos = []
@@ -1136,6 +1138,80 @@ def carregar_fluxo():
     return base_grouped.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
 
 
+
+def parse_extratos_bancos(raw):
+    """Movimentos bancários a partir do corte; sem cruzar as bases antigas."""
+    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    avisos, reg = [], []
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=cols), ["Extratos_Bancos: aba vazia."]
+    campos = {}
+    for campo, letra, nomes in (
+        ("data", "B", ["Data"]),
+        ("debito", "E", ["Vl Débito", "Vl Debito"]),
+        ("credito", "F", ["Vl Crédito", "Vl Credito"]),
+        ("categoria", "L", ["SubGrupo", "Sub Grupo"]),
+        ("obra", "N", ["Obra"]),
+    ):
+        campos[campo] = col_por_nomes(raw, nomes) or col_por_letra(raw, letra)
+    if any(campos[k] is None for k in ("data", "debito", "credito", "categoria")):
+        raise ValueError("Extratos_Bancos: colunas Data (B), Vl Débito (E), "
+                         "Vl Crédito (F) e SubGrupo (L) obrigatórias.")
+    invalidas = sem_categoria = 0
+    for _, row in raw.iterrows():
+        debito = abs(limpa_valor(row[campos["debito"]]))
+        credito = abs(limpa_valor(row[campos["credito"]]))
+        if debito == 0 and credito == 0:
+            continue
+        data = parse_data(row[campos["data"]])
+        if pd.isna(data):
+            invalidas += 1
+            continue
+        if data < INICIO_EXTRATOS:
+            continue
+        categoria = row[campos["categoria"]]
+        categoria = str(categoria).strip() if pd.notna(categoria) else ""
+        if not categoria:
+            sem_categoria += 1
+            categoria = "(Sem classificação)"
+        obra = row[campos["obra"]] if campos["obra"] is not None else ""
+        obra = str(obra).strip() if pd.notna(obra) else ""
+        tem_obra = normalizar(obra) not in ("", "nao", "n", "0", "false", "nenhuma", "sem obra", "na", "n a", "nan", "none", "-")
+        for valor, tipo in ((debito, "Saída"), (credito, "Entrada")):
+            if valor == 0:
+                continue
+            reg.append({
+                "Ref": data.to_period("M").to_timestamp(),
+                "Categoria": f"Obra: {obra}" if tem_obra else categoria,
+                "Valor": valor,
+                "Tipo": tipo,
+                "Grupo": f"FCx_Obra - {obra}" if tem_obra else "Extratos_Bancos",
+                "Detalhe": categoria,
+            })
+    if invalidas:
+        avisos.append(f"Extratos_Bancos: {invalidas} linha(s) com movimento e data inválida; corrigir a coluna B.")
+    if sem_categoria:
+        avisos.append(f"Extratos_Bancos: {sem_categoria} linha(s) sem SubGrupo (L).")
+    return pd.DataFrame(reg, columns=cols), avisos
+
+
+@st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
+def carregar_fluxo():
+    # O processamento legado permanece intacto, inclusive devoluções e obras.
+    legado, avisos = carregar_fluxo_legado()
+    legado = legado.loc[legado["Ref"] < INICIO_EXTRATOS].copy()
+    try:
+        extratos, avisos_extratos = parse_extratos_bancos(ler_aba_cacheada(ABA_EXTRATOS))
+    except Exception as erro:
+        st.error(f"Não foi possível carregar os lançamentos a partir de novembro: {erro}")
+        st.stop()
+    avisos.extend(avisos_extratos)
+    base = pd.concat([legado, extratos], ignore_index=True)
+    if base.empty:
+        return base, avisos
+    return base.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
+
+
 base, avisos = carregar_fluxo()
 mapa_cls = carregar_mapa_classificacao()
 mapa_saldo = carregar_saldo_inicial(ANO_REF)
@@ -1171,6 +1247,19 @@ mask_capex_geral = (~base["Grupo"].str.startswith("FCx_Obra -", na=False)) & (ba
 base.loc[mask_capex_geral, "Classif"] = "Investimentos / CAPEX"
 
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
+
+# As fórmulas existentes subtraem custos/CAPEX e somam receitas/variações.
+# Converte a direção bancária para essa convenção apenas no novo período.
+mask_extratos = base["Ref"] >= INICIO_EXTRATOS
+mask_soma = base["Papel"].isin(["receita_op", "captacao", "var_ap", "outros"])
+mask_entrada = base["Tipo"] == "Entrada"
+base.loc[mask_extratos, "Valor"] = base.loc[mask_extratos, "Valor"].abs() * (
+    (mask_soma == mask_entrada).loc[mask_extratos].map({True: 1.0, False: -1.0})
+)
+# Créditos em contas de captação também entram nas fórmulas que filtram Entrada;
+# débitos na mesma conta representam a reversão da captação.
+base.loc[mask_extratos & (base["Papel"] == "captacao"), "Tipo"] = "Entrada"
+
 
 from modules.ajustes_fcx import carregar_ajustes, linhas_dashboard, ativos
 try:
