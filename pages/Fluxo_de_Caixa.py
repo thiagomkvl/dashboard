@@ -232,6 +232,11 @@ css = """
         font-weight: 800; color: #0f172a; background: #eef2ff;
         border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
     }
+    .tbl tr.caixa-total td {
+        font-weight: 800; color: #0f172a; background: #cbd5e1;
+        border-top: 2px solid #94a3b8; border-bottom: 1px solid #94a3b8;
+        text-transform: uppercase; font-size: 11px;
+    }
     .tbl tr.subsec td {
         font-weight: 700; color: #334155; background: #f8fafc; font-size: 11px;
     }
@@ -1152,13 +1157,18 @@ def parse_extratos_bancos(raw):
         ("credito", "F", ["Vl Crédito", "Vl Credito"]),
         ("categoria", "L", ["SubGrupo", "Sub Grupo"]),
         ("obra", "N", ["Obra"]),
+        ("operacional", "K", ["Operacional"]),
     ):
         campos[campo] = col_por_nomes(raw, nomes) or col_por_letra(raw, letra)
-    if any(campos[k] is None for k in ("data", "debito", "credito", "categoria")):
+    if any(campos[k] is None for k in ("data", "debito", "credito", "categoria", "operacional")):
         raise ValueError("Extratos_Bancos: colunas Data (B), Vl Débito (E), "
-                         "Vl Crédito (F) e SubGrupo (L) obrigatórias.")
+                         "Vl Crédito (F), Operacional (K) e SubGrupo (L) obrigatórias.")
     invalidas = sem_categoria = 0
     for _, row in raw.iterrows():
+        # Lista positiva: transferências internas, vazios e qualquer outra
+        # classificação não entram na base nem nos totais do fluxo.
+        if normalizar(row[campos["operacional"]]) not in ("operacional", "operacionais"):
+            continue
         debito = abs(limpa_valor(row[campos["debito"]]))
         credito = abs(limpa_valor(row[campos["credito"]]))
         if debito == 0 and credito == 0:
@@ -1544,7 +1554,7 @@ else:
 
     def cabecalho_total(label, valores):
         cor = VERDE if float(valores.sum()) >= 0 else VERMELHO
-        return linha_tot(label, valores, cor, cls="sec")
+        return linha_tot(label, valores, cor, cls="caixa-total")
 
     def bloco_total(dados, label, valores, cor, uid, exibir_abs=False):
         html.append(linha_tot(label, valores, cor, cls="subsec"))
@@ -1566,15 +1576,10 @@ else:
 
     html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf))
     bloco_total(df_captacao, "(+) Novas captações (empréstimos)", s_cpt, VERDE, "p")
-    # Amortização e juros ficam consecutivos, com uma única soma abaixo.
-    html.append(linha_tot("(−) Amortizações de empréstimos", s_amo, VERMELHO, cls="subsec"))
-    html.append(linha_tot("(−) Juros e encargos financeiros", s_jur, VERMELHO, cls="subsec"))
+    # Mantém apenas as categorias com abertura, sem cabeçalhos duplicados.
+    html.extend(linhas_df(df_amort, None, "a"))
+    html.extend(linhas_df(df_juros, None, "j"))
     html.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
-    detalhes_divida = linhas_df(df_amort, None, "a") + linhas_df(df_juros, None, "j")
-    if detalhes_divida:
-        html.append("<tr class='subsec'><td>Composição das amortizações e juros</td>"
-                    + "<td></td>" * (len(refs_sel) + 1) + "</tr>")
-        html.extend(detalhes_divida)
 
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
@@ -1637,7 +1642,7 @@ else:
             ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
         ):
             entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
-            resumo.append(linha_tot(nome, total, VERDE if float(total.sum()) >= 0 else VERMELHO, cls="sec"))
+            resumo.append(linha_tot(nome, total, VERDE if float(total.sum()) >= 0 else VERMELHO, cls="caixa-total"))
             resumo.append(linha_tot("(+) Entrada", entradas, VERDE))
             resumo.append(linha_tot("(−) Saída", saidas, VERMELHO))
         resumo.append(linha_tot("(=) Saldo final", s_fim, VERDE if saldo_fim_periodo >= 0 else VERMELHO, cls="saldo"))
