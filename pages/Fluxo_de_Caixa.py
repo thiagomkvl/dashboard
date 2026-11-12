@@ -954,6 +954,18 @@ def aplicar_classificacao(categoria, mapa):
     return "Não classificado", FLUXO_OP, categoria
 
 
+def eh_receita_aplicacao(classif, categoria=""):
+    """Reconhece a classificação específica e contas de rendimentos abreviadas."""
+    cls = normalizar_chave(classif)
+    conta = normalizar_chave(categoria)
+    classe_aplicacao = "aplic" in cls and "financeir" in cls
+    rendimento_conta = (
+        any(termo in conta for termo in ("rendimento", "receita"))
+        and "aplic" in conta and "financeir" in conta
+    )
+    return classe_aplicacao or rendimento_conta
+
+
 def papel_classif(classif, fluxo=""):
     n = normalizar(classif)
     nf = normalizar(fluxo)
@@ -964,7 +976,7 @@ def papel_classif(classif, fluxo=""):
     if "invest" in nf:
         # A exceção depende da classificação e do fluxo definidos no de-para.
         # Obras continuam sendo CAPEX, mesmo se o nome contiver esses termos.
-        if not n.startswith(("obra:", "obra ")) and "aplicac" in n and "financeir" in n:
+        if not n.startswith(("obra:", "obra ")) and eh_receita_aplicacao(classif):
             return "receita_inv"
         return "capex"
 
@@ -1257,9 +1269,13 @@ df_obra["Fluxo"] = FLUXO_INV
 base = pd.concat([df_normal, df_obra], ignore_index=True)
 
 # Agrupa somente os investimentos de CAPEX; preserva receitas do FCI.
-mask_receita_inv = base.apply(
-    lambda r: papel_classif(r["Classif"], r["Fluxo"]) == "receita_inv", axis=1
+mask_receita_inv = (
+    (base["Fluxo"] == FLUXO_INV)
+    & ~base["Grupo"].str.startswith("FCx_Obra -", na=False)
+    & base.apply(lambda r: eh_receita_aplicacao(r["Classif"], r["Categoria"]), axis=1)
 )
+# Define o nome antes de agrupar CAPEX e de atribuir o papel/sinal financeiro.
+base.loc[mask_receita_inv, "Classif"] = "Aplicações Financeiras"
 mask_capex_geral = (
     (~base["Grupo"].str.startswith("FCx_Obra -", na=False))
     & (base["Fluxo"] == FLUXO_INV)
