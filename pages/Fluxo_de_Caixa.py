@@ -958,6 +958,11 @@ def papel_classif(classif, fluxo=""):
     n = normalizar(classif)
     nf = normalizar(fluxo)
 
+    # Exceção específica: rendimentos de aplicações são entradas do FCI,
+    # não desembolsos de CAPEX.
+    if n == "rendimento de aplicacoes":
+        return "rendimento_ap"
+
     if "variacoes de ativos" in n or "variações de ativos" in n or n == normalizar(CLASSIF_VAR_AP):
         return "var_ap"
 
@@ -1252,16 +1257,23 @@ df_obra["Fluxo"] = FLUXO_INV
 
 base = pd.concat([df_normal, df_obra], ignore_index=True)
 
-# Forçar CAPEX geral (não-obra) a ir para "Investimentos / CAPEX"
-mask_capex_geral = (~base["Grupo"].str.startswith("FCx_Obra -", na=False)) & (base["Fluxo"] == FLUXO_INV)
+# Forçar CAPEX geral (não-obra) a ir para "Investimentos / CAPEX",
+# preservando a exceção específica de Rendimento de Aplicações.
+mask_rendimento_ap = base["Categoria"].apply(normalizar_chave).eq("rendimento de aplicacoes")
+mask_capex_geral = (
+    (~base["Grupo"].str.startswith("FCx_Obra -", na=False))
+    & (base["Fluxo"] == FLUXO_INV)
+    & (~mask_rendimento_ap)
+)
 base.loc[mask_capex_geral, "Classif"] = "Investimentos / CAPEX"
+base.loc[mask_rendimento_ap, "Classif"] = "Rendimento de Aplicações"
 
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
 # As fórmulas existentes subtraem custos/CAPEX e somam receitas/variações.
 # Converte a direção bancária para essa convenção apenas no novo período.
 mask_extratos = base["Ref"] >= INICIO_EXTRATOS
-mask_soma = base["Papel"].isin(["receita_op", "captacao", "var_ap", "outros"])
+mask_soma = base["Papel"].isin(["receita_op", "captacao", "var_ap", "outros", "rendimento_ap"])
 mask_entrada = base["Tipo"] == "Entrada"
 base.loc[mask_extratos, "Valor"] = base.loc[mask_extratos, "Valor"].abs() * (
     (mask_soma == mask_entrada).loc[mask_extratos].map({True: 1.0, False: -1.0})
@@ -1338,7 +1350,8 @@ juros = total_papel(df, "juros")
 captacao = total_papel(df, "captacao", tipo="Entrada")
 
 fco = rec_op - custo_op - impostos + var_ap
-fci = -capex
+rendimentos_ap = total_papel(df, "rendimento_ap")
+fci = rendimentos_ap - capex
 fcf = captacao - amort - juros
 variacao = fco + fci + fcf
 
@@ -1385,7 +1398,8 @@ s_imp = serie(df, "imposto")
 s_vap = serie(df, "var_ap")
 s_fco = s_rec - s_cus - s_imp + s_vap
 s_cap = serie(df, "capex")
-s_fci = -s_cap
+s_rend_ap = serie(df, "rendimento_ap")
+s_fci = s_rend_ap - s_cap
 s_cpt = serie(df, "captacao", tipo="Entrada")
 s_amo = serie(df, "amortizacao")
 s_jur = serie(df, "juros")
@@ -1394,7 +1408,7 @@ s_var = s_fco + s_fci + s_fcf
 
 refs_calculo = list(pd.date_range(min(meses_all), max(refs_sel), freq="MS")) if refs_sel else []
 s_var_completo = (base.assign(_sinal=base.apply(
-    lambda r: float(r["Valor"]) * (1 if r["Papel"] in ("receita_op", "captacao", "var_ap") else -1)
+    lambda r: float(r["Valor"]) * (1 if r["Papel"] in ("receita_op", "captacao", "var_ap", "rendimento_ap") else -1)
     if r["Papel"] != "outros" else 0.0, axis=1))
     .groupby("Ref")["_sinal"].sum())
 s_var_completo.update(s_var)
@@ -1539,7 +1553,7 @@ def entradas_saidas_resumo(dados, papeis, referencias):
     # Mesma seleção aplicada nas fórmulas do FCF.
     movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
     movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
-        lambda papel: 1.0 if papel in ("receita_op", "captacao", "var_ap") else -1.0
+        lambda papel: 1.0 if papel in ("receita_op", "captacao", "var_ap", "rendimento_ap") else -1.0
     )
     liquidos = movimentos.groupby(["Ref", "Papel", "Categoria", "Detalhe"])["Caixa"].sum()
     entradas = liquidos.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
@@ -1569,6 +1583,9 @@ else:
                 VERDE if float(s_vap.sum()) >= 0 else VERMELHO, "v")
 
     html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci))
+    df_rend_ap = df[df["Papel"] == "rendimento_ap"].copy()
+    bloco_total(df_rend_ap, "(+) Rendimentos de Aplicações", s_rend_ap, VERDE)
+
     df_capex = df[df["Papel"] == "capex"].copy()
     # Preserva a apresentação e a compensação existentes do CAPEX.
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
@@ -1638,7 +1655,7 @@ else:
         resumo = [linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo")]
         for nome, papeis, total in (
             ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
-            ("2- (=) FCI", ["capex"], s_fci),
+            ("2- (=) FCI", ["rendimento_ap", "capex"], s_fci),
             ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
         ):
             entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
