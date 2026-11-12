@@ -766,9 +766,10 @@ def carregar_dados(data_inicio, data_fim):
         try:
             if not df_process.empty:
                 serie_sub = df_process['SubGrupo'].apply(normalizar_texto)
+                serie_historico = df_process['Historico'].apply(normalizar_texto)
                 df_process['Aplicações_Val'] = df_process['Vl_Absoluto'].where(serie_sub == 'aplicacao financeira', 0.0)
                 df_process['Impostos_Val'] = df_process['Vl_Absoluto'].where(serie_sub == 'impostos sobre aplicacoes', 0.0)
-                df_process['Rendimentos_Val'] = df_process['Vl_Absoluto'].where(serie_sub == 'rendimentos de aplicacoes', 0.0)
+                df_process['Rendimentos_Val'] = df_process['Vl_Absoluto'].where(serie_historico == 'rendimentos de aplicacoes', 0.0)
                 df_process['Resgates_Val'] = df_process['Vl_Absoluto'].where(serie_sub == 'resgates de aplicacoes', 0.0)
 
                 df_period_app = df_process[
