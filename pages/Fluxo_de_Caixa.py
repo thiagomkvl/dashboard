@@ -1584,7 +1584,7 @@ else:
 
     html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci))
     df_rend_ap = df[df["Papel"] == "rendimento_ap"].copy()
-    bloco_total(df_rend_ap, "(+) Rendimentos de Aplicações", s_rend_ap, VERDE)
+    bloco_total(df_rend_ap, "(+) Rendimentos de Aplicações", s_rend_ap, VERDE, "ra")
 
     df_capex = df[df["Papel"] == "capex"].copy()
     # Preserva a apresentação e a compensação existentes do CAPEX.
