@@ -595,6 +595,7 @@ def parse_fcx_obra(raw, ano_ref=None):
             if abs(val) <= 0.005:
                 continue
 
+            # 1. Abatimento proporcional no FCO
             reg.append({
                 "Ref": ref,
                 "Categoria": conta_s,
@@ -603,6 +604,7 @@ def parse_fcx_obra(raw, ano_ref=None):
                 "Grupo": "FCx_Obra (Redução FCO)",
                 "Detalhe": conta_s,
             })
+            # 2. No FCI, cada Obra assume a sua própria categoria principal (ex: Obra: NOME) e detalha a Conta Contábil
             nome_obra = current_obra if current_obra else "Diversas"
             reg.append({
                 "Ref": ref,
@@ -634,20 +636,6 @@ def eh_linha_devolucao(categoria):
     return "devolucao" in n and (
         "adiantamento" in n or "prontuario" in n or "fornecedor" in n or "paciente" in n
     )
-
-
-# ==============================================================================
-# CARREGAR PROJEÇÃO
-# ==============================================================================
-@st.cache_data(ttl=60, show_spinner="Carregando projeções...")
-def carregar_projecao():
-    try:
-        raw = ler_aba_cacheada(ABA_PROJECAO)
-        if raw is None or raw.empty:
-            return pd.DataFrame()
-        return raw
-    except Exception:
-        return pd.DataFrame()
 
 
 # ==============================================================================
@@ -968,6 +956,7 @@ def aplicar_classificacao(categoria, mapa):
 
 
 def eh_receita_aplicacao(classif, categoria=""):
+    """Reconhece a classificação específica e contas de rendimentos abreviadas."""
     cls = normalizar_chave(classif)
     conta = normalizar_chave(categoria)
     classe_aplicacao = "aplic" in cls and "financeir" in cls
@@ -986,6 +975,8 @@ def papel_classif(classif, fluxo=""):
         return "var_ap"
 
     if "invest" in nf:
+        # A exceção depende da classificação e do fluxo definidos no de-para.
+        # Obras continuam sendo CAPEX, mesmo se o nome contiver esses termos.
         if not n.startswith(("obra:", "obra ")) and eh_receita_aplicacao(classif):
             return "receita_inv"
         return "capex"
@@ -1023,6 +1014,127 @@ def papel_classif(classif, fluxo=""):
     )):
         return "custo_op"
     return "outros"
+
+
+
+
+# ==============================================================================
+# PROJEÇÃO 2026 — ENTRADAS OPERACIONAIS E FCO (SEM IMPOSTOS)
+# ==============================================================================
+def carregar_projecao_fcx():
+    colunas = ["Classificacao", "Conta", "Fluxo", "Driver", "Ref", "Projetado"]
+    try:
+        raw = ler_aba_cacheada(ABA_PROJECAO)
+    except Exception as e:
+        return pd.DataFrame(columns=colunas), [f"Projeção: não foi possível ler a aba {ABA_PROJECAO}: {e}"]
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=colunas), [f"Projeção: a aba {ABA_PROJECAO} está vazia ou não foi encontrada."]
+
+    if all(isinstance(c, (int, float)) for c in raw.columns):
+        cab = [str(v).strip() if pd.notna(v) else "" for v in raw.iloc[0].tolist()]
+        dados = raw.iloc[1:].copy()
+        dados.columns = cab
+    else:
+        dados = raw.copy()
+
+    def achar_col(nome):
+        alvo = normalizar(nome)
+        return next((c for c in dados.columns if normalizar(c) == alvo), None)
+
+    c_class = achar_col("Classificação") or dados.columns[0]
+    c_conta = achar_col("Conta/SubGrupo") or c_class
+    c_fluxo = achar_col("Fluxo de Caixa")
+    c_driver = achar_col("Driver (Base de Volume)")
+    if c_fluxo is None or c_driver is None:
+        return pd.DataFrame(columns=colunas), ["Projeção: colunas Fluxo de Caixa ou Driver não encontradas."]
+
+    meses = {c: parse_mes_header(c, ANO_REF) for c in dados.columns}
+    meses = {c: ref for c, ref in meses.items() if ref is not None and ref.year == ANO_REF}
+    registros = []
+    for _, r in dados.iterrows():
+        if normalizar(r.get(c_fluxo, "")) != normalizar(FLUXO_OP):
+            continue
+        classificacao = str(r.get(c_class, "")).strip()
+        conta = str(r.get(c_conta, "")).strip()
+        driver = str(r.get(c_driver, "")).strip()
+        if not conta or conta.lower() == "nan":
+            continue
+        for c, ref in meses.items():
+            valor = limpa_valor(r.get(c, 0))
+            if abs(valor) > 0.005:
+                registros.append({
+                    "Classificacao": classificacao, "Conta": conta,
+                    "Fluxo": FLUXO_OP, "Driver": driver,
+                    "Ref": ref, "Projetado": abs(float(valor))
+                })
+    if not registros:
+        return pd.DataFrame(columns=colunas), ["Projeção: não foram encontrados valores mensais do FCO."]
+    return pd.DataFrame(registros, columns=colunas), []
+
+
+def montar_tabela_projecao(titulo, proj, realizado, refs, somente_entradas=False):
+    p = proj.copy()
+    if somente_entradas:
+        p = p[p["Driver"].apply(lambda x: normalizar(x) == "entradas")].copy()
+    if p.empty:
+        st.info(f"{titulo}: não há linhas projetadas para o critério selecionado.")
+        return
+
+    p["Chave"] = p["Conta"].apply(normalizar_chave)
+    p = p.groupby(["Chave", "Conta", "Driver", "Ref"], as_index=False)["Projetado"].sum()
+
+    r = realizado.copy()
+    r = r[r["Papel"] == "receita_op"] if somente_entradas else r[r["Papel"].isin(["receita_op", "custo_op", "var_ap"])]
+    r["Chave"] = r["Classif"].apply(normalizar_chave)
+    r = r.groupby(["Chave", "Ref"], as_index=False)["Valor"].sum().rename(columns={"Valor": "Realizado"})
+
+    linhas = []
+    contas = p[["Chave", "Conta"]].drop_duplicates()
+    for _, item in contas.iterrows():
+        chave, conta = item["Chave"], item["Conta"]
+        pp = p[p["Chave"] == chave].set_index("Ref")["Projetado"]
+        rr = r[r["Chave"] == chave].set_index("Ref")["Realizado"]
+        linha = {"Conta": conta}
+        for m in refs:
+            pv, rv = float(pp.get(m, 0)), float(rr.get(m, 0))
+            linha[(m, "Projetado")], linha[(m, "Realizado")], linha[(m, "Dif.")] = pv, rv, rv-pv
+        linhas.append(linha)
+
+    total = {"Conta": "TOTAL"}
+    for m in refs:
+        pm = p[p["Ref"] == m]
+        if somente_entradas:
+            pv = float(pm["Projetado"].sum())
+            rv = float(r.loc[r["Ref"] == m, "Realizado"].sum())
+        else:
+            pv = float(pm.loc[pm["Driver"].apply(lambda x: normalizar(x) == "entradas"), "Projetado"].sum()) - float(
+                pm.loc[pm["Driver"].apply(lambda x: normalizar(x) != "entradas"), "Projetado"].sum())
+            rm = realizado[(realizado["Ref"] == m) & realizado["Papel"].isin(["receita_op", "custo_op", "var_ap"])]
+            rv = (float(rm.loc[rm["Papel"] == "receita_op", "Valor"].sum())
+                  - float(rm.loc[rm["Papel"] == "custo_op", "Valor"].sum())
+                  + float(rm.loc[rm["Papel"] == "var_ap", "Valor"].sum()))
+        total[(m, "Projetado")], total[(m, "Realizado")], total[(m, "Dif.")] = pv, rv, rv-pv
+    linhas.append(total)
+
+    h1 = ["<th rowspan='2'>Conta / SubGrupo</th>"]
+    h2, body = [], []
+    for m in refs:
+        h1.append(f"<th colspan='3' style='text-align:center'>{rot_mes(m)}</th>")
+        h2.extend(["<th>Projetado</th>", "<th>Realizado</th>", "<th>Dif.</th>"])
+    for item in linhas:
+        cls = "tot" if item["Conta"] == "TOTAL" else ""
+        cells = [f"<td><b>{item['Conta']}</b></td>"]
+        for m in refs:
+            for tipo in ("Projetado", "Realizado", "Dif."):
+                v = float(item.get((m, tipo), 0))
+                cor = VERMELHO if tipo == "Dif." and v < 0 else TXT
+                cells.append(f"<td style='text-align:right;color:{cor}'>{moeda(v)}</td>")
+        body.append(f"<tr class='{cls}'>" + "".join(cells) + "</tr>")
+    st.markdown(
+        f"<div class='section-title'>{titulo}</div><div class='tbl-wrap'><table class='tbl'>"
+        f"<thead><tr>{''.join(h1)}</tr><tr>{''.join(h2)}</tr></thead><tbody>"
+        f"{''.join(body)}</tbody></table></div>", unsafe_allow_html=True
+    )
 
 
 # ==============================================================================
@@ -1114,7 +1226,7 @@ def carregar_fluxo_legado():
             mr["Grupo"] = "Receita"
             partes.append(mr[cols])
 
-    # Devoluções
+    # Devoluções de adiantamento
     raw_dev = None
     for nome_aba in (ABA_DEVOL, ABA_DEVOL_ALT):
         try:
@@ -1169,7 +1281,9 @@ def carregar_fluxo_legado():
     return base_grouped.sort_values(["Ref", "Tipo", "Categoria"]).reset_index(drop=True), avisos
 
 
+
 def parse_extratos_bancos(raw):
+    """Movimentos bancários a partir do corte; sem cruzar as bases antigas."""
     cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     avisos, reg = [], []
     if raw is None or raw.empty:
@@ -1189,6 +1303,8 @@ def parse_extratos_bancos(raw):
                          "Vl Crédito (F), Operacional (K) e SubGrupo (L) obrigatórias.")
     invalidas = sem_categoria = 0
     for _, row in raw.iterrows():
+        # Lista positiva: transferências internas, vazios e qualquer outra
+        # classificação não entram na base nem nos totais do fluxo.
         if normalizar(row[campos["operacional"]]) not in ("operacional", "operacionais"):
             continue
         debito = abs(limpa_valor(row[campos["debito"]]))
@@ -1221,7 +1337,7 @@ def parse_extratos_bancos(raw):
                 "Detalhe": categoria,
             })
     if invalidas:
-        avisos.append(f"Extratos_Bancos: {invalidas} linha(s) com movimento e data inválida.")
+        avisos.append(f"Extratos_Bancos: {invalidas} linha(s) com movimento e data inválida; corrigir a coluna B.")
     if sem_categoria:
         avisos.append(f"Extratos_Bancos: {sem_categoria} linha(s) sem SubGrupo (L).")
     return pd.DataFrame(reg, columns=cols), avisos
@@ -1229,6 +1345,7 @@ def parse_extratos_bancos(raw):
 
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo():
+    # O processamento legado permanece intacto, inclusive devoluções e obras.
     legado, avisos = carregar_fluxo_legado()
     legado = legado.loc[legado["Ref"] < INICIO_EXTRATOS].copy()
     try:
@@ -1258,23 +1375,28 @@ if base.empty:
 
 base = base.copy()
 
+# Separar lançamentos normais de lançamentos vindos de FCx_Obra
 mask_obra = base["Grupo"].str.startswith("FCx_Obra -", na=False)
+
 df_normal = base[~mask_obra].copy()
 pares = df_normal["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
 df_normal["Classif"] = pares.apply(lambda x: x[0])
 df_normal["Fluxo"] = pares.apply(lambda x: x[1])
 
+# Cada Obra vira sua própria categoria/linha principal no FCI
 df_obra = base[mask_obra].copy()
 df_obra["Classif"] = df_obra["Categoria"]
 df_obra["Fluxo"] = FLUXO_INV
 
 base = pd.concat([df_normal, df_obra], ignore_index=True)
 
+# Agrupa somente os investimentos de CAPEX; preserva receitas do FCI.
 mask_receita_inv = (
     (base["Fluxo"] == FLUXO_INV)
     & ~base["Grupo"].str.startswith("FCx_Obra -", na=False)
     & base.apply(lambda r: eh_receita_aplicacao(r["Classif"], r["Categoria"]), axis=1)
 )
+# Define o nome antes de agrupar CAPEX e de atribuir o papel/sinal financeiro.
 base.loc[mask_receita_inv, "Classif"] = "Aplicações Financeiras"
 mask_capex_geral = (
     (~base["Grupo"].str.startswith("FCx_Obra -", na=False))
@@ -1285,12 +1407,16 @@ base.loc[mask_capex_geral, "Classif"] = "Investimentos / CAPEX"
 
 base["Papel"] = base.apply(lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1)
 
+# As fórmulas existentes subtraem custos/CAPEX e somam receitas/variações.
+# Converte a direção bancária para essa convenção apenas no novo período.
 mask_extratos = base["Ref"] >= INICIO_EXTRATOS
 mask_soma = base["Papel"].isin(["receita_op", "receita_inv", "captacao", "var_ap", "outros"])
 mask_entrada = base["Tipo"] == "Entrada"
 base.loc[mask_extratos, "Valor"] = base.loc[mask_extratos, "Valor"].abs() * (
     (mask_soma == mask_entrada).loc[mask_extratos].map({True: 1.0, False: -1.0})
 )
+# Créditos em contas de captação também entram nas fórmulas que filtram Entrada;
+# débitos na mesma conta representam a reversão da captação.
 base.loc[mask_extratos & (base["Papel"] == "captacao"), "Tipo"] = "Entrada"
 
 
@@ -1306,6 +1432,9 @@ except Exception as erro_ajustes:
     st.stop()
 if not base_ajustes.empty:
     base = pd.concat([base, base_ajustes], ignore_index=True)
+
+df_projecao, avisos_projecao = carregar_projecao_fcx()
+avisos.extend(avisos_projecao)
 
 # ==============================================================================
 # SIDEBAR
@@ -1463,84 +1592,28 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ==============================================================================
-# SEÇÃO DE PROJEÇÃO MÊS A MÊS (PROJETADO / REALIZADO / DIF.)
-# ==============================================================================
-st.markdown(
-    "<div class='section-title'>Projeções de Entrada Operacional e FCO (Exceto Impostos) · Projetado vs Realizado vs Dif.</div>",
-    unsafe_allow_html=True,
-)
-
-df_proj = carregar_projecao()
-if not df_proj.empty:
-    # Exibir seletor ou abas mensais para cada mês de 2026
-    mes_selecionado = st.selectbox(
-        "Selecione o Mês para Análise Detalhada (Projetado x Realizado)",
-        options=MESES_ABREV,
-        index=datetime.now().month - 1 if datetime.now().year == 2026 else 0
-    )
-    
-    # Mapear índice do mês
-    idx_mes = MESES_ABREV.index(mes_selecionado) + 1
-    
-    # Filtrar dados realizados do mês selecionado
-    ref_atual = pd.Timestamp(ANO_REF, idx_mes, 1)
-    df_mes_real = df[df["Ref"] == ref_atual]
-    
-    # Calcular Realizado de Entrada Operacional e FCO (exceto impostos)
-    real_rec_op = float(df_mes_real[df_mes_real["Papel"] == "receita_op"]["Valor"].sum())
-    real_custo_op = float(df_mes_real[df_mes_real["Papel"] == "custo_op"]["Valor"].sum())
-    real_var_ap = float(df_mes_real[df_mes_real["Papel"] == "var_ap"]["Valor"].sum())
-    # FCO exceto impostos = Receitas operacionais - Custos/Despesas operacionais ± Variações de Ativos e Passivos
-    real_fco_sem_impostos = real_rec_op - real_custo_op + real_var_ap
-
-    # Extrair valores projetados da aba de Projeção para o mês selecionado
-    # Na aba Projeção_FCx_2026, procuramos linhas correspondentes
-    col_proj_nome = [c for c in df_proj.columns if f"Proj" in c and (f"{idx_mes:02d}" in c or mes_selecionado.lower() in c.lower())]
-    
-    # Exibir tabela comparativa para o mês selecionado
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(f"Entrada Operacional (Realizado)", moeda(real_rec_op))
-    with col2:
-        st.metric(f"FCO Operacional s/ Impostos (Realizado)", moeda(real_fco_sem_impostos))
-    with col3:
-        st.metric(f"Variação Líquida do Mês", moeda(float(s_var.get(ref_atual, 0.0))))
-
-    # Tabela detalhada de comparação por categoria/conta
-    st.markdown(f"#### Detalhamento Mensal: {mes_selecionado}/{ANO_REF}")
-    
-    tabela_comparativa = []
-    # Adicionar linha de Entrada Operacional
-    tabela_comparativa.append({
-        "Indicador / Conta": "Entrada Operacional (Receitas)",
-        "Realizado": real_rec_op,
-        "Projetado": 0.0, # Pode ser preenchido direto da aba de projeção se houver linha correspondente
-        "Diferença": 0.0
-    })
-    tabela_comparativa.append({
-        "Indicador / Conta": "FCO Operacional (Exceto Impostos)",
-        "Realizado": real_fco_sem_impostos,
-        "Projetado": 0.0,
-        "Diferença": 0.0
-    })
-    
-    df_comp = pd.DataFrame(tabela_comparativa)
-    st.dataframe(df_comp.style.format({"Realizado": lambda v: moeda(v), "Projetado": lambda v: moeda(v), "Diferença": lambda v: moeda(v)}), use_container_width=True)
-else:
-    st.info("ℹ️ Aba de Projeção `Projeção_FCx_2026` não encontrada ou vazia.")
-
-
 st.markdown(
     "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
     unsafe_allow_html=True,
 )
+
+# Comparativos de orçamento: entradas operacionais e FCO sem impostos.
+refs_projecao = list(pd.date_range(pd.Timestamp(ANO_REF, 1, 1), pd.Timestamp(ANO_REF, 12, 1), freq="MS"))
+if not df_projecao.empty:
+    montar_tabela_projecao("ENTRADAS OPERACIONAIS · PROJETADO x REALIZADO",
+                           df_projecao, base, refs_projecao, somente_entradas=True)
+    montar_tabela_projecao("FLUXO DE CAIXA OPERACIONAL · SEM IMPOSTOS",
+                           df_projecao, base, refs_projecao, somente_entradas=False)
 
 
 def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     rows = []
     if x.empty:
         return rows
+    # Em CAPEX, primeiro compensamos valores positivos e negativos da mesma
+    # classificação/conta no mês; só depois exibimos a magnitude positiva.
+    # Aplicar abs() em cada lançamento antes da soma transformava abatimentos
+    # da FCx_Obra em novos desembolsos e inflava a linha Investimentos / CAPEX.
     x = x.copy()
     if titulo:
         rows.append(
@@ -1549,6 +1622,9 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
         )
     det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
     if exibir_abs:
+        # Compensa no nível do detalhe/conta contábil antes de somar a linha
+        # principal. Assim a parcela alocada à obra abate a mesma conta, sem
+        # virar um desembolso positivo nem compensar contas diferentes.
         det_visual = det.copy()
         det_visual["Valor"] = det_visual["Valor"].abs()
         piv = det_visual.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
@@ -1620,7 +1696,9 @@ def linha_tot(label, s, cor, cls="tot"):
 
 
 def entradas_saidas_resumo(dados, papeis, referencias):
+    """Compensa reclassificações por conta/mês antes de abrir entradas e saídas."""
     movimentos = dados[dados["Papel"].isin(papeis)].copy()
+    # Mesma seleção aplicada nas fórmulas do FCF.
     movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
     movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
         lambda papel: 1.0 if papel in ("receita_op", "receita_inv", "captacao", "var_ap") else -1.0
@@ -1644,6 +1722,7 @@ else:
         html.append(linha_tot(label, valores, cor, cls="subsec"))
         html.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
+    # Os totais ficam nos cabeçalhos, sem repetir linhas ao pé dos blocos.
     html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco))
     bloco_total(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
     bloco_total(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
@@ -1656,11 +1735,13 @@ else:
     if not df_receitas_inv.empty:
         bloco_total(df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, "ri")
     df_capex = df[df["Papel"] == "capex"].copy()
+    # Preserva a apresentação e a compensação existentes do CAPEX.
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
     bloco_total(df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
 
     html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf))
     bloco_total(df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, "p")
+    # Mantém apenas as categorias com abertura, sem cabeçalhos duplicados.
     html.extend(linhas_df(df_amort, None, "a"))
     html.extend(linhas_df(df_juros, None, "j"))
     html.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
@@ -1676,6 +1757,7 @@ else:
         f"{moeda(float(s_var.sum()))}</b></span></td></tr>"
     )
 
+    # ---- 4. SALDO ----
     html.append(
         "<tr class='sec'><td>4. SALDO DE CAIXA</td>"
         + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
