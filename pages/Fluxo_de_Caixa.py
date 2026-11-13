@@ -50,7 +50,6 @@ ABA_DEVOL = "FCx_Devolução_Adiantamento"
 ABA_DEVOL_ALT = "FCx_Devolucao_Adiantamento"
 ABA_OBRA = "FCx_Obra"
 ABA_EXTRATOS = "Extratos_Bancos"
-ABA_PROJECAO = "Projeção_FCx_2026"
 INICIO_EXTRATOS = pd.Timestamp(2026, 11, 1)
 
 
@@ -1016,130 +1015,6 @@ def papel_classif(classif, fluxo=""):
     return "outros"
 
 
-
-
-# ==============================================================================
-# PROJEÇÃO 2026 — ENTRADAS OPERACIONAIS E FCO (SEM IMPOSTOS)
-# ==============================================================================
-def carregar_projecao_fcx():
-    colunas = ["Classificacao", "Conta", "Fluxo", "Driver", "Ref", "Projetado"]
-    try:
-        raw = ler_aba_cacheada(ABA_PROJECAO)
-    except Exception as e:
-        return pd.DataFrame(columns=colunas), [f"Projeção: não foi possível ler a aba {ABA_PROJECAO}: {e}"]
-    if raw is None or raw.empty:
-        return pd.DataFrame(columns=colunas), [f"Projeção: a aba {ABA_PROJECAO} está vazia ou não foi encontrada."]
-
-    if all(isinstance(c, (int, float)) for c in raw.columns):
-        cab = [str(v).strip() if pd.notna(v) else "" for v in raw.iloc[0].tolist()]
-        dados = raw.iloc[1:].copy()
-        dados.columns = cab
-    else:
-        dados = raw.copy()
-
-    def achar_col(nome):
-        alvo = normalizar(nome)
-        return next((c for c in dados.columns if normalizar(c) == alvo), None)
-
-    c_class = achar_col("Classificação") or dados.columns[0]
-    c_conta = achar_col("Conta/SubGrupo") or c_class
-    c_fluxo = achar_col("Fluxo de Caixa")
-    c_driver = achar_col("Driver (Base de Volume)")
-    if c_fluxo is None or c_driver is None:
-        return pd.DataFrame(columns=colunas), ["Projeção: colunas Fluxo de Caixa ou Driver não encontradas."]
-
-    meses = {c: parse_mes_header(c, ANO_REF) for c in dados.columns}
-    meses = {c: ref for c, ref in meses.items() if ref is not None and ref.year == ANO_REF}
-    registros = []
-    for _, r in dados.iterrows():
-        if normalizar(r.get(c_fluxo, "")) != normalizar(FLUXO_OP):
-            continue
-        classificacao = str(r.get(c_class, "")).strip()
-        conta = str(r.get(c_conta, "")).strip()
-        driver = str(r.get(c_driver, "")).strip()
-        if not conta or conta.lower() == "nan":
-            continue
-        for c, ref in meses.items():
-            valor = limpa_valor(r.get(c, 0))
-            if abs(valor) > 0.005:
-                registros.append({
-                    "Classificacao": classificacao, "Conta": conta,
-                    "Fluxo": FLUXO_OP, "Driver": driver,
-                    "Ref": ref, "Projetado": abs(float(valor))
-                })
-    if not registros:
-        return pd.DataFrame(columns=colunas), ["Projeção: não foram encontrados valores mensais do FCO."]
-    return pd.DataFrame(registros, columns=colunas), []
-
-
-def montar_tabela_projecao(titulo, proj, realizado, refs, somente_entradas=False):
-    p = proj.copy()
-    if somente_entradas:
-        p = p[p["Driver"].apply(lambda x: normalizar(x) == "entradas")].copy()
-    if p.empty:
-        st.info(f"{titulo}: não há linhas projetadas para o critério selecionado.")
-        return
-
-    p["Chave"] = p["Conta"].apply(normalizar_chave)
-    # Mantém a abertura por Driver para calcular o total do FCO e cria
-    # uma visão consolidada por Conta/Ref para evitar índices duplicados.
-    p_total = p.groupby(["Chave", "Conta", "Driver", "Ref"], as_index=False)["Projetado"].sum()
-    p_linhas = p.groupby(["Chave", "Conta", "Ref"], as_index=False)["Projetado"].sum()
-
-    r = realizado.copy()
-    r = r[r["Papel"] == "receita_op"] if somente_entradas else r[r["Papel"].isin(["receita_op", "custo_op", "var_ap"])]
-    r["Chave"] = r["Classif"].apply(normalizar_chave)
-    r = r.groupby(["Chave", "Ref"], as_index=False)["Valor"].sum().rename(columns={"Valor": "Realizado"})
-
-    linhas = []
-    contas = p_linhas[["Chave", "Conta"]].drop_duplicates()
-    for _, item in contas.iterrows():
-        chave, conta = item["Chave"], item["Conta"]
-        pp = p_linhas[p_linhas["Chave"] == chave].set_index("Ref")["Projetado"]
-        rr = r[r["Chave"] == chave].set_index("Ref")["Realizado"]
-        linha = {"Conta": conta}
-        for m in refs:
-            pv, rv = float(pp.get(m, 0)), float(rr.get(m, 0))
-            linha[(m, "Projetado")], linha[(m, "Realizado")], linha[(m, "Dif.")] = pv, rv, rv-pv
-        linhas.append(linha)
-
-    total = {"Conta": "TOTAL"}
-    for m in refs:
-        pm = p_total[p_total["Ref"] == m]
-        if somente_entradas:
-            pv = float(pm["Projetado"].sum())
-            rv = float(r.loc[r["Ref"] == m, "Realizado"].sum())
-        else:
-            pv = float(pm.loc[pm["Driver"].apply(lambda x: normalizar(x) == "entradas"), "Projetado"].sum()) - float(
-                pm.loc[pm["Driver"].apply(lambda x: normalizar(x) != "entradas"), "Projetado"].sum())
-            rm = realizado[(realizado["Ref"] == m) & realizado["Papel"].isin(["receita_op", "custo_op", "var_ap"])]
-            rv = (float(rm.loc[rm["Papel"] == "receita_op", "Valor"].sum())
-                  - float(rm.loc[rm["Papel"] == "custo_op", "Valor"].sum())
-                  + float(rm.loc[rm["Papel"] == "var_ap", "Valor"].sum()))
-        total[(m, "Projetado")], total[(m, "Realizado")], total[(m, "Dif.")] = pv, rv, rv-pv
-    linhas.append(total)
-
-    h1 = ["<th rowspan='2'>Conta / SubGrupo</th>"]
-    h2, body = [], []
-    for m in refs:
-        h1.append(f"<th colspan='3' style='text-align:center'>{rot_mes(m)}</th>")
-        h2.extend(["<th>Projetado</th>", "<th>Realizado</th>", "<th>Dif.</th>"])
-    for item in linhas:
-        cls = "tot" if item["Conta"] == "TOTAL" else ""
-        cells = [f"<td><b>{item['Conta']}</b></td>"]
-        for m in refs:
-            for tipo in ("Projetado", "Realizado", "Dif."):
-                v = float(item.get((m, tipo), 0))
-                cor = VERMELHO if tipo == "Dif." and v < 0 else TXT
-                cells.append(f"<td style='text-align:right;color:{cor}'>{moeda(v)}</td>")
-        body.append(f"<tr class='{cls}'>" + "".join(cells) + "</tr>")
-    st.markdown(
-        f"<div class='section-title'>{titulo}</div><div class='tbl-wrap'><table class='tbl'>"
-        f"<thead><tr>{''.join(h1)}</tr><tr>{''.join(h2)}</tr></thead><tbody>"
-        f"{''.join(body)}</tbody></table></div>", unsafe_allow_html=True
-    )
-
-
 # ==============================================================================
 # CARGA
 # ==============================================================================
@@ -1436,9 +1311,6 @@ except Exception as erro_ajustes:
 if not base_ajustes.empty:
     base = pd.concat([base, base_ajustes], ignore_index=True)
 
-df_projecao, avisos_projecao = carregar_projecao_fcx()
-avisos.extend(avisos_projecao)
-
 # ==============================================================================
 # SIDEBAR
 # ==============================================================================
@@ -1599,14 +1471,6 @@ st.markdown(
     "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
     unsafe_allow_html=True,
 )
-
-# Comparativos de orçamento: entradas operacionais e FCO sem impostos.
-refs_projecao = list(pd.date_range(pd.Timestamp(ANO_REF, 1, 1), pd.Timestamp(ANO_REF, 12, 1), freq="MS"))
-if not df_projecao.empty:
-    montar_tabela_projecao("ENTRADAS OPERACIONAIS · PROJETADO x REALIZADO",
-                           df_projecao, base, refs_projecao, somente_entradas=True)
-    montar_tabela_projecao("FLUXO DE CAIXA OPERACIONAL · SEM IMPOSTOS",
-                           df_projecao, base, refs_projecao, somente_entradas=False)
 
 
 def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
