@@ -1081,7 +1081,10 @@ def montar_tabela_projecao(titulo, proj, realizado, refs, somente_entradas=False
         return
 
     p["Chave"] = p["Conta"].apply(normalizar_chave)
-    p = p.groupby(["Chave", "Conta", "Driver", "Ref"], as_index=False)["Projetado"].sum()
+    # Mantém a abertura por Driver para calcular o total do FCO e cria
+    # uma visão consolidada por Conta/Ref para evitar índices duplicados.
+    p_total = p.groupby(["Chave", "Conta", "Driver", "Ref"], as_index=False)["Projetado"].sum()
+    p_linhas = p.groupby(["Chave", "Conta", "Ref"], as_index=False)["Projetado"].sum()
 
     r = realizado.copy()
     r = r[r["Papel"] == "receita_op"] if somente_entradas else r[r["Papel"].isin(["receita_op", "custo_op", "var_ap"])]
@@ -1089,10 +1092,10 @@ def montar_tabela_projecao(titulo, proj, realizado, refs, somente_entradas=False
     r = r.groupby(["Chave", "Ref"], as_index=False)["Valor"].sum().rename(columns={"Valor": "Realizado"})
 
     linhas = []
-    contas = p[["Chave", "Conta"]].drop_duplicates()
+    contas = p_linhas[["Chave", "Conta"]].drop_duplicates()
     for _, item in contas.iterrows():
         chave, conta = item["Chave"], item["Conta"]
-        pp = p[p["Chave"] == chave].set_index("Ref")["Projetado"]
+        pp = p_linhas[p_linhas["Chave"] == chave].set_index("Ref")["Projetado"]
         rr = r[r["Chave"] == chave].set_index("Ref")["Realizado"]
         linha = {"Conta": conta}
         for m in refs:
@@ -1102,7 +1105,7 @@ def montar_tabela_projecao(titulo, proj, realizado, refs, somente_entradas=False
 
     total = {"Conta": "TOTAL"}
     for m in refs:
-        pm = p[p["Ref"] == m]
+        pm = p_total[p_total["Ref"] == m]
         if somente_entradas:
             pv = float(pm["Projetado"].sum())
             rv = float(r.loc[r["Ref"] == m, "Realizado"].sum())
