@@ -1341,11 +1341,6 @@ df = base[base["Ref"].isin(refs_sel)].copy()
 if grupo_sel:
     df = df[df["Grupo"].isin(grupo_sel)]
 
-projecao_fcx, aviso_projecao = carregar_projecao_operacional()
-if aviso_projecao:
-    st.warning(aviso_projecao)
-comparativo_fcx = montar_comparativo_fcx(df, projecao_fcx, refs_sel)
-
 df_captacao = df[(df["Papel"] == "captacao") & (df["Tipo"] == "Entrada")].copy()
 df_juros = df[df["Papel"] == "juros"].copy()
 df_amort = df[df["Papel"] == "amortizacao"].copy()
@@ -1781,6 +1776,13 @@ def linhas_contas_comparativas(custos, referencias, uid_prefix="proj"):
             )
         rows.append("</tbody>")
     return rows
+
+
+# Carrega a projeção somente depois que suas funções auxiliares foram definidas.
+projecao_fcx, aviso_projecao = carregar_projecao_operacional()
+if aviso_projecao:
+    st.warning(aviso_projecao)
+comparativo_fcx = montar_comparativo_fcx(df, projecao_fcx, refs_sel)
 
 
 def entradas_saidas_resumo(dados, papeis, referencias):
