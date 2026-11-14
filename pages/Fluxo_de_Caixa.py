@@ -1435,6 +1435,20 @@ s_diferenca = s_fim - s_tasy
 saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
 
+def entradas_saidas_resumo(dados, papeis, referencias):
+    """Compensa reclassificações por conta/mês antes de abrir entradas e saídas."""
+    movimentos = dados[dados["Papel"].isin(papeis)].copy()
+    # Mesma seleção aplicada nas fórmulas do FCF.
+    movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
+    movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
+        lambda papel: 1.0 if papel in ("receita_op", "receita_inv", "captacao", "var_ap") else -1.0
+    )
+    liquidos = movimentos.groupby(["Ref", "Papel", "Categoria", "Detalhe"])["Caixa"].sum()
+    entradas = liquidos.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+    saidas = (-liquidos.clip(upper=0)).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+    return entradas, saidas
+
+
 # ==============================================================================
 # EXPORTAÇÃO EXCEL — utiliza os mesmos dados, filtros e séries do dashboard.
 # Requer a dependência: xlsxwriter
@@ -1733,18 +1747,6 @@ def linha_tot(label, s, cor, cls="tot"):
     )
 
 
-def entradas_saidas_resumo(dados, papeis, referencias):
-    """Compensa reclassificações por conta/mês antes de abrir entradas e saídas."""
-    movimentos = dados[dados["Papel"].isin(papeis)].copy()
-    # Mesma seleção aplicada nas fórmulas do FCF.
-    movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
-    movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
-        lambda papel: 1.0 if papel in ("receita_op", "receita_inv", "captacao", "var_ap") else -1.0
-    )
-    liquidos = movimentos.groupby(["Ref", "Papel", "Categoria", "Detalhe"])["Caixa"].sum()
-    entradas = liquidos.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
-    saidas = (-liquidos.clip(upper=0)).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
-    return entradas, saidas
 
 
 if df.empty:
