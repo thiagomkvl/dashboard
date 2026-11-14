@@ -11,6 +11,7 @@ except Exception:
     pass
 
 import os
+from io import BytesIO
 import re
 import textwrap
 import time
@@ -1434,6 +1435,164 @@ s_diferenca = s_fim - s_tasy
 saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
 
+# ==============================================================================
+# EXPORTAÇÃO EXCEL — utiliza os mesmos dados, filtros e séries do dashboard.
+# Requer a dependência: xlsxwriter
+# ==============================================================================
+def gerar_excel_fluxo():
+    import xlsxwriter
+
+    buffer = BytesIO()
+    wb = xlsxwriter.Workbook(buffer, {"in_memory": True})
+    wb.set_properties({"title": "Fluxo de Caixa", "subject": txt_per})
+    moeda_xls = '#,##0.00;[Red](#,##0.00);–'
+    fmt_titulo = wb.add_format({"bold": True, "font_size": 17, "font_color": "#FFFFFF", "bg_color": "#1E40AF", "valign": "vcenter"})
+    fmt_subtitulo = wb.add_format({"font_color": "#64748B", "italic": True})
+    fmt_header = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#334155", "border": 0, "valign": "vcenter"})
+    fmt_section = wb.add_format({"bold": True, "bg_color": "#DBEAFE", "font_color": "#1E3A8A"})
+    fmt_total_txt = wb.add_format({"bold": True, "bg_color": "#E2E8F0"})
+    fmt_total_val = wb.add_format({"bold": True, "bg_color": "#E2E8F0", "num_format": moeda_xls})
+    fmt_text = wb.add_format({"font_color": "#334155"})
+    fmt_num = wb.add_format({"num_format": moeda_xls, "font_color": "#334155"})
+    fmt_date = wb.add_format({"num_format": "dd/mm/yyyy"})
+    fmt_detail = wb.add_format({"font_color": "#64748B", "indent": 1})
+    fmt_detail_num = wb.add_format({"font_color": "#64748B", "num_format": moeda_xls})
+
+    demonstrativo = wb.add_worksheet("Demonstrativo")
+    resumo_ws = wb.add_worksheet("Resumo")
+    lancamentos = wb.add_worksheet("Lançamentos")
+    ncols = len(refs_sel) + 2
+
+    def iniciar(ws):
+        ws.hide_gridlines(2)
+        ws.set_column(0, 0, 54)
+        ws.set_column(1, ncols - 1, 17)
+        ws.merge_range(0, 0, 0, ncols - 1, "FLUXO DE CAIXA", fmt_titulo)
+        ws.set_row(0, 30)
+        ws.write(1, 0, "Período: " + txt_per, fmt_subtitulo)
+        ws.write(2, 0, "Valores em R$ · Filtros de grupo: " + (", ".join(grupo_sel) if grupo_sel else "Todos"), fmt_subtitulo)
+        for col, label in enumerate(["Descrição"] + x_lab + ["Total"]):
+            ws.write(4, col, label, fmt_header)
+        ws.freeze_panes(5, 1)
+        ws.set_landscape()
+        ws.fit_to_pages(1, 0)
+        ws.repeat_rows(4)
+        ws.set_header("&CFluxo de Caixa")
+        ws.set_footer("&CPágina &P de &N")
+        return 5
+
+    def escrever_linha(ws, pos, nome, valores=None, kind="normal", saldo=False):
+        if kind == "section":
+            ws.merge_range(pos, 0, pos, ncols - 1, nome, fmt_section)
+            return pos + 1
+        dados = [float(valores.get(m, 0.0)) if pd.notna(valores.get(m, 0.0)) else None for m in refs_sel]
+        txt_fmt = fmt_total_txt if kind == "total" else fmt_detail if kind == "detail" else fmt_text
+        num_fmt = fmt_total_val if kind == "total" else fmt_detail_num if kind == "detail" else fmt_num
+        ws.write(pos, 0, nome, txt_fmt)
+        for col, val in enumerate(dados, 1):
+            if val is None:
+                ws.write_blank(pos, col, None, num_fmt)
+            else:
+                ws.write_number(pos, col, val, num_fmt)
+        if saldo:
+            total = next((v for v in (dados if "inicial" in nome.lower() else reversed(dados)) if v is not None), None)
+        else:
+            total = sum(v for v in dados if v is not None)
+        if total is not None:
+            ws.write_number(pos, ncols - 1, total, num_fmt)
+        return pos + 1
+
+    def categorias(ws, pos, dados, exibir_abs=False):
+        if dados.empty:
+            return pos
+        detalhes = dados.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
+        if exibir_abs:
+            detalhes["Valor"] = detalhes["Valor"].abs()
+        piv = detalhes.pivot_table(index="Classif", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+        piv = piv.reindex(columns=refs_sel, fill_value=0.0)
+        for classe in piv.sum(axis=1).sort_values(ascending=False).index:
+            pos = escrever_linha(ws, pos, str(classe), piv.loc[classe])
+            det_classe = detalhes[detalhes["Classif"] == classe]
+            nomes = det_classe["Detalhe"].dropna().unique()
+            if len(nomes) > 1 or (len(nomes) == 1 and normalizar_chave(nomes[0]) != normalizar_chave(classe)):
+                sub = det_classe.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
+                sub = sub.reindex(columns=refs_sel, fill_value=0.0)
+                for detalhe in sub.sum(axis=1).sort_values(ascending=False).index:
+                    pos = escrever_linha(ws, pos, "↳ " + str(detalhe), sub.loc[detalhe], "detail")
+        return pos
+
+    pos = iniciar(demonstrativo)
+    pos = escrever_linha(demonstrativo, pos, "1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "total")
+    for titulo, papel, serie_val in (
+        ("(+) Receitas operacionais", "receita_op", s_rec),
+        ("(−) Custos e despesas operacionais", "custo_op", s_cus),
+        ("(−) Impostos", "imposto", s_imp),
+        ("(±) Variações de Ativos e Passivos", "var_ap", s_vap),
+    ):
+        pos = escrever_linha(demonstrativo, pos, titulo, serie_val, "total")
+        pos = categorias(demonstrativo, pos, df[df["Papel"] == papel])
+    pos = escrever_linha(demonstrativo, pos, "2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "total")
+    if not df[df["Papel"] == "receita_inv"].empty:
+        pos = escrever_linha(demonstrativo, pos, "(+) Receitas de aplicações financeiras", s_rec_inv, "total")
+        pos = categorias(demonstrativo, pos, df[df["Papel"] == "receita_inv"])
+    pos = escrever_linha(demonstrativo, pos, "(−) Desembolsos em CAPEX", s_cap.abs(), "total")
+    pos = categorias(demonstrativo, pos, df[df["Papel"] == "capex"], exibir_abs=True)
+    pos = escrever_linha(demonstrativo, pos, "3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "total")
+    pos = escrever_linha(demonstrativo, pos, "(+) Empréstimos e Financiamentos", s_cpt, "total")
+    pos = categorias(demonstrativo, pos, df_captacao)
+    pos = categorias(demonstrativo, pos, df_amort)
+    pos = categorias(demonstrativo, pos, df_juros)
+    pos = escrever_linha(demonstrativo, pos, "Total amortizações e juros/encargos financeiros", s_amo + s_jur, "total")
+    pos = escrever_linha(demonstrativo, pos, "VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", s_var, "total")
+    pos = escrever_linha(demonstrativo, pos, "4. SALDO DE CAIXA", kind="section")
+    for titulo, sv, saldo in (
+        ("(+) Saldo inicial", s_ini, True),
+        ("(+) Variação líquida do mês", s_var, False),
+        ("(=) Saldo final de caixa", s_fim, True),
+        ("Saldo Tasy", s_tasy, True),
+        ("Diferença: fluxo − Tasy", s_diferenca, True),
+    ):
+        pos = escrever_linha(demonstrativo, pos, titulo, sv, "total", saldo=saldo)
+    if not df[df["Papel"] == "outros"].empty:
+        pos = escrever_linha(demonstrativo, pos, "ITENS SEM CLASSIFICAÇÃO GERENCIAL", kind="section")
+        pos = categorias(demonstrativo, pos, df[df["Papel"] == "outros"])
+    demonstrativo.autofilter(4, 0, pos - 1, ncols - 1)
+
+    pos = iniciar(resumo_ws)
+    pos = escrever_linha(resumo_ws, pos, "(+) Saldo inicial", s_ini, "total", saldo=True)
+    for titulo, papeis, sv in (
+        ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
+        ("2- (=) FCI", ["receita_inv", "capex"], s_fci),
+        ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
+    ):
+        pos = escrever_linha(resumo_ws, pos, titulo, sv, "total")
+        entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
+        pos = escrever_linha(resumo_ws, pos, "(+) Entrada", entradas)
+        pos = escrever_linha(resumo_ws, pos, "(−) Saída", saidas)
+    pos = escrever_linha(resumo_ws, pos, "(=) Saldo final", s_fim, "total", saldo=True)
+
+    lancamentos.hide_gridlines(2)
+    campos = ["Mês", "Categoria", "Classificação", "Fluxo", "Papel", "Tipo", "Grupo", "Detalhe", "Valor (R$)"]
+    for j, nome in enumerate(campos):
+        lancamentos.write(0, j, nome, fmt_header)
+    lancamentos.set_column(0, 0, 13)
+    lancamentos.set_column(1, 3, 30)
+    lancamentos.set_column(4, 6, 22)
+    lancamentos.set_column(7, 7, 34)
+    lancamentos.set_column(8, 8, 19, fmt_num)
+    lancamentos.freeze_panes(1, 0)
+    for i, (_, linha) in enumerate(df.sort_values(["Ref", "Fluxo", "Classif", "Categoria"]).iterrows(), 1):
+        lancamentos.write_datetime(i, 0, pd.Timestamp(linha["Ref"]).to_pydatetime(), fmt_date)
+        for j, campo in enumerate(["Categoria", "Classif", "Fluxo", "Papel", "Tipo", "Grupo", "Detalhe"], 1):
+            lancamentos.write_string(i, j, str(linha.get(campo, "") or ""))
+        lancamentos.write_number(i, 8, float(linha["Valor"]), fmt_num)
+    if not df.empty:
+        lancamentos.autofilter(0, 0, len(df), 8)
+    wb.close()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 st.markdown(
     f"""
 <div class='kpi-grid'>
@@ -1466,6 +1625,18 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+
+try:
+    st.download_button(
+        label="⬇ Baixar Excel",
+        data=gerar_excel_fluxo(),
+        file_name=f"fluxo_de_caixa_{pd.Timestamp(ini):%Y%m}_{pd.Timestamp(fim):%Y%m}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=False,
+        key="baixar_fluxo_excel",
+    )
+except ImportError:
+    st.error("Para habilitar o Excel, instale a dependência: pip install XlsxWriter")
 
 st.markdown(
     "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
