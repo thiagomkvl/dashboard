@@ -234,6 +234,11 @@ css = """
     }
     .tabela-financeira td.valor-destaque { font-weight: 800; color: #0f172a; }
 
+    /* KPIs compactos da composição do indicador */
+    [data-testid="stMetricLabel"] p { font-size: 0.70rem !important; line-height: 1.15 !important; }
+    [data-testid="stMetricValue"] { font-size: 1.12rem !important; line-height: 1.2 !important; }
+    [data-testid="stMetricDelta"] { font-size: 0.68rem !important; }
+
     [data-testid="stInfo"] {
         background: #ffffff; border: 1px solid #e2e8f0; color: #64748b;
     }
@@ -482,14 +487,19 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
     ).sort_values("Data")
     diario["Dia_Label"] = diario["Data"].dt.strftime("%d/%m/%Y")
 
-    base_sub = dados.copy()
-    if dia_atual is not None:
-        base_sub = base_sub[base_sub["Data"] == pd.Timestamp(dia_atual)]
-    por_subgrupo = base_sub.groupby("SubGrupo", as_index=False).agg(
+    # Consolida todas as contas bancárias por subgrupo, usando exatamente
+    # a mesma base filtrada dos KPIs para que os totais sejam reconciliáveis.
+    # Não limitar aos 15 maiores: todos os subgrupos precisam compor o total.
+    base_sub = filtrado.copy()
+    por_subgrupo = base_sub.groupby("SubGrupo", as_index=False, dropna=False).agg(
         Entradas=("Cred_Op", "sum"), Saídas=("Deb_Op", "sum")
     )
     por_subgrupo["Total"] = por_subgrupo["Entradas"] + por_subgrupo["Saídas"]
-    por_subgrupo = por_subgrupo.sort_values("Total", ascending=True).tail(15)
+    por_subgrupo = por_subgrupo.sort_values("Total", ascending=True)
+
+    # Conferência visual dos totais consolidados por subgrupo contra os KPIs.
+    soma_sub_ent = float(por_subgrupo["Entradas"].sum()) if not por_subgrupo.empty else 0.0
+    soma_sub_sai = float(por_subgrupo["Saídas"].sum()) if not por_subgrupo.empty else 0.0
 
     st.markdown("##### Análise das movimentações")
     g1, g2 = st.columns(2, gap="medium")
@@ -513,7 +523,7 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
         st.plotly_chart(fig_dia, use_container_width=True, config={"displayModeBar": False})
 
     with g2:
-        st.caption("Movimentação por subgrupo · 15 maiores")
+        st.caption("Movimentação por subgrupo · todas as contas consolidadas")
         fig_sub = go.Figure()
         if not por_subgrupo.empty:
             fig_sub.add_trace(go.Bar(
@@ -528,10 +538,17 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
             ))
         fig_sub.update_layout(barmode="group", xaxis_title="", yaxis_title="")
         fig_sub.update_xaxes(tickprefix="R$ ", tickformat=",.2s")
-        layout_fig(fig_sub, 300, True)
+        altura_sub = max(300, min(760, 115 + len(por_subgrupo) * 27))
+        layout_fig(fig_sub, altura_sub, True)
         st.plotly_chart(fig_sub, use_container_width=True, config={"displayModeBar": False})
 
     # Totalizadores com acesso à composição do grupo preservado.
+    # Os somatórios por subgrupo devem fechar com os KPIs do modal.
+    st.caption(
+        "Conferência por subgrupo — "
+        f"Entradas: {formatar_moeda(soma_sub_ent, False)} · "
+        f"Saídas: {formatar_moeda(soma_sub_sai, False)}"
+    )
     st.markdown("##### Totalizadores · composição por grupo")
     tab_dia, tab_sub = st.tabs(["Por dia", "Por subgrupo"])
     with tab_dia:
