@@ -1254,6 +1254,45 @@ if base.empty:
 
 base = base.copy()
 
+# Limita o abatimento da FCx_Obra ao saldo de despesa disponível na mesma
+# conta contábil e no mesmo mês. O lançamento integral da obra no FCI é
+# preservado; eventual excedente fica sinalizado para conciliação.
+mask_reducao_obra = base["Grupo"].eq("FCx_Obra (Redução FCO)")
+if mask_reducao_obra.any():
+    mask_despesas_base = (
+        ~base["Grupo"].astype(str).str.startswith("FCx_Obra", na=False)
+        & base["Tipo"].astype(str).str.strip().str.casefold().eq("saída")
+    )
+    despesas_disponiveis = (
+        base.loc[mask_despesas_base]
+        .assign(_valor_disponivel=lambda d: pd.to_numeric(d["Valor"], errors="coerce").fillna(0).clip(lower=0))
+        .groupby(["Ref", "Categoria"])["_valor_disponivel"]
+        .sum()
+        .to_dict()
+    )
+
+    excedentes_obra = []
+    abatimentos_aplicados = {}
+    for idx, linha in base.loc[mask_reducao_obra].iterrows():
+        chave = (linha["Ref"], linha["Categoria"])
+        solicitado = abs(limpa_valor(linha["Valor"]))
+        ja_aplicado = abatimentos_aplicados.get(chave, 0.0)
+        disponivel = max(0.0, despesas_disponiveis.get(chave, 0.0) - ja_aplicado)
+        aplicado = min(solicitado, disponivel)
+        base.at[idx, "Valor"] = -aplicado
+        abatimentos_aplicados[chave] = ja_aplicado + aplicado
+        excedente = solicitado - aplicado
+        if excedente > 0.005:
+            excedentes_obra.append((linha["Ref"], linha["Categoria"], excedente))
+
+    if excedentes_obra:
+        total_excedente = sum(item[2] for item in excedentes_obra)
+        avisos.append(
+            f"FCx_Obra: R$ {total_excedente:,.2f} de abatimentos excedem as despesas "
+            "disponíveis na mesma conta/mês e não foram abatidos no FCO. "
+            "O valor integral permanece registrado no FCI."
+        )
+
 # Separar lançamentos normais de lançamentos vindos de FCx_Obra
 mask_obra = base["Grupo"].str.startswith("FCx_Obra -", na=False)
 
