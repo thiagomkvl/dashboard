@@ -381,11 +381,106 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
     qtd = 0 if df_tx is None else len(df_tx)
     if total_txt:
         st.caption(f"{total_txt} · {qtd} lançamentos")
-    view = _df_tx_view(df_tx)
-    if view.empty:
+
+    if df_tx is None or df_tx.empty:
         st.info("Nenhuma transação neste indicador.")
-    else:
-        st.dataframe(view, use_container_width=True, hide_index=True)
+        return
+
+    # Os gráficos usam os mesmos lançamentos filtrados que alimentam a tabela.
+    dados = df_tx.copy()
+    dados["Data"] = pd.to_datetime(dados.get("Data"), errors="coerce", dayfirst=True)
+    dados["Cred_Op"] = pd.to_numeric(dados.get("Cred_Op", 0), errors="coerce").fillna(0)
+    dados["Deb_Op"] = pd.to_numeric(dados.get("Deb_Op", 0), errors="coerce").fillna(0)
+    dados["SubGrupo"] = (
+        dados.get("SubGrupo", pd.Series(index=dados.index, dtype="object"))
+        .fillna("").astype(str).str.strip().replace("", "Sem subgrupo")
+    )
+
+    total_ent = float(dados["Cred_Op"].sum())
+    total_sai = float(dados["Deb_Op"].sum())
+    total_mov = total_ent + total_sai
+    valor_medio = total_mov / qtd if qtd else 0.0
+
+    # Indicadores-resumo
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total de entradas", formatar_moeda(total_ent, False))
+    k2.metric("Total de saídas", formatar_moeda(total_sai, False))
+    k3.metric("Movimentação", formatar_moeda(total_mov, False))
+    k4.metric("Lançamentos / média", f"{qtd} · {formatar_moeda(valor_medio, False)}")
+
+    # Consolidação diária: mantém entradas e saídas separadas para permitir comparação.
+    diario = dados.dropna(subset=["Data"]).copy()
+    if not diario.empty:
+        diario["Dia"] = diario["Data"].dt.normalize()
+        diario = diario.groupby("Dia", as_index=False).agg(
+            Entradas=("Cred_Op", "sum"), Saídas=("Deb_Op", "sum")
+        ).sort_values("Dia")
+        diario["Dia_Label"] = diario["Dia"].dt.strftime("%d/%m/%Y")
+
+    # Consolidação por subgrupo.
+    por_subgrupo = dados.groupby("SubGrupo", as_index=False).agg(
+        Entradas=("Cred_Op", "sum"), Saídas=("Deb_Op", "sum")
+    )
+    por_subgrupo["Total"] = por_subgrupo["Entradas"] + por_subgrupo["Saídas"]
+    por_subgrupo = por_subgrupo.sort_values("Total", ascending=True).tail(15)
+
+    st.markdown("##### Movimentação por dia e por subgrupo")
+    g1, g2 = st.columns(2, gap="medium")
+    with g1:
+        st.caption("Total por dia")
+        fig_dia = go.Figure()
+        if not diario.empty:
+            if total_ent > 0:
+                fig_dia.add_trace(go.Bar(
+                    x=diario["Dia_Label"], y=diario["Entradas"], name="Entradas",
+                    marker_color=VERDE, hovertemplate="%{x}<br>Entradas: R$ %{y:,.2f}<extra></extra>"
+                ))
+            if total_sai > 0:
+                fig_dia.add_trace(go.Bar(
+                    x=diario["Dia_Label"], y=diario["Saídas"], name="Saídas",
+                    marker_color=VERMELHO, hovertemplate="%{x}<br>Saídas: R$ %{y:,.2f}<extra></extra>"
+                ))
+        fig_dia.update_layout(barmode="group", xaxis_title="", yaxis_title="")
+        fig_dia.update_yaxes(tickprefix="R$ ", tickformat=",.2s")
+        layout_fig(fig_dia, 300, True)
+        st.plotly_chart(fig_dia, use_container_width=True, config={"displayModeBar": False})
+
+    with g2:
+        st.caption("Total por subgrupo · 15 maiores")
+        fig_sub = go.Figure()
+        if not por_subgrupo.empty:
+            if total_ent > 0:
+                fig_sub.add_trace(go.Bar(
+                    y=por_subgrupo["SubGrupo"], x=por_subgrupo["Entradas"],
+                    name="Entradas", orientation="h", marker_color=VERDE,
+                    hovertemplate="%{y}<br>Entradas: R$ %{x:,.2f}<extra></extra>"
+                ))
+            if total_sai > 0:
+                fig_sub.add_trace(go.Bar(
+                    y=por_subgrupo["SubGrupo"], x=por_subgrupo["Saídas"],
+                    name="Saídas", orientation="h", marker_color=VERMELHO,
+                    hovertemplate="%{y}<br>Saídas: R$ %{x:,.2f}<extra></extra>"
+                ))
+        fig_sub.update_layout(barmode="group", xaxis_title="", yaxis_title="")
+        fig_sub.update_xaxes(tickprefix="R$ ", tickformat=",.2s")
+        layout_fig(fig_sub, 300, True)
+        st.plotly_chart(fig_sub, use_container_width=True, config={"displayModeBar": False})
+
+    # Tabela de totalizadores para conferência rápida dos valores dos gráficos.
+    with st.expander("Ver totalizadores por dia", expanded=False):
+        if diario.empty:
+            st.info("Não há datas válidas para consolidar.")
+        else:
+            resumo_dia = diario[["Dia_Label", "Entradas", "Saídas"]].copy()
+            resumo_dia["Resultado líquido"] = resumo_dia["Entradas"] - resumo_dia["Saídas"]
+            for col in ["Entradas", "Saídas", "Resultado líquido"]:
+                resumo_dia[col] = resumo_dia[col].apply(lambda v: formatar_moeda(v, False))
+            resumo_dia = resumo_dia.rename(columns={"Dia_Label": "Data"})
+            st.dataframe(resumo_dia, use_container_width=True, hide_index=True)
+
+    st.markdown("##### Transações detalhadas")
+    view = _df_tx_view(df_tx)
+    st.dataframe(view, use_container_width=True, hide_index=True)
 
 
 @st.dialog("Transações do banco", width="large")
