@@ -243,6 +243,24 @@ css = """
         background: #ffffff; border: 1px solid #e2e8f0; color: #64748b;
     }
 
+    /* Modal de composição: KPIs com dimensões uniformes e conteúdo rolável */
+    [data-testid="stDialog"] [data-testid="stMetric"] {
+        min-height: 88px; height: 88px; padding: 10px 12px;
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+        overflow: hidden;
+    }
+    [data-testid="stDialog"] [data-testid="stMetricLabel"] p {
+        font-size: 10px !important; line-height: 1.2 !important;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    [data-testid="stDialog"] [data-testid="stMetricValue"] {
+        font-size: 17px !important; line-height: 1.2 !important;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    [data-testid="stDialog"] [data-testid="stDataFrame"] {
+        border: 1px solid #e2e8f0; border-radius: 9px; overflow: auto;
+    }
+
     @media print {
         [data-testid="stSidebar"] { display: none !important; }
         .stApp { background: #fff !important; }
@@ -538,59 +556,49 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
             ))
         fig_sub.update_layout(barmode="group", xaxis_title="", yaxis_title="")
         fig_sub.update_xaxes(tickprefix="R$ ", tickformat=",.2s")
-        altura_sub = max(300, min(760, 115 + len(por_subgrupo) * 27))
-        layout_fig(fig_sub, altura_sub, True)
+        # Altura fixa: a rolagem vertical do gráfico permite consultar todos os subgrupos.
+        layout_fig(fig_sub, 320, True)
         st.plotly_chart(fig_sub, use_container_width=True, config={"displayModeBar": False})
 
-    # Totalizadores com acesso à composição do grupo preservado.
-    # Os somatórios por subgrupo devem fechar com os KPIs do modal.
+    # Totalizadores em tabelas de altura fixa, com rolagem; sem ação "Composição".
     st.caption(
         "Conferência por subgrupo — "
         f"Entradas: {formatar_moeda(soma_sub_ent, False)} · "
         f"Saídas: {formatar_moeda(soma_sub_sai, False)}"
     )
-    st.markdown("##### Totalizadores · composição por grupo")
+    st.markdown("##### Totalizadores")
     tab_dia, tab_sub = st.tabs(["Por dia", "Por subgrupo"])
     with tab_dia:
         resumo_dia = diario.copy()
         if resumo_dia.empty:
             st.info("Não há datas válidas para consolidar.")
         else:
-            for _, linha in resumo_dia.sort_values("Data", ascending=False).iterrows():
-                dia_linha = linha["Data"]
-                lab = dia_linha.strftime("%d/%m/%Y")
-                c_data, c_ent, c_sai, c_total, c_liq, c_comp = st.columns([1.05, 1.15, 1.15, 1.2, 1.2, 0.8])
-                c_data.markdown(f"**{lab}**")
-                c_ent.markdown(f"<span style='color:{VERDE}'>＋ {formatar_moeda(linha['Entradas'], False)}</span>", unsafe_allow_html=True)
-                c_sai.markdown(f"<span style='color:{VERMELHO}'>－ {formatar_moeda(linha['Saídas'], False)}</span>", unsafe_allow_html=True)
-                c_total.markdown(f"**{formatar_moeda(linha['Entradas'] + linha['Saídas'], False)}**")
-                c_liq.markdown(f"{formatar_moeda(linha['Entradas'] - linha['Saídas'], False)}")
-                if c_comp.button("Composição", key=f"comp_dia_btn_{slug}_{dia_linha.strftime('%Y%m%d')}"):
-                    st.session_state[k_dia] = dia_linha
-                    st.session_state.pop(f"comp_select_dia_{slug}", None)
-                    st.rerun()
+            resumo_dia["Resultado líquido"] = resumo_dia["Entradas"] - resumo_dia["Saídas"]
+            resumo_dia = resumo_dia.rename(columns={"Data": "Data"})
+            resumo_dia["Data"] = resumo_dia["Data"].dt.strftime("%d/%m/%Y")
+            for col in ["Entradas", "Saídas", "Resultado líquido"]:
+                resumo_dia[col] = resumo_dia[col].apply(lambda v: formatar_moeda(v, False))
+            st.dataframe(
+                resumo_dia.sort_values("Data", ascending=False),
+                use_container_width=True, hide_index=True, height=240
+            )
     with tab_sub:
-        resumo_sub = por_subgrupo.sort_values("Total", ascending=False)
+        resumo_sub = por_subgrupo.sort_values("Total", ascending=False).copy()
         if resumo_sub.empty:
             st.info("Não há subgrupos para consolidar.")
         else:
-            for idx_sub, (_, linha) in enumerate(resumo_sub.iterrows()):
-                nome_sub = str(linha["SubGrupo"])
-                c_nome, c_ent, c_sai, c_total, c_comp = st.columns([1.6, 1.1, 1.1, 1.2, 0.8])
-                c_nome.markdown(f"**{nome_sub}**")
-                c_ent.markdown(f"<span style='color:{VERDE}'>{formatar_moeda(linha['Entradas'], False)}</span>", unsafe_allow_html=True)
-                c_sai.markdown(f"<span style='color:{VERMELHO}'>{formatar_moeda(linha['Saídas'], False)}</span>", unsafe_allow_html=True)
-                c_total.markdown(f"**{formatar_moeda(linha['Total'], False)}**")
-                if c_comp.button("Composição", key=f"comp_sub_btn_{slug}_{idx_sub}"):
-                    st.session_state[k_sub] = nome_sub
-                    st.session_state.pop(f"comp_select_sub_{slug}", None)
-                    st.rerun()
+            for col in ["Entradas", "Saídas", "Total"]:
+                resumo_sub[col] = resumo_sub[col].apply(lambda v: formatar_moeda(v, False))
+            st.dataframe(
+                resumo_sub[["SubGrupo", "Entradas", "Saídas", "Total"]],
+                use_container_width=True, hide_index=True, height=280
+            )
 
     st.markdown(f"##### Transações detalhadas · {len(filtrado)} lançamentos")
     if filtrado.empty:
         st.info("Nenhuma transação corresponde aos filtros selecionados.")
     else:
-        st.dataframe(_df_tx_view(filtrado), use_container_width=True, hide_index=True)
+        st.dataframe(_df_tx_view(filtrado), use_container_width=True, hide_index=True, height=360)
 
 
 @st.dialog("Transações do banco", width="large")
