@@ -513,6 +513,11 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
         Entradas=("Cred_Op", "sum"), Saídas=("Deb_Op", "sum")
     )
     por_subgrupo["Total"] = por_subgrupo["Entradas"] + por_subgrupo["Saídas"]
+    total_mov_subgrupos = float(por_subgrupo["Total"].sum()) if not por_subgrupo.empty else 0.0
+    por_subgrupo["Representação (%)"] = (
+        por_subgrupo["Total"].div(total_mov_subgrupos).mul(100)
+        if total_mov_subgrupos else 0.0
+    )
     por_subgrupo = por_subgrupo.sort_values("Total", ascending=True)
 
     # Conferência visual dos totais consolidados por subgrupo contra os KPIs.
@@ -542,23 +547,47 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
 
     with g2:
         st.caption("Movimentação por subgrupo · todas as contas consolidadas")
-        fig_sub = go.Figure()
-        if not por_subgrupo.empty:
+        if por_subgrupo.empty:
+            st.info("Não há movimentações por subgrupo para os filtros selecionados.")
+        else:
+            # Área HTML com rolagem vertical real e gráfico interno de altura variável.
+            graf_sub = por_subgrupo.copy()
+            graf_sub["SubGrupo_Label"] = graf_sub.apply(
+                lambda r: f"{r['SubGrupo']} · {r['Representação (%)']:.1f}%", axis=1
+            )
+            fig_sub = go.Figure()
             fig_sub.add_trace(go.Bar(
-                y=por_subgrupo["SubGrupo"], x=por_subgrupo["Entradas"], name="Entradas",
+                y=graf_sub["SubGrupo_Label"], x=graf_sub["Entradas"], name="Entradas",
                 orientation="h", marker_color=VERDE,
-                hovertemplate="%{y}<br>Entradas: R$ %{x:,.2f}<extra></extra>"
+                customdata=graf_sub[["Representação (%)"]],
+                hovertemplate="%{y}<br>Entradas: R$ %{x:,.2f}<br>Representação: %{customdata[0]:.2f}%<extra></extra>"
             ))
             fig_sub.add_trace(go.Bar(
-                y=por_subgrupo["SubGrupo"], x=por_subgrupo["Saídas"], name="Saídas",
+                y=graf_sub["SubGrupo_Label"], x=graf_sub["Saídas"], name="Saídas",
                 orientation="h", marker_color=VERMELHO,
-                hovertemplate="%{y}<br>Saídas: R$ %{x:,.2f}<extra></extra>"
+                customdata=graf_sub[["Representação (%)"]],
+                hovertemplate="%{y}<br>Saídas: R$ %{x:,.2f}<br>Representação: %{customdata[0]:.2f}%<extra></extra>"
             ))
-        fig_sub.update_layout(barmode="group", xaxis_title="", yaxis_title="")
-        fig_sub.update_xaxes(tickprefix="R$ ", tickformat=",.2s")
-        # Altura fixa: a rolagem vertical do gráfico permite consultar todos os subgrupos.
-        layout_fig(fig_sub, 320, True)
-        st.plotly_chart(fig_sub, use_container_width=True, config={"displayModeBar": False})
+            altura_interna = max(360, len(graf_sub) * 38 + 95)
+            fig_sub.update_layout(
+                barmode="group", xaxis_title="", yaxis_title="", height=altura_interna,
+                margin=dict(l=8, r=12, t=35, b=35),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                font=dict(size=11), paper_bgcolor="white", plot_bgcolor="white"
+            )
+            fig_sub.update_xaxes(tickprefix="R$ ", tickformat=",.2s", gridcolor="#e2e8f0")
+            fig_sub.update_yaxes(automargin=True, categoryorder="array", categoryarray=graf_sub["SubGrupo_Label"].tolist())
+            html_grafico = fig_sub.to_html(
+                full_html=False, include_plotlyjs=True, config={"displayModeBar": False},
+                default_height=f"{altura_interna}px", default_width="100%"
+            )
+            html_scroll = (
+                '<div style="height:340px;overflow-y:scroll;overflow-x:hidden;'
+                'border:1px solid #e2e8f0;border-radius:10px;background:#fff;">'
+                f'<div style="height:{altura_interna}px;min-height:{altura_interna}px;">'
+                f'{html_grafico}</div></div>'
+            )
+            components.html(html_scroll, height=355, scrolling=False)
 
     # Totalizadores em tabelas de altura fixa, com rolagem; sem ação "Composição".
     st.caption(
@@ -587,10 +616,11 @@ def dialog_transacoes(titulo, df_tx, total_txt=""):
         if resumo_sub.empty:
             st.info("Não há subgrupos para consolidar.")
         else:
+            resumo_sub["Representação (%)"] = resumo_sub["Representação (%)"].map(lambda v: f"{v:.2f}%")
             for col in ["Entradas", "Saídas", "Total"]:
                 resumo_sub[col] = resumo_sub[col].apply(lambda v: formatar_moeda(v, False))
             st.dataframe(
-                resumo_sub[["SubGrupo", "Entradas", "Saídas", "Total"]],
+                resumo_sub[["SubGrupo", "Entradas", "Saídas", "Total", "Representação (%)"]],
                 use_container_width=True, hide_index=True, height=280
             )
 
