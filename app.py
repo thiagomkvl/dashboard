@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-APP_VERSION = "2026.10.21-portal-financeiro"
+APP_VERSION = "2026.11.03-portal-financeiro"
 
 PAGE_TITLE = "Portal Financeiro Executivo"
 PAGE_ICON = "🏢"
@@ -65,6 +65,7 @@ if not st.session_state["autenticado"]:
             display: none !important;
         }
 
+        /* Oculta a sidebar apenas na tela de login */
         [data-testid="stSidebar"] {
             display: none !important;
         }
@@ -139,6 +140,11 @@ if not st.session_state["autenticado"]:
 # O primeiro dashboard disponível será a página inicial.
 # ==============================================================================
 candidatos = [
+    (
+        "pages/Dash_Adiantamentos.py",
+        "Adiantamentos Pagos",
+        "Dash_Adiantamentos",
+    ),
     (
         "pages/Análise_Faturamento.py",
         "Análise Faturamento",
