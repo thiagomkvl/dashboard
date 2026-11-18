@@ -140,12 +140,6 @@ if not st.session_state["autenticado"]:
 # O primeiro dashboard disponível será a página inicial.
 # ==============================================================================
 candidatos = [
-    (
-        "pages/Dash_Adiantamentos.py",
-        "Adiantamentos Pagos",
-        "Dash_Adiantamentos",
-    ),
-    (
         "pages/Análise_Faturamento.py",
         "Análise Faturamento",
         "Análise_Faturamento",
