@@ -971,6 +971,9 @@ def papel_classif(classif, fluxo=""):
     n = normalizar(classif)
     nf = normalizar(fluxo)
 
+    if "excedente de abatimento de obras" in n:
+        return "custo_op"
+
     if "variacoes de ativos" in n or "variações de ativos" in n or n == normalizar(CLASSIF_VAR_AP):
         return "var_ap"
 
@@ -1261,6 +1264,83 @@ df_normal = base[~mask_obra].copy()
 pares = df_normal["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls))
 df_normal["Classif"] = pares.apply(lambda x: x[0])
 df_normal["Fluxo"] = pares.apply(lambda x: x[1])
+
+# Limita o abatimento de cada conta ao saldo de despesas disponível no mês.
+# O excedente não é eliminado: permanece no FCO em uma linha consolidada,
+# preservando o valor total original dos abatimentos e, portanto, a conciliação.
+mask_reducao_obra = df_normal["Grupo"].eq("FCx_Obra (Redução FCO)")
+if mask_reducao_obra.any():
+    papeis_temp = df_normal.apply(
+        lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1
+    )
+    mask_reducao_custo = mask_reducao_obra & papeis_temp.eq("custo_op")
+
+    if mask_reducao_custo.any():
+        # Base disponível: despesas da própria conta contábil no mesmo mês,
+        # sem incluir as linhas de abatimento da FCx_Obra.
+        despesas_base = df_normal.loc[
+            ~mask_reducao_obra & papeis_temp.eq("custo_op")
+        ]
+        disponivel_por_conta = (
+            despesas_base.groupby(["Ref", "Categoria"])["Valor"]
+            .sum().clip(lower=0.0).to_dict()
+        )
+
+        reducoes = df_normal.loc[mask_reducao_custo].copy()
+        linhas_reducao = []
+        excedentes_por_mes = {}
+
+        for (ref, categoria), grupo_reducao in reducoes.groupby(
+            ["Ref", "Categoria"], sort=False
+        ):
+            valor_reducao = float(grupo_reducao["Valor"].sum())
+            magnitude = abs(valor_reducao)
+            if magnitude <= 0.005:
+                continue
+
+            disponivel = max(
+                0.0, float(disponivel_por_conta.get((ref, categoria), 0.0))
+            )
+            valor_alocado = min(magnitude, disponivel)
+            valor_excedente = magnitude - valor_alocado
+            sinal = -1.0 if valor_reducao < 0 else 1.0
+
+            linha_base = grupo_reducao.iloc[0].to_dict()
+            if valor_alocado > 0.005:
+                linha_alocada = linha_base.copy()
+                linha_alocada["Valor"] = sinal * valor_alocado
+                linhas_reducao.append(linha_alocada)
+
+            if valor_excedente > 0.005:
+                excedentes_por_mes[ref] = (
+                    excedentes_por_mes.get(ref, 0.0)
+                    + sinal * valor_excedente
+                )
+
+        # Substitui os abatimentos originais pelos valores limitados e pela
+        # linha consolidada do excedente, sem alterar a soma por mês.
+        df_normal = df_normal.loc[~mask_reducao_custo].copy()
+        if linhas_reducao:
+            df_normal = pd.concat(
+                [df_normal, pd.DataFrame(linhas_reducao)], ignore_index=True
+            )
+
+        linhas_excedente = []
+        for ref, valor in excedentes_por_mes.items():
+            linhas_excedente.append({
+                "Ref": ref,
+                "Categoria": "Excedente de abatimento de obras",
+                "Valor": valor,
+                "Tipo": "Saída",
+                "Grupo": "FCx_Obra (Redução FCO)",
+                "Detalhe": "Excedente de abatimento de obras",
+                "Classif": "Excedente de abatimento de obras",
+                "Fluxo": FLUXO_OP,
+            })
+        if linhas_excedente:
+            df_normal = pd.concat(
+                [df_normal, pd.DataFrame(linhas_excedente)], ignore_index=True
+            )
 
 # Cada Obra vira sua própria categoria/linha principal no FCI
 df_obra = base[mask_obra].copy()
