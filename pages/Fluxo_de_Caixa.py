@@ -971,6 +971,9 @@ def papel_classif(classif, fluxo=""):
     n = normalizar(classif)
     nf = normalizar(fluxo)
 
+    if "excedente de abatimento de obras" in n:
+        return "custo_op"
+
     if "variacoes de ativos" in n or "variações de ativos" in n or n == normalizar(CLASSIF_VAR_AP):
         return "var_ap"
 
@@ -1262,6 +1265,83 @@ pares = df_normal["Categoria"].apply(lambda c: aplicar_classificacao(c, mapa_cls
 df_normal["Classif"] = pares.apply(lambda x: x[0])
 df_normal["Fluxo"] = pares.apply(lambda x: x[1])
 
+# Limita o abatimento de cada conta ao saldo de despesas disponível no mês.
+# O excedente não é eliminado: permanece no FCO em uma linha consolidada,
+# preservando o valor total original dos abatimentos e, portanto, a conciliação.
+mask_reducao_obra = df_normal["Grupo"].eq("FCx_Obra (Redução FCO)")
+if mask_reducao_obra.any():
+    papeis_temp = df_normal.apply(
+        lambda r: papel_classif(r["Classif"], r["Fluxo"]), axis=1
+    )
+    mask_reducao_custo = mask_reducao_obra & papeis_temp.eq("custo_op")
+
+    if mask_reducao_custo.any():
+        # Base disponível: despesas da própria conta contábil no mesmo mês,
+        # sem incluir as linhas de abatimento da FCx_Obra.
+        despesas_base = df_normal.loc[
+            ~mask_reducao_obra & papeis_temp.eq("custo_op")
+        ]
+        disponivel_por_conta = (
+            despesas_base.groupby(["Ref", "Categoria"])["Valor"]
+            .sum().clip(lower=0.0).to_dict()
+        )
+
+        reducoes = df_normal.loc[mask_reducao_custo].copy()
+        linhas_reducao = []
+        excedentes_por_mes = {}
+
+        for (ref, categoria), grupo_reducao in reducoes.groupby(
+            ["Ref", "Categoria"], sort=False
+        ):
+            valor_reducao = float(grupo_reducao["Valor"].sum())
+            magnitude = abs(valor_reducao)
+            if magnitude <= 0.005:
+                continue
+
+            disponivel = max(
+                0.0, float(disponivel_por_conta.get((ref, categoria), 0.0))
+            )
+            valor_alocado = min(magnitude, disponivel)
+            valor_excedente = magnitude - valor_alocado
+            sinal = -1.0 if valor_reducao < 0 else 1.0
+
+            linha_base = grupo_reducao.iloc[0].to_dict()
+            if valor_alocado > 0.005:
+                linha_alocada = linha_base.copy()
+                linha_alocada["Valor"] = sinal * valor_alocado
+                linhas_reducao.append(linha_alocada)
+
+            if valor_excedente > 0.005:
+                excedentes_por_mes[ref] = (
+                    excedentes_por_mes.get(ref, 0.0)
+                    + sinal * valor_excedente
+                )
+
+        # Substitui os abatimentos originais pelos valores limitados e pela
+        # linha consolidada do excedente, sem alterar a soma por mês.
+        df_normal = df_normal.loc[~mask_reducao_custo].copy()
+        if linhas_reducao:
+            df_normal = pd.concat(
+                [df_normal, pd.DataFrame(linhas_reducao)], ignore_index=True
+            )
+
+        linhas_excedente = []
+        for ref, valor in excedentes_por_mes.items():
+            linhas_excedente.append({
+                "Ref": ref,
+                "Categoria": "Excedente de abatimento de obras",
+                "Valor": valor,
+                "Tipo": "Saída",
+                "Grupo": "FCx_Obra (Redução FCO)",
+                "Detalhe": "Excedente de abatimento de obras",
+                "Classif": "Excedente de abatimento de obras",
+                "Fluxo": FLUXO_OP,
+            })
+        if linhas_excedente:
+            df_normal = pd.concat(
+                [df_normal, pd.DataFrame(linhas_excedente)], ignore_index=True
+            )
+
 # Cada Obra vira sua própria categoria/linha principal no FCI
 df_obra = base[mask_obra].copy()
 df_obra["Classif"] = df_obra["Categoria"]
@@ -1346,12 +1426,6 @@ df_juros = df[df["Papel"] == "juros"].copy()
 df_amort = df[df["Papel"] == "amortizacao"].copy()
 df_var_ap = df[df["Papel"] == "var_ap"].copy()
 
-# Apresentação gerencial do FCO: os lançamentos técnicos de redução gerados
-# pela FCx_Obra não reduzem novamente a despesa que permaneceu fora da obra.
-# A base original (df/base) é preservada integralmente para a conciliação de caixa.
-mask_reducao_obra_fco = df["Grupo"].eq("FCx_Obra (Redução FCO)")
-df_fco_apresentacao = df[~mask_reducao_obra_fco].copy()
-
 # ==============================================================================
 # FÓRMULAS
 # ==============================================================================
@@ -1372,18 +1446,10 @@ amort = total_papel(df, "amortizacao")
 juros = total_papel(df, "juros")
 captacao = total_papel(df, "captacao", tipo="Entrada")
 
-# FCO de conciliação permanece calculado com todos os lançamentos originais.
 fco = rec_op - custo_op - impostos + var_ap
 fci = rec_inv - capex
 fcf = captacao - amort - juros
 variacao = fco + fci + fcf
-
-# FCO gerencial exibido: desconsidera apenas a linha técnica de redução FCx_Obra.
-rec_op_visual = total_papel(df_fco_apresentacao, "receita_op")
-custo_op_visual = total_papel(df_fco_apresentacao, "custo_op")
-impostos_visual = total_papel(df_fco_apresentacao, "imposto")
-var_ap_visual = total_papel(df_fco_apresentacao, "var_ap")
-fco_apresentacao = rec_op_visual - custo_op_visual - impostos_visual + var_ap_visual
 
 mapa_cores = {}
 txt_per = f"{rot[refs_sel[0]]} – {rot[refs_sel[-1]]}" if refs_sel else "—"
@@ -1410,14 +1476,6 @@ st.markdown(
 )
 for a in avisos:
     st.warning(a)
-st.info(
-    "**Critério de apresentação:** o FCO gerencial não considera os lançamentos técnicos "
-    "'FCx_Obra (Redução FCO)', mantendo no operacional apenas as despesas fora da obra. "
-    "A conciliação do caixa continua usando a base original completa, com a redução no FCO "
-    "e o investimento integral no FCI. Por isso, o FCO gerencial exibido não deve ser somado "
-    "ao FCI/FCF para reproduzir a variação conciliada de caixa. O saldo final permanece "
-    "calculado pela regra original."
-)
 if not mapa_saldo:
     st.info("ℹ️ Aba **Saldo_FCx** sem saldo inicial detectado — o saldo começará em zero e rolará pela variação.")
 
@@ -1435,13 +1493,6 @@ s_cus = serie(df, "custo_op")
 s_imp = serie(df, "imposto")
 s_vap = serie(df, "var_ap")
 s_fco = s_rec - s_cus - s_imp + s_vap
-
-s_rec_visual = serie(df_fco_apresentacao, "receita_op")
-s_cus_visual = serie(df_fco_apresentacao, "custo_op")
-s_imp_visual = serie(df_fco_apresentacao, "imposto")
-s_vap_visual = serie(df_fco_apresentacao, "var_ap")
-s_fco_visual = s_rec_visual - s_cus_visual - s_imp_visual + s_vap_visual
-
 s_cap = serie(df, "capex")
 s_rec_inv = serie(df, "receita_inv")
 s_fci = s_rec_inv - s_cap
@@ -1514,12 +1565,6 @@ def gerar_excel_fluxo():
         ws.set_row(0, 30)
         ws.write(1, 0, "Período: " + txt_per, fmt_subtitulo)
         ws.write(2, 0, "Valores em R$ · Filtros de grupo: " + (", ".join(grupo_sel) if grupo_sel else "Todos"), fmt_subtitulo)
-        ws.merge_range(
-            3, 0, 3, ncols - 1,
-            "Nota: FCO gerencial exclui a linha técnica FCx_Obra (Redução FCO). "
-            "A variação e o saldo de caixa permanecem conciliados pela base original completa.",
-            fmt_subtitulo,
-        )
         for col, label in enumerate(["Descrição"] + x_lab + ["Total"]):
             ws.write(4, col, label, fmt_header)
         ws.freeze_panes(5, 1)
@@ -1571,15 +1616,15 @@ def gerar_excel_fluxo():
         return pos
 
     pos = iniciar(demonstrativo)
-    pos = escrever_linha(demonstrativo, pos, "1. FLUXO DE CAIXA OPERACIONAL (FCO GERENCIAL)", s_fco_visual, "total")
+    pos = escrever_linha(demonstrativo, pos, "1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "total")
     for titulo, papel, serie_val in (
-        ("(+) Receitas operacionais", "receita_op", s_rec_visual),
-        ("(−) Custos e despesas operacionais", "custo_op", s_cus_visual),
-        ("(−) Impostos", "imposto", s_imp_visual),
-        ("(±) Variações de Ativos e Passivos", "var_ap", s_vap_visual),
+        ("(+) Receitas operacionais", "receita_op", s_rec),
+        ("(−) Custos e despesas operacionais", "custo_op", s_cus),
+        ("(−) Impostos", "imposto", s_imp),
+        ("(±) Variações de Ativos e Passivos", "var_ap", s_vap),
     ):
         pos = escrever_linha(demonstrativo, pos, titulo, serie_val, "total")
-        pos = categorias(demonstrativo, pos, df_fco_apresentacao[df_fco_apresentacao["Papel"] == papel])
+        pos = categorias(demonstrativo, pos, df[df["Papel"] == papel])
     pos = escrever_linha(demonstrativo, pos, "2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "total")
     if not df[df["Papel"] == "receita_inv"].empty:
         pos = escrever_linha(demonstrativo, pos, "(+) Receitas de aplicações financeiras", s_rec_inv, "total")
@@ -1592,7 +1637,7 @@ def gerar_excel_fluxo():
     pos = categorias(demonstrativo, pos, df_amort)
     pos = categorias(demonstrativo, pos, df_juros)
     pos = escrever_linha(demonstrativo, pos, "Total amortizações e juros/encargos financeiros", s_amo + s_jur, "total")
-    pos = escrever_linha(demonstrativo, pos, "VARIAÇÃO LÍQUIDA EFETIVA DE CAIXA (CONCILIAÇÃO)", s_var, "total")
+    pos = escrever_linha(demonstrativo, pos, "VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", s_var, "total")
     pos = escrever_linha(demonstrativo, pos, "4. SALDO DE CAIXA", kind="section")
     for titulo, sv, saldo in (
         ("(+) Saldo inicial", s_ini, True),
@@ -1610,7 +1655,7 @@ def gerar_excel_fluxo():
     pos = iniciar(resumo_ws)
     pos = escrever_linha(resumo_ws, pos, "(+) Saldo inicial", s_ini, "total", saldo=True)
     for titulo, papeis, sv in (
-        ("1- (=) FCO GERENCIAL", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco_visual),
+        ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
         ("2- (=) FCI", ["receita_inv", "capex"], s_fci),
         ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
     ):
@@ -1646,8 +1691,8 @@ st.markdown(
     f"""
 <div class='kpi-grid'>
     <div class='kpi green'>
-        <div class='kpi-t'>FCO · Gerencial</div>
-        <div class='kpi-v' style='color:{"#059669" if fco_apresentacao>=0 else "#dc2626"}'>{moeda(fco_apresentacao)}</div>
+        <div class='kpi-t'>FCO · Operacional</div>
+        <div class='kpi-v' style='color:{"#059669" if fco>=0 else "#dc2626"}'>{moeda(fco)}</div>
         <div class='kpi-sub'>Rec. − Custos − Imp. ± Var. A/P</div>
     </div>
     <div class='kpi amber'>
@@ -1798,13 +1843,12 @@ else:
         html.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
     # Os totais ficam nos cabeçalhos, sem repetir linhas ao pé dos blocos.
-    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO GERENCIAL)", s_fco_visual))
-    bloco_total(df_fco_apresentacao[df_fco_apresentacao["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec_visual, VERDE, "r")
-    bloco_total(df_fco_apresentacao[df_fco_apresentacao["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus_visual, VERMELHO, "c")
-    bloco_total(df_fco_apresentacao[df_fco_apresentacao["Papel"] == "imposto"], "(−) Impostos", s_imp_visual, VERMELHO, "i")
-    df_var_ap_visual = df_fco_apresentacao[df_fco_apresentacao["Papel"] == "var_ap"].copy()
-    bloco_total(df_var_ap_visual, "(±) Variações de Ativos e Passivos", s_vap_visual,
-                VERDE if float(s_vap_visual.sum()) >= 0 else VERMELHO, "v")
+    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco))
+    bloco_total(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
+    bloco_total(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
+    bloco_total(df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, "i")
+    bloco_total(df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
+                VERDE if float(s_vap.sum()) >= 0 else VERMELHO, "v")
 
     html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci))
     df_receitas_inv = df[df["Papel"] == "receita_inv"].copy()
@@ -1823,7 +1867,7 @@ else:
     html.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
 
     html.append(
-        "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA EFETIVA DE CAIXA (CONCILIAÇÃO)</b></td>"
+        "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
             f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
             f"{moeda(float(s_var.get(m, 0)))}</span></td>"
@@ -1878,12 +1922,11 @@ else:
     with st.expander("Resumo do fluxo de caixa", expanded=True):
         resumo = [linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo")]
         for nome, papeis, total in (
-            ("1- (=) FCO GERENCIAL", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco_visual),
+            ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
             ("2- (=) FCI", ["receita_inv", "capex"], s_fci),
             ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
         ):
-            dados_resumo = df_fco_apresentacao if nome.startswith("1-") else df
-            entradas, saidas = entradas_saidas_resumo(dados_resumo, papeis, refs_sel)
+            entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
             resumo.append(linha_tot(nome, total, VERDE if float(total.sum()) >= 0 else VERMELHO, cls="caixa-total"))
             resumo.append(linha_tot("(+) Entrada", entradas, VERDE))
             resumo.append(linha_tot("(−) Saída", saidas, VERMELHO))
@@ -1896,8 +1939,8 @@ else:
 
 with st.sidebar:
     st.markdown(
-        f"<div class='side-card'><small>FCO gerencial</small>"
-        f"<b style='color:{'#059669' if fco_apresentacao >= 0 else '#dc2626'}'>{moeda(fco_apresentacao)}</b></div>"
+        f"<div class='side-card'><small>FCO</small>"
+        f"<b style='color:{'#059669' if fco >= 0 else '#dc2626'}'>{moeda(fco)}</b></div>"
         f"<div class='side-card'><small>Var. Ativos/Passivos</small>"
         f"<b style='color:{'#059669' if var_ap >= 0 else '#dc2626'}'>{moeda(var_ap)}</b></div>"
         f"<div class='side-card'><small>FCI</small>"
