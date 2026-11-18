@@ -228,10 +228,30 @@ if "Pessoa física/jurídica" in df.columns:
 elif "Fornecedor" not in df.columns:
     df["Fornecedor"] = "Não Informado"
 
+# Campos usados nos filtros/tabelas devem ser texto homogêneo.
+# A planilha pode trazer Banco como número em algumas linhas e texto em outras,
+# o que provoca TypeError ao executar sorted() sobre valores mistos.
 if "Banco" not in df.columns:
     df["Banco"] = "Não Informado"
+
+def limpa_texto_filtro(valor, padrao="Não Informado"):
+    if pd.isna(valor):
+        return padrao
+    texto = str(valor).strip()
+    if texto.lower() in {"", "nan", "none", "null"}:
+        return padrao
+    # Evita exibir códigos numéricos como "1.0" quando vierem como float.
+    if isinstance(valor, (int, float, np.integer, np.floating)) and float(valor).is_integer():
+        texto = str(int(valor))
+    return texto
+
+df["Banco"] = df["Banco"].apply(limpa_texto_filtro)
+df["Fornecedor"] = df["Fornecedor"].apply(limpa_texto_filtro)
+
 if "Observação" not in df.columns:
     df["Observação"] = ""
+else:
+    df["Observação"] = df["Observação"].fillna("").astype(str).str.strip()
 
 data_ref = datetime(2026, 11, 18).date()
 df["Dias"] = (pd.to_datetime(data_ref) - df["Data inclusão"]).dt.days.fillna(0).astype(int).clip(lower=0)
@@ -249,10 +269,10 @@ with st.sidebar:
     lista_meses = [m for m in ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"] if m in df["Mes_Nome"].unique()]
     meses_sel = st.multiselect("Mês de Inclusão", options=lista_meses, default=[])
     
-    lista_fornecedores = sorted(df["Fornecedor"].unique().tolist())
+    lista_fornecedores = sorted(df["Fornecedor"].dropna().astype(str).unique().tolist(), key=str.casefold)
     fornecedores_sel = st.multiselect("Fornecedor", options=lista_fornecedores, default=[])
     
-    lista_bancos = sorted(df["Banco"].unique().tolist())
+    lista_bancos = sorted(df["Banco"].dropna().astype(str).unique().tolist(), key=str.casefold)
     bancos_sel = st.multiselect("Banco", options=lista_bancos, default=[])
     
     status_saldo = st.radio("Filtrar por Status", options=["Todos", "Somente Em Aberto (Saldo > 0)", "Somente Baixados"])
