@@ -142,11 +142,7 @@ css = """
     .badge-monitorar { background-color: rgba(37, 99, 235, 0.1); color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.25); }
 
     /* Tabelas */
-    .tabela-container {
-        overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px;
-        background: #ffffff; max-height: 480px; width: 100%;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
-    }
+    .tabela-container { width: 100%; max-height: 560px; overflow-y: auto; overflow-x: auto; margin: 10px 0 18px; border: 1px solid #e2e8f0; border-radius: 8px; scrollbar-gutter: stable; }
     .tabela-financeira { width: 100%; border-collapse: collapse; margin: 0; font-size: 11px; color: #0f172a; }
     .tabela-financeira th {
         background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; text-align: left;
@@ -420,8 +416,8 @@ def estilo_grafico(fig, altura=300):
     fig.update_yaxes(showgrid=True, gridcolor="#f1f5f9", zeroline=False)
     return fig
 
-# Fornecedores críticos / classificação / envelhecimento
-c_g1, c_g2, c_g3 = st.columns([1.5, 1, 1.25])
+# Fornecedores com maiores saldos e envelhecimento
+c_g1, c_g3 = st.columns([1.5, 1.25])
 with c_g1:
     st.markdown('<div class="panel-box"><div class="panel-title">Fornecedores com maior saldo em aberto</div>', unsafe_allow_html=True)
     if not forn_grp.empty:
@@ -432,23 +428,6 @@ with c_g1:
         fig.update_layout(showlegend=False); fig.update_xaxes(showticklabels=False); fig.update_yaxes(showgrid=False)
         st.plotly_chart(estilo_grafico(fig, 350), use_container_width=True, config={"displayModeBar":False})
     else: st.info("Sem saldo em aberto para os filtros.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with c_g2:
-    st.markdown('<div class="panel-box"><div class="panel-title">Classificação de criticidade</div>', unsafe_allow_html=True)
-    if not forn_grp.empty:
-        crit = forn_grp.groupby("Criticidade", as_index=False).agg(Saldo=("Saldo_Aberto","sum"), Fornecedores=("Fornecedor","nunique"))
-        order = {"Crítico":0,"Atenção":1,"Monitorar":2}
-        crit["_ord"] = crit["Criticidade"].map(order); crit = crit.sort_values("_ord")
-        palette = {"Crítico":VERMELHO,"Atenção":AMBAR,"Monitorar":AZUL}
-        fig = go.Figure(go.Bar(x=crit["Saldo"], y=crit["Criticidade"], orientation="h",
-            marker_color=[palette[x] for x in crit["Criticidade"]],
-            text=[f"{fmt_brl(v)} · {int(q)} forn." for v,q in zip(crit["Saldo"],crit["Fornecedores"])],
-            textposition="outside", cliponaxis=False))
-        fig.update_layout(showlegend=False); fig.update_xaxes(showticklabels=False); fig.update_yaxes(showgrid=False)
-        st.plotly_chart(estilo_grafico(fig, 285), use_container_width=True, config={"displayModeBar":False})
-        st.caption("Crítico: ≥ R$ 100 mil ou ≥ R$ 20 mil com >90 dias. Atenção: ≥ R$ 20 mil ou ≥ R$ 5 mil com >90 dias.")
-    else: st.info("Sem fornecedores em aberto.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with c_g3:
@@ -506,10 +485,10 @@ with c_g5:
 col_t1, col_t2 = st.columns(2)
 
 with col_t1:
-    st.markdown('<div class="panel-box"><div class="panel-title">Top 20 Fornecedores com Saldo em Aberto</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel-box"><div class="panel-title">Todos os Fornecedores com Saldo em Aberto</div>', unsafe_allow_html=True)
     if not forn_grp.empty:
         html_t1 = '<div class="tabela-container"><table class="tabela-financeira"><thead><tr><th>#</th><th>Fornecedor</th><th style="text-align:right">Saldo em Aberto</th><th style="text-align:right">Itens</th><th style="text-align:right">% do saldo</th><th style="text-align:right">Mais antigo (dias)</th><th style="text-align:center">Criticidade</th></tr></thead><tbody>'
-        for idx, r in forn_grp.head(20).iterrows():
+        for idx, r in forn_grp.iterrows():
             c_cls = "badge-critico" if r["Criticidade"] == "Crítico" else ("badge-atencao" if r["Criticidade"] == "Atenção" else "badge-monitorar")
             pct_fornecedor = (r["Saldo_Aberto"] / total_aberto * 100) if total_aberto > 0 else 0
             html_t1 += f'<tr><td>{idx+1}</td><td class="td-bold">{html.escape(str(r["Fornecedor"]))}</td><td style="text-align:right" class="td-bold">{fmt_brl(r["Saldo_Aberto"])}</td><td style="text-align:right">{int(r["Qtd_Itens"])}</td><td style="text-align:right">{fmt_pct(pct_fornecedor)}</td><td style="text-align:right">{int(r["Max_Dias"])}</td><td style="text-align:center"><span class="badge {c_cls}">{r["Criticidade"]}</span></td></tr>' 
