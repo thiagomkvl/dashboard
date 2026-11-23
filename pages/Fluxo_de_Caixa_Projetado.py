@@ -1,6 +1,4 @@
-import html
 import io
-import json
 import re
 import time
 import unicodedata
@@ -8,7 +6,6 @@ from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 try:
     from database import conectar_sheets
@@ -32,6 +29,9 @@ ABAS = [
 ]
 CACHE_SEGUNDOS = 90
 SALDO_INICIAL_MANUAL = None
+
+AZUL, VERDE, AMBAR, VERMELHO = "#2563eb", "#059669", "#d97706", "#dc2626"
+ROXO = "#7c3aed"
 
 MESES_PT = {
     1: "JAN", 2: "FEV", 3: "MAR", 4: "ABR", 5: "MAI", 6: "JUN",
@@ -57,28 +57,95 @@ MESES_MAP_NOME = {
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"] { font-family: Inter, Segoe UI, Arial, sans-serif; }
-.stApp { background:#f8fafc; color:#0f172a; }
-[data-testid="stHeader"] { background:transparent; }
-#MainMenu, footer { visibility:hidden; }
-.block-container { max-width:99%; padding:1.2rem 1.4rem 2.5rem; }
-[data-testid="stSidebar"] { background:#fff; border-right:1px solid #e2e8f0; }
-[data-testid="stWidgetLabel"] p { color:#64748b !important; font-size:12px; font-weight:650; }
+html, body, [class*="css"] { font-family: "Inter", "Segoe UI", Arial, sans-serif; }
+.stApp, [data-testid="stAppViewContainer"] { background: #f8fafc !important; color: #0f172a; }
+[data-testid="stHeader"] { background: transparent !important; }
+#MainMenu, footer { visibility: hidden; }
+.block-container { max-width: 99%; padding: 1.1rem 1.4rem 2.2rem; }
+[data-testid="stSidebar"] { background: #ffffff !important; border-right: 1px solid #e2e8f0; }
+[data-testid="stWidgetLabel"] p { color: #64748b !important; font-size: 12px; font-weight: 600; }
 
 /* Hero / Header */
-.hero { display:flex; justify-content:space-between; align-items:flex-start; gap:15px;
-        padding:2px 0 12px; margin-bottom:6px; }
-.hero h1 { margin:0; font-size:23px; font-weight:850; color:#0f172a; letter-spacing:-0.3px; }
-.hero p { margin:4px 0 0; color:#64748b; font-size:12.5px; }
-.hero-badges { display:flex; gap:10px; align-items:center; }
-.badge-box { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:6px 12px; min-width:120px; }
-.badge-lbl { font-size:10px; color:#64748b; font-weight:600; }
-.badge-val { font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px; }
-.badge-val.pos { color:#059669; }
-.badge-val.neg { color:#dc2626; }
+.hero {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0;
+}
+.hero h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
+.hero p { margin: 2px 0 0; font-size: 13px; color: #64748b; }
+.hero-badges { display: flex; gap: 10px; flex-wrap: wrap; }
+.badge-box {
+    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 6px 14px; min-width: 120px; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.badge-lbl { display: block; font-size: 10px; color: #64748b; font-weight: 600; }
+.badge-val { font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 2px; white-space: nowrap; }
+.badge-val.pos { color: #059669; }
+.badge-val.neg { color: #dc2626; }
+
+.section-title {
+    font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+    color: #0f172a; margin: 14px 0 10px; padding-left: 10px; border-left: 3px solid #2563eb;
+}
+
+/* Tabela no mesmo padrão do Fluxo de Caixa Realizado */
+.tbl-wrap {
+    overflow-x: auto; overflow-y: visible;
+    border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff;
+}
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #334155; }
+.tbl th {
+    background: #f8fafc; color: #64748b; font-weight: 700; font-size: 11px;
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap; text-transform: uppercase;
+}
+.tbl td {
+    padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.tbl tbody tr:hover td { background: #f8fafc; }
+.tbl tr.tot td {
+    font-weight: 800; color: #0f172a; background: #f1f5f9; border-top: 1px solid #e2e8f0;
+}
+.tbl tr.sec td {
+    font-weight: 800; color: #0f172a; background: #eef2ff;
+    border-top: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px;
+}
+.tbl tr.caixa-total td {
+    font-weight: 800; color: #0f172a; background: #cbd5e1;
+    border-top: 2px solid #94a3b8; border-bottom: 1px solid #94a3b8;
+    text-transform: uppercase; font-size: 11px;
+}
+.tbl tr.subsec td {
+    font-weight: 700; color: #334155; background: #f8fafc; font-size: 11px;
+}
+.tbl tr.res td {
+    font-weight: 800; background: #f8fafc; border-top: 2px solid #e2e8f0;
+}
+.tbl tr.saldo td {
+    font-weight: 800; background: #ecfdf5; border-top: 2px solid #a7f3d0;
+}
+.tbl tr.sub-row td { background: #fafbfc; color: #64748b; font-size: 11px; }
+.tbl tr.sub-row td:first-child { padding-left: 28px; }
+.dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 8px; vertical-align: middle;
+}
+.drill-label {
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    margin: 0; font-weight: 700; color: #0f172a; user-select: none;
+}
+.toggle-checkbox { display: none; }
+.indicator {
+    display: inline-block; font-size: 10px; color: #2563eb;
+    transition: transform 0.15s ease; width: 12px;
+}
+.grp .sub-row { display: none; }
+.grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
+.grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+.vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 
 @media(max-width:950px){
-    .hero{flex-direction:column;}
+    .hero { flex-direction: column; align-items: flex-start; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -131,7 +198,6 @@ def dt(v):
         return pd.NaT
 
 def parse_mes_coluna(c):
-    """Identifica colunas mensais como 2026-11, 11/2026, Nov/26, Novembro/2026, 01/11/2026."""
     d = dt(c)
     if not pd.isna(d) and d.day == 1:
         return pd.Timestamp(d.year, d.month, 1)
@@ -163,9 +229,8 @@ def brl(v):
     if v is None or pd.isna(v) or abs(float(v)) < 0.005:
         return "—"
     val = float(v)
-    sinal = "-" if val < 0 else ""
     num = f"{abs(val):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"R$ {sinal}{num}"
+    return f"R$ {num}"
 
 def brl_kpi(v):
     val = float(v or 0.0)
@@ -227,7 +292,7 @@ def criar_mov(data, valor, fonte, categoria, classificacao, fluxo, subgrupo, det
         "Classificacao": str(classificacao or "Não classificado").strip(),
         "Fluxo": str(fluxo or "FCO").strip(),
         "Subgrupo": str(subgrupo or "").strip(),
-        "Detalhe": str(detalhe or categoria or fonte),
+        "Detalhe": str(detalhe or categoria or fonte).strip(),
     }
 
 # =========================== CLASSIFICAÇÃO ====================================
@@ -279,10 +344,6 @@ def is_fci(text, mapping):
 
 # ===================== REALIZADO POR OBRA E MÊS ===============================
 def calcular_realizado_obras(df_real):
-    """
-    Lê Realizado_Obra (suporta tanto formato transacional com colunas Obra/Data/Valor
-    quanto formato matricial com colunas mensais) e devolve dict: {(norm_obra, Period('M')): valor_realizado}
-    """
     realizado_map = {}
     if df_real is None or df_real.empty:
         return realizado_map
@@ -292,7 +353,6 @@ def calcular_realizado_obras(df_real):
     c_val = col(df_real, ["Valor", "Vl. Pago", "Valor Pago", "Total", "Custo R$", "Saída"])
     c_status = col(df_real, ["Status", "Situação"])
 
-    # Caso 1: Tabela transacional (tem coluna de data e coluna de valor)
     if c_data and c_val and c_data != c_obra and c_val != c_obra:
         work = df_real.copy()
         if c_status:
@@ -309,7 +369,6 @@ def calcular_realizado_obras(df_real):
             realizado_map[chave] = realizado_map.get(chave, 0.0) + v
         return realizado_map
 
-    # Caso 2: Tabela matricial (linhas = Obras, colunas = Meses)
     cols_mes = []
     for c in df_real.columns:
         if c == c_obra:
@@ -332,11 +391,9 @@ def calcular_realizado_obras(df_real):
     return realizado_map
 
 def obter_realizado_obra_mes(realizado_map, nome_obra, periodo_m):
-    """Busca o realizado da obra no mês por correspondência exata ou parcial."""
     n_obra = norm(nome_obra)
     if (n_obra, periodo_m) in realizado_map:
         return realizado_map[(n_obra, periodo_m)]
-    # Remove prefixo "obra " se houver divergência de nomenclatura entre abas
     n_limpo = re.sub(r"^obra\s+", "", n_obra).strip()
     total = 0.0
     for (k_obra, k_per), val in realizado_map.items():
@@ -369,7 +426,8 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 work = work[~status.isin(["cancelado", "cancelada", "excluido", "excluida"])]
             for _, r in work.iterrows():
                 raw_cat = str(r.get(c_cat, "Convênio") or "Convênio").strip()
-                det = str(r.get(c_prot, raw_cat) or raw_cat).strip()
+                prot = str(r.get(c_prot, "") or "").strip()
+                det = prot if prot and norm(prot) != norm(raw_cat) else raw_cat
                 cls_map, _ = classificar(raw_cat, mapping)
                 classif = cls_map if cls_map != "Não classificado" else raw_cat
                 m = criar_mov(
@@ -391,7 +449,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
             for _, r in df.iterrows():
                 desc_pmt = str(r.get(c_tipo, "") or "").strip()
                 classif = desc_pmt if desc_pmt else "Amortização e Juros de Empréstimos"
-                det = f"{r.get(c_bank, '')} {r.get(c_contr, '')}".strip() or "Parcela PMT"
+                det = f"{r.get(c_bank, '')} {r.get(c_contr, '')}".strip() or classif
                 m = criar_mov(
                     r[c_data], -abs(money(r[c_val])), "PMTs", "Parcela empréstimo",
                     classif, "FCF", "(-) Amortização e juros de empréstimos", det
@@ -407,7 +465,6 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
         c_status = col(df, ["Situação", "Status"])
         c_forn = col(df, ["Razão Social", "Fornecedor", "Título"])
         c_conta = col(df, ["Conta contábil", "Conta Financeira", "Categoria"])
-        c_tit = col(df, ["Título", "Documento", "Histórico"])
         if c_data and c_val:
             work = df.copy()
             work["_data"] = work[c_data].map(dt)
@@ -418,9 +475,8 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
             for _, r in work.iterrows():
                 conta_txt = str(r.get(c_conta, "") or "").strip()
                 forn_txt = str(r.get(c_forn, "") or "").strip()
-                tit_txt = str(r.get(c_tit, "") or "").strip()
-                det = f"{forn_txt} ({tit_txt})".strip(" ()") if tit_txt and tit_txt != forn_txt else (forn_txt or conta_txt)
                 cls, flx = classificar(conta_txt or forn_txt, mapping)
+                det = forn_txt or conta_txt or cls
                 if flx == "FCI":
                     sub = "(-) Desembolsos em CAPEX"
                 elif flx == "FCF":
@@ -461,7 +517,6 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
 
     # 5. Á Vista — média de saídas históricas por dia corrido, sem FCI
     df = dados.get("Á Vista", pd.DataFrame())
-    media_aplicada = 0.0
     if not df.empty:
         c_data = col(df, ["Data", "Venc. original", "Vencimento"])
         c_val = col(df, ["Valor", "Vl. Valor"])
@@ -485,7 +540,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                     m = criar_mov(
                         d, -media_aplicada, "Á Vista — média diária", "Despesas à vista (média)",
                         "Outras Despesas Operacionais (À Vista)", "FCO",
-                        "(-) Custos e despesas operacionais", f"Média diária ({media_dias}d históricos)"
+                        "(-) Custos e despesas operacionais", f"Média {media_dias}d"
                     )
                     if m:
                         movs.append(m)
@@ -522,7 +577,6 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 if fim_mes < inicio or ref > fim:
                     continue
 
-                # Dias restantes do mês a partir da data inicial da projeção
                 inicio_rateio = max(inicio, ref)
                 fim_rateio = min(fim, fim_mes)
                 dias_restantes_mes = (fim_mes - inicio_rateio).days + 1
@@ -530,10 +584,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                     continue
 
                 diario = saldo_a_realizar / dias_restantes_mes
-                det_txt = (
-                    f"Orçado {MESES_PT[ref.month]}/{str(ref.year)[2:]}: {brl_kpi(valor_orcado)} | "
-                    f"Realizado: {brl_kpi(valor_realizado)} | Saldo: {brl_kpi(saldo_a_realizar)}"
-                )
+                det_txt = f"{MESES_PT[ref.month]}/{str(ref.year)[2:]} (Orç. {brl_kpi(valor_orcado)} − Real. {brl_kpi(valor_realizado)})"
                 for d in pd.date_range(inicio_rateio, fim_rateio, freq="D"):
                     m = criar_mov(
                         d, -diario, "Orçamento_Obra (Saldo)", f"Obra: {nome}",
@@ -547,8 +598,8 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
     base = base[(base["Data"] >= inicio) & (base["Data"] <= fim)].copy()
     return base
 
-# ===================== CONSTRUÇÃO DA MATRIZ INTERATIVA ======================
-def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularidade="Diária", consolidar_receitas=True):
+# ===================== CONSTRUÇÃO DA MATRIZ (LÓGICA DO REALIZADO) ============
+def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="Diária", consolidar_receitas=True):
     datas = pd.date_range(inicio, inicio + pd.Timedelta(days=dias - 1), freq="D")
     df = base_mov.copy()
 
@@ -572,121 +623,149 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         s = filtro_df.groupby("_periodo")["Valor"].sum()
         return s.reindex(col_keys, fill_value=0.0)
 
-    def montar_detalhes_linha(sub_df):
-        if sub_df.empty:
-            return []
-        s_ord = sub_df.sort_values(["Data", "Valor"])
-        registros = []
-        for _, r in s_ord.iterrows():
-            registros.append({
-                "data": r["Data"].strftime("%d/%m/%Y"),
-                "fonte": r["Fonte"],
-                "classificacao": r["Classificacao"],
-                "detalhe": r["Detalhe"],
-                "valor": float(r["Valor"]),
-                "valor_fmt": brl_kpi(r["Valor"]),
-            })
-        return registros
+    def linha_tot(label, s, cor, cls="tot", is_saldo=False):
+        tot_val = float(s.iloc[0] if label == "(+) Saldo inicial" else s.iloc[-1]) if len(s) else 0.0
+        if is_saldo:
+            tot_html = f"<td><span style='color:{cor}'><b>{brl(tot_val)}</b></span></td>"
+        else:
+            tot_html = f"<td><span style='color:{cor}'><b>{brl(float(s.sum()))}</b></span></td>"
+        return (
+            f"<tr class='{cls}'><td><b>{label}</b></td>"
+            + "".join(f"<td><span style='color:{cor}'>{brl(float(s.get(k, 0.0)))}</span></td>" for k in col_keys)
+            + tot_html
+            + "</tr>"
+        )
 
-    def linhas_classificacao(sub_df, dot_color="dot-blue"):
+    def linhas_com_abertura(sub_df, cor_dot, uid_prefix, label_consolidado=None):
+        """Renderiza linhas agrupáveis exatamente como no Fluxo de Caixa Realizado,
+        com sublinhas ('↳ Detalhe') alinhadas em cada coluna de data/mês."""
         if sub_df.empty:
             return []
-        grp = (
+
+        rows_out = []
+        uid = 0
+
+        if label_consolidado:
+            uid += 1
+            key = f"{uid_prefix}_{uid}"
+            piv_main = (
+                sub_df.groupby("_periodo")["Valor"]
+                .sum()
+                .reindex(col_keys, fill_value=0.0)
+            )
+            sub_det = (
+                sub_df.groupby(["Detalhe", "_periodo"])["Valor"]
+                .sum()
+                .unstack(fill_value=0.0)
+                .reindex(columns=col_keys, fill_value=0.0)
+            )
+            sub_det["__t__"] = sub_det.abs().sum(axis=1)
+            sub_det = sub_det.sort_values("__t__", ascending=False)
+
+            label_html = (
+                f"<label class='drill-label' for='{key}'>"
+                f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
+                f"<span class='indicator'>▶</span>"
+                f"<span class='dot' style='background:{cor_dot}'></span>{label_consolidado}</label>"
+            )
+            cells_main = [brl(float(piv_main[k])) for k in col_keys] + [f"<b>{brl(float(piv_main.sum()))}</b>"]
+            rows_out.append(f"<tbody class='grp'><tr><td>{label_html}</td>" + "".join(f"<td>{c}</td>" for c in cells_main) + "</tr>")
+
+            for dn, rd in sub_det.iterrows():
+                sc = [brl(float(rd[k])) for k in col_keys] + [f"<b>{brl(float(rd.drop('__t__').sum()))}</b>"]
+                rows_out.append(f"<tr class='sub-row'><td>↳ {dn}</td>" + "".join(f"<td>{c}</td>" for c in sc) + "</tr>")
+            rows_out.append("</tbody>")
+            return rows_out
+
+        piv = (
             sub_df.groupby(["Classificacao", "_periodo"])["Valor"]
             .sum()
             .unstack(fill_value=0.0)
             .reindex(columns=col_keys, fill_value=0.0)
         )
-        ordem = grp.abs().sum(axis=1).sort_values(ascending=False).index
-        out = []
-        for cls in ordem:
-            df_cls = sub_df[sub_df["Classificacao"] == cls]
-            out.append({
-                "label": cls,
-                "tipo": "item",
-                "dot": dot_color,
-                "vals": grp.loc[cls],
-                "detalhes": montar_detalhes_linha(df_cls),
-            })
-        return out
+        piv["__t__"] = piv.abs().sum(axis=1)
+        piv = piv.sort_values("__t__", ascending=False)
 
-    linhas = []
-    export_rows = []
+        for classif, r in piv.iterrows():
+            uid += 1
+            key = f"{uid_prefix}_{uid}"
+            sub = sub_df[sub_df["Classificacao"] == classif]
+            tem_det = (
+                sub["Detalhe"].nunique() > 1
+                or (sub["Detalhe"].nunique() == 1 and norm(sub["Detalhe"].iloc[0]) != norm(classif))
+            )
+
+            if tem_det:
+                label_html = (
+                    f"<label class='drill-label' for='{key}'>"
+                    f"<input type='checkbox' id='{key}' class='toggle-checkbox'>"
+                    f"<span class='indicator'>▶</span>"
+                    f"<span class='dot' style='background:{cor_dot}'></span>{classif}</label>"
+                )
+            else:
+                label_html = f"<span class='dot' style='background:{cor_dot}'></span>{classif}"
+
+            tot_linha = float(r.drop("__t__").sum())
+            cells = [brl(float(r[k])) for k in col_keys] + [f"<b>{brl(tot_linha)}</b>"]
+
+            if tem_det:
+                rows_out.append(f"<tbody class='grp'><tr><td>{label_html}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+                ps = (
+                    sub.groupby(["Detalhe", "_periodo"])["Valor"]
+                    .sum()
+                    .unstack(fill_value=0.0)
+                    .reindex(columns=col_keys, fill_value=0.0)
+                )
+                ps["__t__"] = ps.abs().sum(axis=1)
+                ps = ps.sort_values("__t__", ascending=False)
+                for dn, rd in ps.iterrows():
+                    sc = [brl(float(rd[k])) for k in col_keys] + [f"<b>{brl(float(rd.drop('__t__').sum()))}</b>"]
+                    rows_out.append(f"<tr class='sub-row'><td>↳ {dn}</td>" + "".join(f"<td>{c}</td>" for c in sc) + "</tr>")
+                rows_out.append("</tbody>")
+            else:
+                rows_out.append(f"<tr><td>{label_html}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+
+        return rows_out
 
     # ---------------- 1. FCO ----------------
     df_fco = df[df["Fluxo"] == "FCO"] if not df.empty else pd.DataFrame()
     s_fco = get_serie(df_fco)
-    linhas.append({"label": "1. FLUXO DE CAIXA OPERACIONAL (FCO)", "tipo": "section", "vals": s_fco})
 
-    # (+) Receitas operacionais
     df_rec = df_fco[df_fco["Subgrupo"] == "(+) Receitas operacionais"] if not df_fco.empty else pd.DataFrame()
     s_rec = get_serie(df_rec)
-    linhas.append({"label": "(+) Receitas operacionais", "tipo": "subtotal", "vals": s_rec})
-    if consolidar_receitas:
-        linhas.append({
-            "label": "Convênios (Consolidado)",
-            "tipo": "item",
-            "dot": "dot-green",
-            "vals": s_rec,
-            "detalhes": montar_detalhes_linha(df_rec),
-        })
-    else:
-        linhas.extend(linhas_classificacao(df_rec, "dot-green"))
 
-    # (-) Custos e despesas operacionais
     df_desp = df_fco[df_fco["Subgrupo"] == "(-) Custos e despesas operacionais"] if not df_fco.empty else pd.DataFrame()
     s_desp = get_serie(df_desp)
-    linhas.append({"label": "(-) Custos e despesas operacionais", "tipo": "subtotal", "vals": s_desp})
-    linhas.extend(linhas_classificacao(df_desp, "dot-blue"))
 
-    # (-) Impostos
     df_imp = df_fco[df_fco["Subgrupo"] == "(-) Impostos"] if not df_fco.empty else pd.DataFrame()
     s_imp = get_serie(df_imp)
-    linhas.append({"label": "(-) Impostos", "tipo": "subtotal", "vals": s_imp})
-    linhas.extend(linhas_classificacao(df_imp, "dot-amber"))
 
     # ---------------- 2. FCI ----------------
     df_fci = df[df["Fluxo"] == "FCI"] if not df.empty else pd.DataFrame()
     s_fci = get_serie(df_fci)
-    linhas.append({"label": "2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", "tipo": "section", "vals": s_fci})
 
     df_fci_in = df_fci[df_fci["Valor"] > 0] if not df_fci.empty else pd.DataFrame()
-    if not df_fci_in.empty:
-        linhas.append({"label": "(+) Receitas de aplicações financeiras", "tipo": "subtotal", "vals": get_serie(df_fci_in)})
-        linhas.extend(linhas_classificacao(df_fci_in, "dot-green"))
+    s_fci_in = get_serie(df_fci_in)
 
     df_fci_out = df_fci[df_fci["Valor"] < 0] if not df_fci.empty else pd.DataFrame()
-    linhas.append({"label": "(-) Desembolsos em CAPEX", "tipo": "subtotal", "vals": get_serie(df_fci_out)})
-    linhas.extend(linhas_classificacao(df_fci_out, "dot-red"))
+    s_fci_out = get_serie(df_fci_out)
 
     # ---------------- 3. FCF ----------------
     df_fcf = df[df["Fluxo"] == "FCF"] if not df.empty else pd.DataFrame()
     s_fcf = get_serie(df_fcf)
-    linhas.append({"label": "3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", "tipo": "section", "vals": s_fcf})
 
     df_fcf_in = df_fcf[df_fcf["Valor"] > 0] if not df_fcf.empty else pd.DataFrame()
-    if not df_fcf_in.empty:
-        linhas.append({"label": "(+) Captações e Empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_in)})
-        linhas.extend(linhas_classificacao(df_fcf_in, "dot-green"))
+    s_fcf_in = get_serie(df_fcf_in)
 
     df_fcf_out = df_fcf[df_fcf["Valor"] < 0] if not df_fcf.empty else pd.DataFrame()
-    linhas.append({"label": "(-) Amortização e juros de empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_out)})
-    linhas.extend(linhas_classificacao(df_fcf_out, "dot-purple"))
+    s_fcf_out = get_serie(df_fcf_out)
 
     # ---------------- NÃO CLASSIFICADO ----------------
     df_nc = df[df["Fluxo"] == "NAO_CLASSIFICADO"] if not df.empty else pd.DataFrame()
-    if not df_nc.empty:
-        s_nc = get_serie(df_nc)
-        linhas.append({"label": "ITENS SEM CLASSIFICAÇÃO GERENCIAL", "tipo": "section", "vals": s_nc})
-        linhas.extend(linhas_classificacao(df_nc, "dot-amber"))
-    else:
-        s_nc = serie_vazia()
+    s_nc = get_serie(df_nc)
 
-    # ---------------- VARIAÇÃO E SALDO DE CAIXA ----------------
+    # ---------------- VARIAÇÃO E SALDO ----------------
     s_var = s_fco + s_fci + s_fcf + s_nc
-    linhas.append({"label": "VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", "tipo": "highlight", "vals": s_var})
-    linhas.append({"label": "4. SALDO DE CAIXA", "tipo": "section", "vals": serie_vazia(), "blank_vals": True})
-
     s_ini = serie_vazia()
     s_fim = serie_vazia()
     acum = float(saldo_inicial)
@@ -695,408 +774,106 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         acum += float(s_var[k])
         s_fim[k] = acum
 
-    linhas.append({"label": "(+) Saldo inicial", "tipo": "item", "dot": None, "vals": s_ini})
-    linhas.append({"label": "(+) Variação líquida do período", "tipo": "item", "dot": None, "vals": s_var})
-    linhas.append({"label": "(=) Saldo final projetado", "tipo": "highlight", "vals": s_fim})
+    html_rows = []
+    export_rows = []
 
-    # Montagem HTML interativa com expansão ao clicar em cada linha
-    num_cols = len(col_labels) + 2
-    header_cells = "".join([f"<th>{html.escape(lbl)}</th>" for lbl in col_labels]) + "<th>TOTAL PERÍODO</th>"
-    body_html = []
-    detalhes_payload = {}
-    row_idx = 0
-
-    for row in linhas:
-        tipo = row["tipo"]
-        tr_cls = f"row-{tipo}"
-        vals = row["vals"]
-        blank_vals = row.get("blank_vals", False)
-        detalhes = row.get("detalhes", [])
-        tem_drill = (tipo == "item" and len(detalhes) > 0)
-
-        if row["label"] == "(+) Saldo inicial":
-            total_val = float(s_ini.iloc[0]) if len(s_ini) else float(saldo_inicial)
-        elif row["label"] == "(=) Saldo final projetado":
-            total_val = float(s_fim.iloc[-1]) if len(s_fim) else float(saldo_inicial)
+    def add_export(label, ser, is_saldo=False, blank=False):
+        d = {"DESCRIÇÃO": label}
+        if blank:
+            for lbl in col_labels:
+                d[lbl] = None
+            d["TOTAL PERÍODO"] = None
         else:
-            total_val = float(vals.sum())
-
-        rid = f"r_{row_idx}"
-        row_idx += 1
-
-        label_esc = html.escape(row["label"])
-        if tem_drill:
-            detalhes_payload[rid] = detalhes
-            lbl_html = (
-                f'<div class="lbl" title="{label_esc}">'
-                f'<span class="caret" id="caret_{rid}">▶</span>'
-                f'<span class="dot {row["dot"]}"></span>'
-                f'<span class="lbl-text">{label_esc}</span>'
-                f'<span class="badge-cnt">{len(detalhes)}</span>'
-                f'</div>'
-            )
-            tr_attr = f'class="{tr_cls} clickable-row" onclick="toggleRow(\'{rid}\')"'
-        elif tipo == "item":
-            dot_html = f'<span class="dot {row["dot"]}"></span>' if row.get("dot") else '<span class="dot-sp"></span>'
-            lbl_html = (
-                f'<div class="lbl" title="{label_esc}">'
-                f'<span class="caret-sp"></span>{dot_html}'
-                f'<span class="lbl-text">{label_esc}</span>'
-                f'</div>'
-            )
-            tr_attr = f'class="{tr_cls}"'
-        else:
-            lbl_html = f'<div class="lbl" title="{label_esc}"><span class="lbl-text">{label_esc}</span></div>'
-            tr_attr = f'class="{tr_cls}"'
-
-        tds = [f"<td>{lbl_html}</td>"]
-        exp_dict = {"DESCRIÇÃO": row["label"]}
-
-        for k, lbl in zip(col_keys, col_labels):
-            if blank_vals:
-                tds.append("<td></td>")
-                exp_dict[lbl] = None
-                continue
-            v = float(vals[k])
-            exp_dict[lbl] = v
-            if abs(v) < 0.005:
-                tds.append('<td class="v-zero">—</td>')
+            for k, lbl in zip(col_keys, col_labels):
+                d[lbl] = float(ser[k])
+            if is_saldo:
+                d["TOTAL PERÍODO"] = float(s_ini.iloc[0] if "inicial" in label.lower() else s_fim.iloc[-1]) if len(col_keys) else float(saldo_inicial)
             else:
-                cls_cor = "v-pos" if v > 0 else "v-neg"
-                tds.append(f'<td class="{cls_cor}">{brl(v)}</td>')
+                d["TOTAL PERÍODO"] = float(ser.sum())
+        export_rows.append(d)
 
-        if blank_vals:
-            tds.append("<td></td>")
-            exp_dict["TOTAL PERÍODO"] = None
-        else:
-            exp_dict["TOTAL PERÍODO"] = total_val
-            if abs(total_val) < 0.005:
-                tds.append('<td class="v-zero">—</td>')
-            else:
-                cls_cor = "v-pos" if total_val > 0 else "v-neg"
-                tds.append(f'<td class="{cls_cor}">{brl(total_val)}</td>')
+    # 1. FCO
+    html_rows.append(linha_tot("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, VERDE if float(s_fco.sum()) >= 0 else VERMELHO, cls="caixa-total"))
+    add_export("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco)
 
-        export_rows.append(exp_dict)
-        body_html.append(f'<tr {tr_attr}>{"".join(tds)}</tr>')
+    html_rows.append(linha_tot("(+) Receitas operacionais", s_rec, VERDE, cls="subsec"))
+    add_export("(+) Receitas operacionais", s_rec)
+    html_rows.extend(linhas_com_abertura(
+        df_rec, VERDE, "rec",
+        label_consolidado="Convênios (Consolidado)" if consolidar_receitas else None
+    ))
 
-        # Linha oculta de drill-down que abre ao clicar na classificação
-        if tem_drill:
-            body_html.append(
-                f'<tr id="detail_{rid}" class="detail-row" style="display:none;">'
-                f'<td colspan="{num_cols}" class="detail-cell">'
-                f'<div id="box_{rid}" class="detail-container"></div>'
-                f'</td></tr>'
-            )
+    html_rows.append(linha_tot("(−) Custos e despesas operacionais", s_desp, VERMELHO, cls="subsec"))
+    add_export("(−) Custos e despesas operacionais", s_desp)
+    html_rows.extend(linhas_com_abertura(df_desp, AZUL, "desp"))
 
-    payload_json = json.dumps(detalhes_payload, ensure_ascii=False)
-    altura_estimada = min(1200, max(540, 90 + len(linhas) * 33))
+    html_rows.append(linha_tot("(−) Impostos", s_imp, VERMELHO, cls="subsec"))
+    add_export("(−) Impostos", s_imp)
+    html_rows.extend(linhas_com_abertura(df_imp, AMBAR, "imp"))
 
-    component_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    * {{ box-sizing: border-box; }}
-    body {{ margin:0; padding:0; font-family: Inter, Segoe UI, Arial, sans-serif; background:transparent; color:#0f172a; }}
-    .matrix-bar {{
-        background:#e2e8f0;
-        color:#334155;
-        font-size:11px;
-        font-weight:800;
-        letter-spacing:0.4px;
-        padding:9px 14px;
-        border-radius:8px 8px 0 0;
-        border:1px solid #cbd5e1;
-        border-bottom:none;
-        text-transform:uppercase;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-    }}
-    .matrix-hint {{ font-size:10.5px; font-weight:600; color:#475569; text-transform:none; letter-spacing:0; }}
-    .fcx-wrap {{
-        width:100%;
-        overflow:auto;
-        max-height:calc(100vh - 40px);
-        background:#fff;
-        border:1px solid #cbd5e1;
-        border-radius:0 0 8px 8px;
-        box-shadow:0 1px 3px rgba(15,23,42,0.04);
-    }}
-    table.fcx-table {{
-        width:100%;
-        border-collapse:separate;
-        border-spacing:0;
-        font-size:12px;
-        white-space:nowrap;
-    }}
+    # 2. FCI
+    html_rows.append(linha_tot("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, VERDE if float(s_fci.sum()) >= 0 else VERMELHO, cls="caixa-total"))
+    add_export("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci)
 
-    /* ---- Cabeçalho fixo (topo) ---- */
-    table.fcx-table > thead > tr > th {{
-        position:sticky;
-        top:0;
-        z-index:3;
-        background:#f1f5f9;
-        color:#475569;
-        font-size:10.5px;
-        font-weight:800;
-        text-transform:uppercase;
-        padding:9px 12px;
-        height:34px;
-        min-width:104px;
-        border-bottom:1px solid #cbd5e1;
-        text-align:right;
-    }}
+    if not df_fci_in.empty:
+        html_rows.append(linha_tot("(+) Receitas de aplicações financeiras", s_fci_in, VERDE, cls="subsec"))
+        add_export("(+) Receitas de aplicações financeiras", s_fci_in)
+        html_rows.extend(linhas_com_abertura(df_fci_in, VERDE, "fci_in"))
 
-    /* ---- Células ---- */
-    table.fcx-table > tbody > tr > td {{
-        padding:0 12px;
-        height:33px;
-        min-width:104px;
-        border-bottom:1px solid #f1f5f9;
-        text-align:right;
-        font-variant-numeric:tabular-nums;
-        vertical-align:middle;
-    }}
+    html_rows.append(linha_tot("(−) Desembolsos em CAPEX", s_fci_out, VERMELHO, cls="subsec"))
+    add_export("(−) Desembolsos em CAPEX", s_fci_out)
+    html_rows.extend(linhas_com_abertura(df_fci_out, VERMELHO, "fci_out"))
 
-    /* ---- 1ª coluna fixa à esquerda, largura padronizada ---- */
-    table.fcx-table > thead > tr > th:first-child,
-    table.fcx-table > tbody > tr > td:first-child {{
-        position:sticky;
-        left:0;
-        width:340px;
-        min-width:340px;
-        max-width:340px;
-        text-align:left;
-        border-right:1px solid #e2e8f0;
-    }}
-    table.fcx-table > thead > tr > th:first-child {{ z-index:5; }}
-    table.fcx-table > tbody > tr > td:first-child {{ z-index:2; overflow:hidden; }}
+    # 3. FCF
+    html_rows.append(linha_tot("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, VERDE if float(s_fcf.sum()) >= 0 else VERMELHO, cls="caixa-total"))
+    add_export("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf)
 
-    /* ---- Coluna TOTAL fixa à direita ---- */
-    table.fcx-table > thead > tr > th:last-child,
-    table.fcx-table > tbody > tr:not(.detail-row) > td:last-child {{
-        position:sticky;
-        right:0;
-        min-width:124px;
-        border-left:1px solid #cbd5e1;
-        font-weight:800;
-    }}
-    table.fcx-table > thead > tr > th:last-child {{ z-index:5; }}
-    table.fcx-table > tbody > tr:not(.detail-row) > td:last-child {{ z-index:2; }}
+    if not df_fcf_in.empty:
+        html_rows.append(linha_tot("(+) Empréstimos e Financiamentos", s_fcf_in, VERDE, cls="subsec"))
+        add_export("(+) Empréstimos e Financiamentos", s_fcf_in)
+        html_rows.extend(linhas_com_abertura(df_fcf_in, VERDE, "fcf_in"))
 
-    /* ---- Rótulo: caret | dot | texto | contador (colunas alinhadas) ---- */
-    .lbl {{ display:flex; align-items:center; width:100%; min-width:0; }}
-    .lbl-text {{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    .caret, .caret-sp {{ flex:0 0 18px; width:18px; }}
-    .dot, .dot-sp {{ flex:0 0 7px; width:7px; height:7px; margin-right:8px; }}
-    .badge-cnt {{ flex:0 0 auto; }}
+    html_rows.extend(linhas_com_abertura(df_fcf_out, ROXO, "fcf_out"))
+    html_rows.append(linha_tot("Total amortizações e juros/encargos financeiros", s_fcf_out, VERMELHO, cls="tot"))
+    add_export("Total amortizações e juros/encargos financeiros", s_fcf_out)
 
-    /* ---- Hierarquia de recuo ---- */
-    tr.row-section .lbl {{ padding-left:0; }}
-    tr.row-subtotal .lbl {{ padding-left:14px; }}
-    tr.row-item .lbl {{ padding-left:30px; }}
-    tr.row-highlight .lbl {{ padding-left:0; }}
+    # Variação líquida
+    html_rows.append(linha_tot("VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", s_var, VERDE if float(s_var.sum()) >= 0 else VERMELHO, cls="res"))
+    add_export("VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", s_var)
 
-    /* ---- Tipos de linha ---- */
-    tr.row-section > td {{
-        background:#cbd5e1 !important;
-        color:#0f172a;
-        font-weight:800;
-        font-size:11.5px;
-        border-top:1px solid #94a3b8;
-        border-bottom:1px solid #94a3b8;
-    }}
-    tr.row-subtotal > td {{
-        background:#e2e8f0 !important;
-        color:#1e293b;
-        font-weight:750;
-        border-top:1px solid #cbd5e1;
-        border-bottom:1px solid #cbd5e1;
-    }}
-    tr.row-highlight > td {{
-        background:#f1f5f9 !important;
-        color:#0f172a;
-        font-weight:800;
-        border-top:1px solid #cbd5e1;
-        border-bottom:1px solid #cbd5e1;
-    }}
-    tr.row-item > td {{
-        background:#ffffff;
-        color:#334155;
-        font-weight:500;
-    }}
-    tr.clickable-row {{ cursor:pointer; }}
-    tr.clickable-row:hover > td {{ background:#eff6ff !important; }}
+    # 4. Saldo de caixa
+    html_rows.append(
+        "<tr class='sec'><td>4. SALDO DE CAIXA</td>"
+        + "".join("<td></td>" for _ in col_keys) + "<td></td></tr>"
+    )
+    add_export("4. SALDO DE CAIXA", serie_vazia(), blank=True)
 
-    .v-pos {{ color:#059669; font-weight:700; }}
-    .v-neg {{ color:#dc2626; font-weight:700; }}
-    .v-zero {{ color:#94a3b8; font-weight:400; }}
+    html_rows.append(linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo", is_saldo=True))
+    add_export("(+) Saldo inicial", s_ini, is_saldo=True)
 
-    .dot, .dot-sp {{ display:inline-block; border-radius:50%; }}
-    .dot-blue {{ background:#2563eb; }}
-    .dot-green {{ background:#10b981; }}
-    .dot-red {{ background:#ef4444; }}
-    .dot-amber {{ background:#f59e0b; }}
-    .dot-purple {{ background:#8b5cf6; }}
-    .caret {{ display:inline-block; color:#2563eb; font-size:9px; transition:transform 0.15s ease; }}
-    .caret-sp {{ display:inline-block; }}
-    .caret.open {{ transform:rotate(90deg); }}
-    .badge-cnt {{
-        margin-left:8px;
-        background:#f1f5f9;
-        color:#475569;
-        border:1px solid #e2e8f0;
-        border-radius:10px;
-        padding:1px 6px;
-        font-size:10px;
-        font-weight:700;
-    }}
+    html_rows.append(linha_tot("(+) Variação líquida do período", s_var, VERDE if float(s_var.sum()) >= 0 else VERMELHO, cls="tot"))
+    add_export("(+) Variação líquida do período", s_var)
 
-    /* Painel interno de transações ao expandir a linha */
-    table.fcx-table > tbody > tr.detail-row > td.detail-cell {{
-        padding:0 !important;
-        height:auto !important;
-        background:#f8fafc !important;
-        text-align:left !important;
-        position:static !important;
-        width:auto !important;
-        min-width:0 !important;
-        max-width:none !important;
-        overflow:visible !important;
-        border-right:none !important;
-    }}
-    .detail-container {{
-        position:sticky;
-        left:0;
-        width:var(--vw, 100%);
-        padding:10px 18px 14px 34px;
-        border-bottom:1px solid #cbd5e1;
-        background:#f8fafc;
-        white-space:normal;
-    }}
-    table.sub-table {{
-        width:100%;
-        max-width:1100px;
-        table-layout:fixed;
-        border-collapse:collapse;
-        background:#fff;
-        border:1px solid #e2e8f0;
-        border-radius:6px;
-        font-size:11.5px;
-    }}
-    table.sub-table th {{
-        background:#f1f5f9;
-        color:#475569;
-        font-size:10px;
-        font-weight:750;
-        padding:6px 10px;
-        text-align:left;
-        position:static !important;
-        min-width:0 !important;
-        height:auto;
-        border-bottom:1px solid #e2e8f0;
-    }}
-    table.sub-table th:nth-child(1) {{ width:92px; }}
-    table.sub-table th:nth-child(2) {{ width:170px; }}
-    table.sub-table th:nth-child(3) {{ width:200px; }}
-    table.sub-table th:nth-child(5) {{ width:130px; }}
-    table.sub-table th:last-child, table.sub-table td:last-child {{ text-align:right; white-space:nowrap; font-weight:700; }}
-    table.sub-table td {{
-        padding:6px 10px;
-        border-bottom:1px solid #f1f5f9;
-        text-align:left;
-        position:static !important;
-        white-space:normal;
-        word-break:break-word;
-        height:auto;
-        min-width:0;
-    }}
-    </style>
-    </head>
-    <body>
-    <div class="matrix-bar">
-        <span>DEMONSTRATIVO PROJETADO • FCO / FCI / FCF / SALDO DE CAIXA • POR CLASSIFICAÇÃO FINANCEIRA</span>
-        <span class="matrix-hint">Clique em qualquer linha com ▶ para abrir as transações</span>
-    </div>
-    <div class="fcx-wrap">
-        <table class="fcx-table">
-            <thead><tr><th>DESCRIÇÃO</th>{header_cells}</tr></thead>
-            <tbody>{"".join(body_html)}</tbody>
-        </table>
-    </div>
+    saldo_fim_total = float(s_fim.iloc[-1]) if len(s_fim) else float(saldo_inicial)
+    html_rows.append(linha_tot("(=) Saldo final projetado", s_fim, VERDE if saldo_fim_total >= 0 else VERMELHO, cls="saldo", is_saldo=True))
+    add_export("(=) Saldo final projetado", s_fim, is_saldo=True)
 
-    <script>
-    const DETALHES = {payload_json};
+    # Não classificado
+    if not df_nc.empty:
+        html_rows.append(
+            "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
+            + "".join("<td></td>" for _ in col_keys) + "<td></td></tr>"
+        )
+        add_export("ITENS SEM CLASSIFICAÇÃO GERENCIAL", s_nc)
+        html_rows.extend(linhas_com_abertura(df_nc, AMBAR, "nc"))
 
-    function escapeHtml(str) {{
-        return String(str || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
-    }}
+    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + col_labels + ["Total"]))
+    tabela_html = (
+        f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
+        f"{''.join(html_rows)}</table></div>"
+    )
 
-    function ajustarLargura() {{
-        const wrap = document.querySelector(".fcx-wrap");
-        if (wrap) document.documentElement.style.setProperty("--vw", (wrap.clientWidth - 2) + "px");
-    }}
-    window.addEventListener("load", ajustarLargura);
-    window.addEventListener("resize", ajustarLargura);
-    ajustarLargura();
-
-    function toggleRow(rid) {{
-        const tr = document.getElementById("detail_" + rid);
-        const caret = document.getElementById("caret_" + rid);
-        const box = document.getElementById("box_" + rid);
-        if (!tr) return;
-
-        const isHidden = (tr.style.display === "none" || tr.style.display === "");
-        if (isHidden) {{
-            if (!box.dataset.rendered) {{
-                const itens = DETALHES[rid] || [];
-                let rowsHtml = itens.map(it => {{
-                    const cls = it.valor >= 0 ? "v-pos" : "v-neg";
-                    return `<tr>
-                        <td>${{escapeHtml(it.data)}}</td>
-                        <td>${{escapeHtml(it.fonte)}}</td>
-                        <td>${{escapeHtml(it.classificacao)}}</td>
-                        <td>${{escapeHtml(it.detalhe)}}</td>
-                        <td class="${{cls}}">${{escapeHtml(it.valor_fmt)}}</td>
-                    </tr>`;
-                }}).join("");
-
-                box.innerHTML = `
-                    <table class="sub-table">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Origem</th>
-                                <th>Classificação</th>
-                                <th>Descrição / Composição</th>
-                                <th>Valor</th>
-                            </tr>
-                        </thead>
-                        <tbody>${{rowsHtml}}</tbody>
-                    </table>
-                `;
-                box.dataset.rendered = "1";
-            }}
-            tr.style.display = "table-row";
-            if (caret) caret.classList.add("open");
-        }} else {{
-            tr.style.display = "none";
-            if (caret) caret.classList.remove("open");
-        }}
-    }}
-    </script>
-    </body>
-    </html>
-    """
-
-    return component_html, altura_estimada, pd.DataFrame(export_rows), float(s_var.sum())
+    return tabela_html, pd.DataFrame(export_rows), float(s_var.sum())
 
 def gerar_excel_bytes(df_matriz, df_detalhe):
     buf = io.BytesIO()
@@ -1161,7 +938,7 @@ inicio_ts = pd.Timestamp(inicio)
 fim_ts = inicio_ts + pd.Timedelta(days=int(dias) - 1)
 base_mov = montar_projecao(fontes, inicio_ts, int(dias), int(media_dias), mapping)
 
-component_html, altura_matriz, df_export, variacao_liquida = construir_matriz_component(
+tabela_html, df_export, variacao_liquida = construir_matriz_html(
     base_mov,
     inicio_ts,
     int(dias),
@@ -1182,11 +959,11 @@ st.markdown(f"""
     </div>
     <div class="hero-badges">
         <div class="badge-box">
-            <div class="badge-lbl">Período</div>
+            <span class="badge-lbl">Período</span>
             <div class="badge-val">{periodo_str}</div>
         </div>
         <div class="badge-box">
-            <div class="badge-lbl">Variação líquida</div>
+            <span class="badge-lbl">Variação líquida</span>
             <div class="badge-val {var_cls}">{brl_compacto(variacao_liquida)}</div>
         </div>
     </div>
@@ -1200,4 +977,8 @@ st.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
-components.html(component_html, height=altura_matriz, scrolling=True)
+st.markdown(
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
+    unsafe_allow_html=True,
+)
+st.markdown(tabela_html, unsafe_allow_html=True)
