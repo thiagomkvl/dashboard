@@ -292,8 +292,6 @@ def extract_year(value, default=None):
             ano = int(anos_4_digitos[-1])
             if 1900 <= ano <= 2200:
                 return ano
-        # Para formatos como Jan/26, considera o último bloco numérico,
-        # evitando interpretar o mês 01 de 01/2026 como ano 2001.
         nums_2_digitos = re.findall(r'\d{2}', texto)
         if nums_2_digitos:
             y = int(nums_2_digitos[-1])
@@ -340,11 +338,6 @@ def carregar_dados_obras_detalhado():
         df_orc = conn.read(worksheet="Orçamento_Obra", ttl=0)
         df_orc.columns = [str(c).strip() for c in df_orc.columns]
 
-        map_meses = {
-            'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'MARCO': 3,
-            'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6, 'JULHO': 7,
-            'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
-        }
         meses_existentes = [c for c in df_orc.columns if extract_month(c) in range(1, 13)]
         col_resumo = next((c for c in df_orc.columns if 'RESUMO' in c.upper() or 'OBRA' in c.upper()), df_orc.columns[0])
         col_item = next((c for c in df_orc.columns if c.upper() in [
@@ -354,15 +347,12 @@ def carregar_dados_obras_detalhado():
         df_orc = df_orc[df_orc[col_resumo].astype(str).str.upper().str.strip() != 'TOTAL'].copy()
         df_orc['Obra'] = df_orc[col_resumo].astype(str).str.upper().str.strip()
         col_ano_orc = next((c for c in df_orc.columns if str(c).strip().upper() in ['ANO', 'ANO ORCAMENTO', 'ANO ORÇAMENTO', 'EXERCICIO', 'EXERCÍCIO']), None)
-        # Compatibilidade: linhas antigas sem coluna ANO continuam em 2026.
         df_orc['Ano'] = df_orc[col_ano_orc].apply(lambda x: extract_year(x, 2026)) if col_ano_orc else 2026
 
         if col_item and col_item != col_resumo:
             df_orc['Item'] = df_orc[col_item].fillna('GERAL').astype(str).str.strip().str.upper()
             id_vars = ['Obra', 'Item', 'Ano']
         else:
-            # A aba de resumo por obra não possui coluna de item: não usar Custo R$, %
-            # ou qualquer coluna de competência como identificador do lançamento.
             df_orc['Item'] = df_orc['Obra']
             id_vars = ['Obra', 'Item', 'Ano']
 
@@ -444,7 +434,6 @@ def carregar_dados_obras_detalhado():
             df_recursos_raw = conn.read(worksheet="Recursos_Obra", ttl=0)
             valid_cols_rec = [c for c in df_recursos_raw.columns if str(c).strip() and not str(c).strip().lower().startswith('unnamed')]
             df_recursos = df_recursos_raw[valid_cols_rec].copy()
-            # Normaliza as captações pela data efetiva e pelo valor alocado à obra.
             col_data_rec = next((c for c in df_recursos.columns if str(c).strip().lower() in ['data', 'data alocacao', 'data alocação']), None)
             col_valor_rec = next((c for c in df_recursos.columns if 'recurso' in str(c).lower() and 'aloc' in str(c).lower()), None)
             if col_data_rec and col_valor_rec:
@@ -470,7 +459,6 @@ def carregar_dados_obras_detalhado():
         df_real['Ano'] = datas_pgto.dt.year
         ano_texto = df_real['MÊS'].apply(lambda x: extract_year(x, None))
         df_real['Ano'] = df_real['Ano'].fillna(ano_texto)
-        # Se a linha antiga não tiver ano na data nem em MÊS, mantém o histórico no ano-base 2026.
         df_real['Ano'] = pd.to_numeric(df_real['Ano'], errors='coerce').fillna(2026).astype(int)
         df_real['Valor_Realizado'] = df_real['Valor'].apply(limpa_valor)
         col_forn = next((c for c in df_real.columns if 'forn' in c.lower()), 'Fornecedor')
@@ -485,11 +473,26 @@ def carregar_dados_obras_detalhado():
 
 
 df_orcado, df_realizado, df_fases, df_recursos = carregar_dados_obras_detalhado()
-if df_orcado.empty and df_realizado.empty:
+if df_orcado.empty and df_realizado.empty and df_fases.empty:
     st.warning("Nenhum dado encontrado nas abas do banco de dados.")
     st.stop()
 
-obras_orcadas = df_orcado['Obra'].dropna().astype(str).unique().tolist() if not df_orcado.empty else []
+# Quando Fases_Obra existe, ela passa a ser a fonte base do orçamento detalhado
+# para manter KPI, gráficos, fluxo e detalhamento consistentes.
+usa_fases_como_orcamento = (
+    not df_fases.empty
+    and {'Obra', 'Fase_Tarefa', 'Ano', 'Mes', 'Competencia', 'Valor_Fase'}.issubset(df_fases.columns)
+)
+
+if usa_fases_como_orcamento:
+    df_orc_base_fonte = df_fases.rename(columns={
+        'Fase_Tarefa': 'Item',
+        'Valor_Fase': 'Valor_Orcado'
+    })[['Obra', 'Item', 'Ano', 'Mes', 'Competencia', 'Valor_Orcado']].copy()
+else:
+    df_orc_base_fonte = df_orcado.copy()
+
+obras_orcadas = df_orc_base_fonte['Obra'].dropna().astype(str).unique().tolist() if not df_orc_base_fonte.empty else []
 obras_realizadas = df_realizado['Obra'].dropna().astype(str).unique().tolist() if not df_realizado.empty else []
 todas_obras = set(obras_orcadas) | set(obras_realizadas)
 lista_obras = sorted([o for o in todas_obras if o.strip() not in ['NAN', '0', '', 'DIVERSAS', 'SEGUROS']])
@@ -498,7 +501,7 @@ CORES_OBRA = mapa_cores_obras(lista_obras)
 # ==============================================================================
 # FILTROS
 # ==============================================================================
-df_orc_filtrado = df_orcado.copy()
+df_orc_filtrado = df_orc_base_fonte.copy()
 df_real_filtrado = df_realizado.copy()
 df_fases_filtrado = df_fases.copy()
 
@@ -550,11 +553,9 @@ total_realizado = df_real_filtrado['Valor_Realizado'].sum()
 saldo_orcamento = total_orcado - total_realizado
 consumo_geral_perc = (total_realizado / total_orcado * 100) if total_orcado > 0 else 0
 
-# Total captado continua sendo exibido no KPI; no fluxo, cada captação
-# entra somente na competência da sua data (não no saldo inicial).
 caixa_inicial_base = float(df_recursos['_Valor_Alocado'].sum()) if not df_recursos.empty and '_Valor_Alocado' in df_recursos.columns else 0.0
 if caixa_inicial_base <= 0:
-    caixa_inicial_base = 10_000_000.0  # compatibilidade caso a aba não esteja disponível
+    caixa_inicial_base = 10_000_000.0
 caixa_disponivel = caixa_inicial_base - total_realizado
 df_real_ano = df_realizado.copy()
 mes_atual = int(mes_selecionado) if mes_selecionado != "Todos" else (int(df_real_ano['Mes'].max()) if not df_real_ano.empty else 0)
@@ -637,7 +638,7 @@ st.markdown(f"""
 # ==============================================================================
 # EVOLUÇÃO MENSAL · TODAS AS COMPETÊNCIAS (COM TOTALIZADORES)
 # ==============================================================================
-df_orc_m_base = df_orcado.copy()
+df_orc_m_base = df_orc_base_fonte.copy()
 df_real_m_base = df_realizado[df_realizado['Mes'] > 0].copy()
 if obra_selecionada != "Todas":
     df_orc_m_base = df_orc_m_base[df_orc_m_base['Obra'] == obra_selecionada]
@@ -665,9 +666,7 @@ df_real_mensal = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum() 
 df_linha = pd.DataFrame({'Competencia': periodos_labels})
 df_linha['Valor_Orcado'] = df_linha['Competencia'].map(df_orc_mensal).fillna(0.0)
 df_linha['Valor_Realizado'] = df_linha['Competencia'].map(df_real_mensal)
-# O corte entre realizado e projetado considera somente competências com
-# lançamentos efetivamente realizados (valor diferente de zero). Assim, uma
-# linha vazia ou uma data inválida não empurra indevidamente a projeção.
+
 if not df_real_m_base.empty:
     _real_validos = df_real_m_base[
         df_real_m_base['Mes'].between(1, 12)
@@ -763,9 +762,6 @@ with col_g2:
 # ==============================================================================
 st.markdown("<div class='section-title'>Fluxo de caixa · Realizado vs Projetado</div>", unsafe_allow_html=True)
 
-# Fluxo híbrido: competências até o último mês com pagamento registrado
-# usam exclusivamente Realizado_Obra; competências posteriores usam
-# exclusivamente Orçamento_Obra. Nunca somar realizado + orçamento no mesmo mês.
 saidas_real_dict = df_real_m_base.groupby('Competencia')['Valor_Realizado'].sum().to_dict()
 saidas_orc_dict = df_orc_m_base.groupby('Competencia')['Valor_Orcado'].sum().to_dict()
 max_comp_real = max_periodo_real
@@ -793,7 +789,6 @@ if not df_recursos.empty and {'_Ano', '_Mes', '_Valor_Alocado'}.issubset(df_recu
             label_rec = f"{meses_nomes[int(rr['_Mes'])]}-{int(rr['_Ano'])}"
             recursos_por_comp[label_rec] = recursos_por_comp.get(label_rec, 0.0) + float(rr['_Valor_Alocado'])
 
-# O saldo começa zerado. As captações entram na competência indicada em Recursos_Obra.
 curr_saldo = 0.0
 for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
     s_ini_list.append(curr_saldo)
@@ -804,7 +799,6 @@ for comp, (ano_p, mes_p) in zip(periodos_labels, periodos):
     curr_saldo += recurso_m - saida_m
     s_fim_list.append(curr_saldo)
 
-# Faixas do cabeçalho: competências já realizadas em verde e futuras projetadas em salmão.
 n_real = sum(1 for p in periodos if max_comp_real and p <= max_comp_real)
 n_proj = len(periodos_labels) - n_real
 
@@ -819,7 +813,6 @@ for comp in periodos_labels:
     html_fluxo += f"<th>{comp}</th>"
 html_fluxo += "</tr></thead><tbody>"
 
-# Saldo inicial preserva a cor de cada fase: verde no realizado e azul no projetado.
 html_fluxo += "<tr><td class='row-label'>Saldo Inicial</td>"
 for idx, val in enumerate(s_ini_list):
     css = "val-real" if max_comp_real and periodos[idx] <= max_comp_real else "val-orc"
@@ -827,7 +820,6 @@ for idx, val in enumerate(s_ini_list):
     html_fluxo += f"<td class='{css}' style='color:{color};font-weight:700'>{formatar_moeda_curta(val)}</td>"
 html_fluxo += "</tr>"
 
-# Captações no mesmo padrão expansível de Saídas Totais.
 html_fluxo += "<tbody class='obra-group recurso-group'><tr>"
 html_fluxo += (
     "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
@@ -838,7 +830,6 @@ for val in recursos_mes_list:
     html_fluxo += f"<td style='color:#059669;font-weight:800'>{formatar_moeda_curta(val) if val else '-'}</td>"
 html_fluxo += "</tr>"
 
-# Detalhamento de cada captação, preservando produto, contrato, data e valor.
 for _, rr in df_recursos.iterrows():
     ano_rec, mes_rec = rr.get('_Ano'), rr.get('_Mes')
     if pd.isna(ano_rec) or pd.isna(mes_rec):
@@ -861,7 +852,6 @@ for _, rr in df_recursos.iterrows():
     html_fluxo += "</tr>"
 html_fluxo += "</tbody>"
 
-# Saídas: linha principal vermelha; apenas os detalhes expandidos ficam em preto.
 html_fluxo += "<tbody class='obra-group'><tr>"
 html_fluxo += (
     "<td class='row-label'><label class='drilldown-label' style='padding-left:0;'>"
@@ -901,7 +891,6 @@ if not df_fases_filtrado.empty and {'Obra', 'Fase_Tarefa', 'Competencia', 'Valor
     df_fases_tab = df_fases_tab[df_fases_tab['Competencia'].isin(periodos_labels)].copy()
 
     if not df_fases_tab.empty:
-        # Consolida apenas linhas de fase/tarefa; linhas TOTAL da planilha já foram excluídas.
         pivot_fases = pd.pivot_table(
             df_fases_tab,
             index=['Obra', 'Fase_Tarefa'],
@@ -924,7 +913,6 @@ if not df_fases_filtrado.empty and {'Obra', 'Fase_Tarefa', 'Competencia', 'Valor
         totais_col_orc = {comp: 0.0 for comp in periodos_labels}
         total_geral_orc = 0.0
 
-        # Ordena obras pelo total efetivamente composto pelas fases da Fases_Obra.
         totais_por_obra = pivot_fases.sum(axis=1).groupby(level=0).sum().sort_values(ascending=False)
 
         for obra_name in totais_por_obra.index:
@@ -1092,3 +1080,4 @@ with st.sidebar:
         f"<div class='side-card'><small>Última atualização</small><b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
         unsafe_allow_html=True,
     )
+```[cite: 1, 2]
