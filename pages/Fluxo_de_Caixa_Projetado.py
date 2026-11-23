@@ -5,7 +5,6 @@ import unicodedata
 from datetime import date, datetime
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 try:
@@ -31,18 +30,6 @@ ABAS = [
 CACHE_SEGUNDOS = 90
 SALDO_INICIAL_MANUAL = None  # Informe o saldo atual aqui se não for reconhecido em Resumo_FCx.
 
-CORES = {
-    "azul": "#2563eb",
-    "verde": "#059669",
-    "vermelho": "#dc2626",
-    "ambar": "#d97706",
-    "roxo": "#7c3aed",
-    "texto": "#0f172a",
-    "muted": "#64748b",
-    "borda": "#e2e8f0",
-    "fundo": "#f8fafc",
-}
-
 MESES_PT = {
     1: "JAN", 2: "FEV", 3: "MAR", 4: "ABR", 5: "MAI", 6: "JUN",
     7: "JUL", 8: "AGO", 9: "SET", 10: "OUT", 11: "NOV", 12: "DEZ"
@@ -62,7 +49,7 @@ html, body, [class*="css"] { font-family: Inter, Segoe UI, Arial, sans-serif; }
 
 /* Hero / Header idêntico ao Realizado */
 .hero { display:flex; justify-content:space-between; align-items:flex-start; gap:15px;
-        padding:2px 0 14px; margin-bottom:6px; }
+        padding:2px 0 12px; margin-bottom:6px; }
 .hero h1 { margin:0; font-size:23px; font-weight:850; color:#0f172a; letter-spacing:-0.3px; }
 .hero p { margin:4px 0 0; color:#64748b; font-size:12.5px; }
 .hero-badges { display:flex; gap:10px; align-items:center; }
@@ -71,21 +58,6 @@ html, body, [class*="css"] { font-family: Inter, Segoe UI, Arial, sans-serif; }
 .badge-val { font-size:12.5px; font-weight:800; color:#0f172a; margin-top:2px; }
 .badge-val.pos { color:#059669; }
 .badge-val.neg { color:#dc2626; }
-
-/* KPIs 5 colunas */
-.kpis { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; margin:8px 0 14px; }
-.kpi { background:#fff; border:1px solid #e2e8f0; border-left:4px solid #2563eb;
-       border-radius:10px; padding:12px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.03); }
-.kpi.green { border-left-color:#059669; }
-.kpi.red { border-left-color:#dc2626; }
-.kpi.amber { border-left-color:#d97706; }
-.kpi.purple { border-left-color:#7c3aed; }
-.kpi-label { color:#64748b; font-size:10px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
-.kpi-value { margin:6px 0 4px; font-size:clamp(16px,1.45vw,21px); font-weight:850; white-space:nowrap; }
-.kpi-value.pos { color:#059669; }
-.kpi-value.neg { color:#dc2626; }
-.kpi-value.neu { color:#0f172a; }
-.kpi-sub { color:#64748b; font-size:10.5px; }
 
 /* Barra de título da matriz */
 .matrix-bar {
@@ -98,7 +70,7 @@ html, body, [class*="css"] { font-family: Inter, Segoe UI, Arial, sans-serif; }
     border-radius:8px 8px 0 0;
     border:1px solid #cbd5e1;
     border-bottom:none;
-    margin-top:12px;
+    margin-top:10px;
     text-transform:uppercase;
 }
 
@@ -110,9 +82,6 @@ html, body, [class*="css"] { font-family: Inter, Segoe UI, Arial, sans-serif; }
     border:1px solid #cbd5e1;
     border-radius:0 0 8px 8px;
     box-shadow:0 1px 3px rgba(15,23,42,0.04);
-}
-.fcx-wrap.rounded-top {
-    border-radius:8px;
 }
 table.fcx-table {
     width:100%;
@@ -203,11 +172,7 @@ tr.row-item td:first-child {
 .dot-purple { background:#8b5cf6; }
 .caret { color:#2563eb; font-size:9px; margin-right:6px; }
 
-.sec { margin:18px 0 9px; padding-left:10px; border-left:3px solid #2563eb;
-       font-size:12px; font-weight:850; letter-spacing:.5px; text-transform:uppercase; }
-
 @media(max-width:950px){
-    .kpis{grid-template-columns:repeat(2,minmax(140px,1fr));}
     .hero{flex-direction:column;}
 }
 </style>
@@ -383,7 +348,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
     fim = inicio + pd.Timedelta(days=dias - 1)
     movs = []
 
-    # 1. 1181 — Receitas previstas por data de vencimento
+    # 1. 1181 — Receitas previstas por data de vencimento (Convênios)
     df = dados.get("1181", pd.DataFrame())
     if not df.empty:
         c_data = col(df, ["Dt. Vencimento", "Data Vencimento", "Vencimento"])
@@ -398,7 +363,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 status = work[c_status].map(norm)
                 work = work[~status.isin(["cancelado", "cancelada", "excluido", "excluida"])]
             for _, r in work.iterrows():
-                raw_cat = str(r.get(c_cat, "Outras Receitas") or "Outras Receitas").strip()
+                raw_cat = str(r.get(c_cat, "Convênio") or "Convênio").strip()
                 cls_map, _ = classificar(raw_cat, mapping)
                 classif = cls_map if cls_map != "Não classificado" else raw_cat
                 m = criar_mov(
@@ -552,19 +517,10 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
     cols_base = ["Data", "Valor", "Fonte", "Categoria", "Classificacao", "Fluxo", "Subgrupo", "Detalhe"]
     base = pd.DataFrame(movs, columns=cols_base) if movs else pd.DataFrame(columns=cols_base)
     base = base[(base["Data"] >= inicio) & (base["Data"] <= fim)].copy()
-    base["Tipo"] = base["Valor"].apply(lambda x: "Entrada" if x > 0 else "Saída")
-
-    diario = base.groupby("Data", as_index=False).agg(
-        Entradas=("Valor", lambda s: s[s > 0].sum()),
-        Saídas=("Valor", lambda s: -s[s < 0].sum()),
-        Líquido=("Valor", "sum"),
-    )
-    calendario = pd.DataFrame({"Data": pd.date_range(inicio, fim, freq="D")})
-    diario = calendario.merge(diario, on="Data", how="left").fillna(0)
-    return base, diario, media_aplicada
+    return base
 
 # ===================== CONSTRUÇÃO DA MATRIZ GERENCIAL =========================
-def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="Diária"):
+def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="Diária", consolidar_receitas=True):
     datas = pd.date_range(inicio, inicio + pd.Timedelta(days=dias - 1), freq="D")
     df = base_mov.copy()
 
@@ -597,7 +553,6 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
             .unstack(fill_value=0.0)
             .reindex(columns=col_keys, fill_value=0.0)
         )
-        # Ordena pelo maior impacto absoluto total
         ordem = grp.abs().sum(axis=1).sort_values(ascending=False).index
         out = []
         for cls in ordem:
@@ -606,7 +561,6 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
                 "tipo": "item",
                 "dot": dot_color,
                 "vals": grp.loc[cls],
-                "force_sign": None,
             })
         return out
 
@@ -616,67 +570,76 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
     # ---------------- 1. FCO ----------------
     df_fco = df[df["Fluxo"] == "FCO"] if not df.empty else pd.DataFrame()
     s_fco = get_serie(df_fco)
-    linhas.append({"label": "1. FLUXO DE CAIXA OPERACIONAL (FCO)", "tipo": "section", "vals": s_fco, "force_sign": None})
+    linhas.append({"label": "1. FLUXO DE CAIXA OPERACIONAL (FCO)", "tipo": "section", "vals": s_fco})
 
-    # (+) Receitas operacionais
+    # (+) Receitas operacionais (com opção de consolidação)
     df_rec = df_fco[df_fco["Subgrupo"] == "(+) Receitas operacionais"] if not df_fco.empty else pd.DataFrame()
     s_rec = get_serie(df_rec)
-    linhas.append({"label": "(+) Receitas operacionais", "tipo": "subtotal", "vals": s_rec, "force_sign": "pos"})
-    linhas.extend(linhas_classificacao(df_rec, "dot-green"))
+    linhas.append({"label": "(+) Receitas operacionais", "tipo": "subtotal", "vals": s_rec})
+    if consolidar_receitas:
+        linhas.append({
+            "label": "Convênios (Consolidado)",
+            "tipo": "item",
+            "dot": "dot-green",
+            "vals": s_rec,
+            "icon": "▸",
+        })
+    else:
+        linhas.extend(linhas_classificacao(df_rec, "dot-green"))
 
     # (-) Custos e despesas operacionais
     df_desp = df_fco[df_fco["Subgrupo"] == "(-) Custos e despesas operacionais"] if not df_fco.empty else pd.DataFrame()
     s_desp = get_serie(df_desp)
-    linhas.append({"label": "(-) Custos e despesas operacionais", "tipo": "subtotal", "vals": s_desp, "force_sign": "neg"})
+    linhas.append({"label": "(-) Custos e despesas operacionais", "tipo": "subtotal", "vals": s_desp})
     linhas.extend(linhas_classificacao(df_desp, "dot-blue"))
 
     # (-) Impostos
     df_imp = df_fco[df_fco["Subgrupo"] == "(-) Impostos"] if not df_fco.empty else pd.DataFrame()
     s_imp = get_serie(df_imp)
-    linhas.append({"label": "(-) Impostos", "tipo": "subtotal", "vals": s_imp, "force_sign": "neg"})
+    linhas.append({"label": "(-) Impostos", "tipo": "subtotal", "vals": s_imp})
     linhas.extend(linhas_classificacao(df_imp, "dot-amber"))
 
     # ---------------- 2. FCI ----------------
     df_fci = df[df["Fluxo"] == "FCI"] if not df.empty else pd.DataFrame()
     s_fci = get_serie(df_fci)
-    linhas.append({"label": "2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", "tipo": "section", "vals": s_fci, "force_sign": None})
+    linhas.append({"label": "2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", "tipo": "section", "vals": s_fci})
 
     df_fci_in = df_fci[df_fci["Valor"] > 0] if not df_fci.empty else pd.DataFrame()
     if not df_fci_in.empty:
-        linhas.append({"label": "(+) Receitas de aplicações financeiras", "tipo": "subtotal", "vals": get_serie(df_fci_in), "force_sign": "pos"})
+        linhas.append({"label": "(+) Receitas de aplicações financeiras", "tipo": "subtotal", "vals": get_serie(df_fci_in)})
         linhas.extend(linhas_classificacao(df_fci_in, "dot-green"))
 
     df_fci_out = df_fci[df_fci["Valor"] < 0] if not df_fci.empty else pd.DataFrame()
-    linhas.append({"label": "(-) Desembolsos em CAPEX", "tipo": "subtotal", "vals": get_serie(df_fci_out), "force_sign": "neg"})
+    linhas.append({"label": "(-) Desembolsos em CAPEX", "tipo": "subtotal", "vals": get_serie(df_fci_out)})
     linhas.extend(linhas_classificacao(df_fci_out, "dot-red"))
 
     # ---------------- 3. FCF ----------------
     df_fcf = df[df["Fluxo"] == "FCF"] if not df.empty else pd.DataFrame()
     s_fcf = get_serie(df_fcf)
-    linhas.append({"label": "3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", "tipo": "section", "vals": s_fcf, "force_sign": None})
+    linhas.append({"label": "3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", "tipo": "section", "vals": s_fcf})
 
     df_fcf_in = df_fcf[df_fcf["Valor"] > 0] if not df_fcf.empty else pd.DataFrame()
     if not df_fcf_in.empty:
-        linhas.append({"label": "(+) Captações e Empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_in), "force_sign": "pos"})
+        linhas.append({"label": "(+) Captações e Empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_in)})
         linhas.extend(linhas_classificacao(df_fcf_in, "dot-green"))
 
     df_fcf_out = df_fcf[df_fcf["Valor"] < 0] if not df_fcf.empty else pd.DataFrame()
-    linhas.append({"label": "(-) Amortização e juros de empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_out), "force_sign": "neg"})
+    linhas.append({"label": "(-) Amortização e juros de empréstimos", "tipo": "subtotal", "vals": get_serie(df_fcf_out)})
     linhas.extend(linhas_classificacao(df_fcf_out, "dot-purple"))
 
     # ---------------- NÃO CLASSIFICADO (se houver) ----------------
     df_nc = df[df["Fluxo"] == "NAO_CLASSIFICADO"] if not df.empty else pd.DataFrame()
     if not df_nc.empty:
         s_nc = get_serie(df_nc)
-        linhas.append({"label": "ITENS SEM CLASSIFICAÇÃO GERENCIAL", "tipo": "section", "vals": s_nc, "force_sign": None})
+        linhas.append({"label": "ITENS SEM CLASSIFICAÇÃO GERENCIAL", "tipo": "section", "vals": s_nc})
         linhas.extend(linhas_classificacao(df_nc, "dot-amber"))
     else:
         s_nc = serie_vazia()
 
     # ---------------- VARIAÇÃO E SALDO DE CAIXA ----------------
     s_var = s_fco + s_fci + s_fcf + s_nc
-    linhas.append({"label": "VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", "tipo": "highlight", "vals": s_var, "force_sign": None})
-    linhas.append({"label": "4. SALDO DE CAIXA", "tipo": "section", "vals": serie_vazia(), "force_sign": None, "blank_vals": True})
+    linhas.append({"label": "VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)", "tipo": "highlight", "vals": s_var})
+    linhas.append({"label": "4. SALDO DE CAIXA", "tipo": "section", "vals": serie_vazia(), "blank_vals": True})
 
     s_ini = serie_vazia()
     s_fim = serie_vazia()
@@ -686,9 +649,9 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
         acum += float(s_var[k])
         s_fim[k] = acum
 
-    linhas.append({"label": "(+) Saldo inicial", "tipo": "item", "dot": None, "vals": s_ini, "force_sign": None})
-    linhas.append({"label": "(+) Variação líquida do período", "tipo": "item", "dot": None, "vals": s_var, "force_sign": None})
-    linhas.append({"label": "(=) Saldo final projetado", "tipo": "highlight", "vals": s_fim, "force_sign": None})
+    linhas.append({"label": "(+) Saldo inicial", "tipo": "item", "dot": None, "vals": s_ini})
+    linhas.append({"label": "(+) Variação líquida do período", "tipo": "item", "dot": None, "vals": s_var})
+    linhas.append({"label": "(=) Saldo final projetado", "tipo": "highlight", "vals": s_fim})
 
     # Monta HTML da tabela principal e DataFrame para exportação Excel
     header_cells = "".join([f"<th>{lbl}</th>" for lbl in col_labels]) + "<th>TOTAL PERÍODO</th>"
@@ -700,7 +663,6 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
         vals = row["vals"]
         blank_vals = row.get("blank_vals", False)
 
-        # Total da linha (para saldo inicial/final mostra início/fim do horizonte)
         if row["label"] == "(+) Saldo inicial":
             total_val = float(s_ini.iloc[0]) if len(s_ini) else float(saldo_inicial)
         elif row["label"] == "(=) Saldo final projetado":
@@ -708,9 +670,9 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
         else:
             total_val = float(vals.sum())
 
-        # Rótulo da primeira coluna
         if tipo == "item" and row.get("dot"):
-            lbl_html = f'<span class="caret">▶</span><span class="dot {row["dot"]}"></span>{row["label"]}'
+            icone = row.get("icon", "▶")
+            lbl_html = f'<span class="caret">{icone}</span><span class="dot {row["dot"]}"></span>{row["label"]}'
         else:
             lbl_html = row["label"]
 
@@ -754,67 +716,12 @@ def construir_matriz_html(base_mov, inicio, dias, saldo_inicial, granularidade="
     </div>
     """
 
-    # Monta HTML do Resumo Sintético (Expander inferior da imagem)
-    def build_resumo_rows():
-        r_list = [
-            ("(+) Saldo inicial", "highlight", s_ini, float(s_ini.iloc[0]) if len(s_ini) else float(saldo_inicial)),
-            ("1- (=) FCO", "subtotal", s_fco, float(s_fco.sum())),
-            ("(+) Entrada FCO", "item", get_serie(df_fco[df_fco["Valor"] > 0]) if not df_fco.empty else serie_vazia(), float(df_fco[df_fco["Valor"] > 0]["Valor"].sum()) if not df_fco.empty else 0.0),
-            ("(-) Saída FCO", "item", get_serie(df_fco[df_fco["Valor"] < 0]) if not df_fco.empty else serie_vazia(), float(df_fco[df_fco["Valor"] < 0]["Valor"].sum()) if not df_fco.empty else 0.0),
-            ("2- (=) FCI", "subtotal", s_fci, float(s_fci.sum())),
-            ("(+) Entrada FCI", "item", get_serie(df_fci[df_fci["Valor"] > 0]) if not df_fci.empty else serie_vazia(), float(df_fci[df_fci["Valor"] > 0]["Valor"].sum()) if not df_fci.empty else 0.0),
-            ("(-) Saída FCI", "item", get_serie(df_fci[df_fci["Valor"] < 0]) if not df_fci.empty else serie_vazia(), float(df_fci[df_fci["Valor"] < 0]["Valor"].sum()) if not df_fci.empty else 0.0),
-            ("3- (=) FCF", "subtotal", s_fcf, float(s_fcf.sum())),
-            ("(+) Entrada FCF", "item", get_serie(df_fcf[df_fcf["Valor"] > 0]) if not df_fcf.empty else serie_vazia(), float(df_fcf[df_fcf["Valor"] > 0]["Valor"].sum()) if not df_fcf.empty else 0.0),
-            ("(-) Saída FCF", "item", get_serie(df_fcf[df_fcf["Valor"] < 0]) if not df_fcf.empty else serie_vazia(), float(df_fcf[df_fcf["Valor"] < 0]["Valor"].sum()) if not df_fcf.empty else 0.0),
-            ("(=) Saldo final", "highlight", s_fim, float(s_fim.iloc[-1]) if len(s_fim) else float(saldo_inicial)),
-        ]
-        res_html = []
-        for lbl_r, t_r, ser_r, tot_r in r_list:
-            tds_r = [f"<td>{lbl_r}</td>"]
-            for k in col_keys:
-                v = float(ser_r[k])
-                if abs(v) < 0.005:
-                    tds_r.append('<td class="v-zero">—</td>')
-                else:
-                    c_r = "v-pos" if v > 0 else "v-neg"
-                    tds_r.append(f'<td class="{c_r}">{brl(v)}</td>')
-            if abs(tot_r) < 0.005:
-                tds_r.append('<td class="v-zero">—</td>')
-            else:
-                c_tot = "v-pos" if tot_r > 0 else "v-neg"
-                tds_r.append(f'<td class="{c_tot}">{brl(tot_r)}</td>')
-            res_html.append(f'<tr class="row-{t_r}">{"".join(tds_r)}</tr>')
-        return f"""
-        <div class="fcx-wrap rounded-top">
-            <table class="fcx-table">
-                <thead><tr><th>DESCRIÇÃO</th>{header_cells}</tr></thead>
-                <tbody>{"".join(res_html)}</tbody>
-            </table>
-        </div>
-        """
+    return html_matriz, pd.DataFrame(export_rows), float(s_var.sum())
 
-    df_export = pd.DataFrame(export_rows)
-    return html_matriz, build_resumo_rows(), df_export, {
-        "fco": float(s_fco.sum()),
-        "fci": float(s_fci.sum()),
-        "fcf": float(s_fcf.sum()),
-        "var": float(s_var.sum()),
-        "saldo_final": float(s_fim.iloc[-1]) if len(s_fim) else float(saldo_inicial),
-        "saldo_min": float(s_fim.min()) if len(s_fim) else float(saldo_inicial),
-        "rec_fco": float(s_rec.sum()),
-        "desp_fco": float(s_desp.sum()),
-        "imp_fco": float(s_imp.sum()),
-        "capex_fci": float(get_serie(df_fci_out).sum()),
-        "fcf_out": float(get_serie(df_fcf_out).sum()),
-    }
-
-def gerar_excel_bytes(df_matriz, df_detalhe):
+def gerar_excel_bytes(df_matriz):
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df_matriz.to_excel(writer, sheet_name="Demonstrativo_Projetado", index=False)
-        if not df_detalhe.empty:
-            df_detalhe.to_excel(writer, sheet_name="Movimentos_Detalhados", index=False)
     return buf.getvalue()
 
 # ============================== SIDEBAR =======================================
@@ -828,6 +735,11 @@ with st.sidebar:
         options=["Diária", "Mensal"],
         index=0 if dias <= 45 else 1,
         horizontal=True,
+    )
+    consolidar_receitas = st.checkbox(
+        "Consolidar receitas operacionais (Convênios)",
+        value=True,
+        help="Agrupa todos os convênios do 1181 em uma única linha. Desmarque para abrir por convênio."
     )
     media_dias = st.select_slider("Janela média Á Vista", options=[30, 60, 90], value=30)
     st.caption("A média de Á Vista considera dias corridos e exclui despesas identificadas como FCI.")
@@ -845,7 +757,6 @@ except Exception as exc:
 
 mapping = mapa_classificacao(fontes.get("Classificacao_FCx", pd.DataFrame()))
 saldo = SALDO_INICIAL_MANUAL
-saldo_origem = "configuração manual"
 saldo_detectado = False
 
 resumo = fontes.get("Resumo_FCx", pd.DataFrame())
@@ -859,29 +770,30 @@ if saldo is None and not resumo.empty:
             valid = dates.notna() & vals.notna()
             if valid.any():
                 saldo = float(vals[valid].iloc[-1])
-                saldo_origem = "Resumo_FCx"
                 saldo_detectado = True
         elif vals.notna().any():
             saldo = float(vals.dropna().iloc[-1])
-            saldo_origem = "Resumo_FCx"
             saldo_detectado = True
 
 if saldo is None:
     saldo = 0.0
-    saldo_origem = "não identificado"
 
 inicio_ts = pd.Timestamp(inicio)
 fim_ts = inicio_ts + pd.Timedelta(days=int(dias) - 1)
-base_mov, diario, media_avista = montar_projecao(fontes, inicio_ts, int(dias), int(media_dias), mapping)
-diario["Saldo projetado"] = float(saldo) + diario["Líquido"].cumsum()
+base_mov = montar_projecao(fontes, inicio_ts, int(dias), int(media_dias), mapping)
 
-html_matriz, html_resumo, df_export, totais = construir_matriz_html(
-    base_mov, inicio_ts, int(dias), float(saldo), granularidade=granularidade
+html_matriz, df_export, variacao_liquida = construir_matriz_html(
+    base_mov,
+    inicio_ts,
+    int(dias),
+    float(saldo),
+    granularidade=granularidade,
+    consolidar_receitas=consolidar_receitas,
 )
 
 # ============================== INTERFACE =====================================
 periodo_str = f"{inicio_ts.strftime('%d/%m/%y')} – {fim_ts.strftime('%d/%m/%y')}"
-var_cls = "pos" if totais["var"] >= 0 else "neg"
+var_cls = "pos" if variacao_liquida >= 0 else "neg"
 
 st.markdown(f"""
 <div class="hero">
@@ -896,7 +808,7 @@ st.markdown(f"""
         </div>
         <div class="badge-box">
             <div class="badge-lbl">Variação líquida</div>
-            <div class="badge-val {var_cls}">{brl_compacto(totais['var'])}</div>
+            <div class="badge-val {var_cls}">{brl_compacto(variacao_liquida)}</div>
         </div>
     </div>
 </div>
@@ -905,116 +817,11 @@ st.markdown(f"""
 if not saldo_detectado and SALDO_INICIAL_MANUAL is None:
     st.warning("Saldo inicial não identificado automaticamente em Resumo_FCx. Configure `SALDO_INICIAL_MANUAL` no código para que o saldo acumulado parta do caixa real.")
 
-# 5 KPIs no mesmo layout do Realizado
-st.markdown(f"""
-<div class="kpis">
-    <div class="kpi {'green' if totais['fco']>=0 else 'red'}">
-        <div class="kpi-label">FCO · Operacional</div>
-        <div class="kpi-value {'pos' if totais['fco']>=0 else 'neg'}">{brl_kpi(totais['fco'])}</div>
-        <div class="kpi-sub">Rec. {brl_compacto(totais['rec_fco'])} · Desp. {brl_compacto(totais['desp_fco'])} · Imp. {brl_compacto(totais['imp_fco'])}</div>
-    </div>
-    <div class="kpi amber">
-        <div class="kpi-label">FCI · Investimentos</div>
-        <div class="kpi-value {'pos' if totais['fci']>=0 else 'neg'}">{brl_kpi(totais['fci'])}</div>
-        <div class="kpi-sub">CAPEX / Obras {brl_compacto(totais['capex_fci'])}</div>
-    </div>
-    <div class="kpi purple">
-        <div class="kpi-label">FCF · Financiamento</div>
-        <div class="kpi-value {'pos' if totais['fcf']>=0 else 'neg'}">{brl_kpi(totais['fcf'])}</div>
-        <div class="kpi-sub">Amort. + Juros {brl_compacto(totais['fcf_out'])}</div>
-    </div>
-    <div class="kpi {'green' if totais['var']>=0 else 'red'}">
-        <div class="kpi-label">Variação Líquida de Caixa</div>
-        <div class="kpi-value {'pos' if totais['var']>=0 else 'neg'}">{brl_kpi(totais['var'])}</div>
-        <div class="kpi-sub">FCO + FCI + FCF</div>
-    </div>
-    <div class="kpi {'green' if totais['saldo_final']>=0 else 'red'}">
-        <div class="kpi-label">Saldo Final de Caixa</div>
-        <div class="kpi-value {'pos' if totais['saldo_final']>=0 else 'neg'}">{brl_kpi(totais['saldo_final'])}</div>
-        <div class="kpi-sub">Ini. {brl_compacto(saldo)} · Mín. {brl_compacto(totais['saldo_min'])}</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Botão Baixar Excel igual ao Realizado
-excel_data = gerar_excel_bytes(df_export, base_mov)
 st.download_button(
     label="⬇ Baixar Excel",
-    data=excel_data,
+    data=gerar_excel_bytes(df_export),
     file_name=f"Fluxo_Caixa_Projetado_{inicio_ts.strftime('%Y%m%d')}_{dias}d.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
-# Demonstrativo Matricial Principal (Linhas por Classificação Financeira)
 st.markdown(html_matriz, unsafe_allow_html=True)
-
-# Resumo Sintético no padrão do Realizado
-with st.expander("Resumo do fluxo de caixa", expanded=True):
-    st.markdown(html_resumo, unsafe_allow_html=True)
-
-# Gráficos de apoio abaixo do demonstrativo
-st.markdown('<div class="sec">Evolução diária do caixa</div>', unsafe_allow_html=True)
-col_g1, col_g2 = st.columns(2)
-with col_g1:
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=diario["Data"], y=diario["Saldo projetado"], name="Saldo projetado",
-        mode="lines+markers", line=dict(color=CORES["azul"], width=2.5),
-        fill="tozeroy", fillcolor="rgba(37,99,235,0.08)"
-    ))
-    fig.add_hline(y=0, line_dash="dash", line_color=CORES["vermelho"], opacity=.65)
-    fig.update_layout(
-        height=300, margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="white",
-        plot_bgcolor="white", font=dict(family="Inter, Arial", color="#334155"),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(gridcolor="#e2e8f0", tickprefix="R$ ", tickformat=",.0f"),
-        hovermode="x unified"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_g2:
-    fig2 = go.Figure()
-    fig2.add_bar(x=diario["Data"], y=diario["Entradas"], name="Entradas", marker_color=CORES["verde"])
-    fig2.add_bar(x=diario["Data"], y=-diario["Saídas"], name="Saídas", marker_color=CORES["vermelho"])
-    fig2.update_layout(
-        height=300, barmode="relative", margin=dict(l=10, r=10, t=20, b=10),
-        paper_bgcolor="white", plot_bgcolor="white",
-        font=dict(family="Inter, Arial", color="#334155"),
-        legend=dict(orientation="h", y=1.08, x=0), xaxis=dict(showgrid=False),
-        yaxis=dict(gridcolor="#e2e8f0", tickprefix="R$ ", tickformat=",.0f")
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-# Detalhamento analítico opcional
-with st.expander("Detalhamento analítico dos lançamentos projetados"):
-    if base_mov.empty:
-        st.info("Nenhum movimento previsto foi encontrado no período selecionado.")
-    else:
-        c_f1, c_f2 = st.columns(2)
-        with c_f1:
-            opcoes_fluxo = ["Todos"] + sorted(base_mov["Fluxo"].dropna().unique().tolist())
-            fluxo_sel = st.selectbox("Filtrar grupo de fluxo", opcoes_fluxo)
-        with c_f2:
-            opcoes_cls = ["Todas"] + sorted(base_mov["Classificacao"].dropna().unique().tolist())
-            cls_sel = st.selectbox("Filtrar classificação financeira", opcoes_cls)
-
-        detalhado = base_mov.copy()
-        if fluxo_sel != "Todos":
-            detalhado = detalhado[detalhado["Fluxo"] == fluxo_sel]
-        if cls_sel != "Todas":
-            detalhado = detalhado[detalhado["Classificacao"] == cls_sel]
-        detalhado = detalhado.sort_values(["Data", "Fluxo", "Classificacao"])
-        detalhado["Data"] = detalhado["Data"].dt.strftime("%d/%m/%Y")
-        detalhado["Valor"] = detalhado["Valor"].map(brl_kpi)
-        st.dataframe(
-            detalhado[["Data", "Fluxo", "Classificacao", "Fonte", "Categoria", "Detalhe", "Valor"]],
-            hide_index=True, use_container_width=True, height=380
-        )
-
-with st.expander("Status das abas do Google Sheets"):
-    for aba in ABAS:
-        df = fontes.get(aba, pd.DataFrame())
-        if aba in erros:
-            st.error(f"{aba}: {erros[aba]}")
-        else:
-            st.write(f"**{aba}** — {len(df):,} linhas carregadas" if not df.empty else f"**{aba}** — aba carregada, mas sem registros.")
