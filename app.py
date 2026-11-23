@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-APP_VERSION = "2026.11.03-portal-financeiro"
+APP_VERSION = "2026.11.23-portal-financeiro"
 
 PAGE_TITLE = "Portal Financeiro Executivo"
 PAGE_ICON = "🏢"
@@ -166,6 +166,11 @@ candidatos = [
         "Fluxo_de_Caixa",
     ),
     (
+        "pages/Fluxo_de_Caixa_Projetado.py",
+        "Fluxo de Caixa Projetado",
+        "Fluxo_de_Caixa_Projetado",
+    ),
+    (
         "pages/Fluxo_Não_Realizado.py",
         "Fluxo de Caixa Não Realizado",
         "Fluxo_Nao_Realizado",
@@ -185,7 +190,7 @@ for path, title, url in candidatos:
                 title=title,
                 url_path=url,
                 default=not pages,
-            )
+        )
         )
     else:
         missing_pages.append((path, title))
