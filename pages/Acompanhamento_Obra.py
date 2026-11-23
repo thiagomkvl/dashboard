@@ -628,7 +628,7 @@ st.markdown(f"""
         <div class='kpi-sub'>Para finalização da obra</div>
     </div>
     <div class='kpi'>
-        <div class='kpi-t'>Caixa disponível</div>
+        <div class='kpi-t'>Saldo Restante</div>
         <div class='kpi-v' style='color:{caixa_disp_color}'>{formatar_moeda(caixa_disponivel)}</div>
     </div>
 </div>
