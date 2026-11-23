@@ -279,6 +279,10 @@ def is_fci(text, mapping):
 
 # ===================== REALIZADO POR OBRA E MÊS ===============================
 def calcular_realizado_obras(df_real):
+    """
+    Lê Realizado_Obra (suporta tanto formato transacional com colunas Obra/Data/Valor
+    quanto formato matricial com colunas mensais) e devolve dict: {(norm_obra, Period('M')): valor_realizado}
+    """
     realizado_map = {}
     if df_real is None or df_real.empty:
         return realizado_map
@@ -288,6 +292,7 @@ def calcular_realizado_obras(df_real):
     c_val = col(df_real, ["Valor", "Vl. Pago", "Valor Pago", "Total", "Custo R$", "Saída"])
     c_status = col(df_real, ["Status", "Situação"])
 
+    # Caso 1: Tabela transacional (tem coluna de data e coluna de valor)
     if c_data and c_val and c_data != c_obra and c_val != c_obra:
         work = df_real.copy()
         if c_status:
@@ -304,6 +309,7 @@ def calcular_realizado_obras(df_real):
             realizado_map[chave] = realizado_map.get(chave, 0.0) + v
         return realizado_map
 
+    # Caso 2: Tabela matricial (linhas = Obras, colunas = Meses)
     cols_mes = []
     for c in df_real.columns:
         if c == c_obra:
@@ -326,9 +332,11 @@ def calcular_realizado_obras(df_real):
     return realizado_map
 
 def obter_realizado_obra_mes(realizado_map, nome_obra, periodo_m):
+    """Busca o realizado da obra no mês por correspondência exata ou parcial."""
     n_obra = norm(nome_obra)
     if (n_obra, periodo_m) in realizado_map:
         return realizado_map[(n_obra, periodo_m)]
+    # Remove prefixo "obra " se houver divergência de nomenclatura entre abas
     n_limpo = re.sub(r"^obra\s+", "", n_obra).strip()
     total = 0.0
     for (k_obra, k_per), val in realizado_map.items():
@@ -361,8 +369,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 work = work[~status.isin(["cancelado", "cancelada", "excluido", "excluida"])]
             for _, r in work.iterrows():
                 raw_cat = str(r.get(c_cat, "Convênio") or "Convênio").strip()
-                prot = str(r.get(c_prot, "") or "").strip()
-                det = f"{raw_cat} — {prot}" if prot and prot != raw_cat else raw_cat
+                det = str(r.get(c_prot, raw_cat) or raw_cat).strip()
                 cls_map, _ = classificar(raw_cat, mapping)
                 classif = cls_map if cls_map != "Não classificado" else raw_cat
                 m = criar_mov(
@@ -412,7 +419,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 conta_txt = str(r.get(c_conta, "") or "").strip()
                 forn_txt = str(r.get(c_forn, "") or "").strip()
                 tit_txt = str(r.get(c_tit, "") or "").strip()
-                det = f"{forn_txt} · Título {tit_txt}".strip(" ·") if tit_txt and tit_txt != forn_txt else (forn_txt or conta_txt)
+                det = f"{forn_txt} ({tit_txt})".strip(" ()") if tit_txt and tit_txt != forn_txt else (forn_txt or conta_txt)
                 cls, flx = classificar(conta_txt or forn_txt, mapping)
                 if flx == "FCI":
                     sub = "(-) Desembolsos em CAPEX"
@@ -515,6 +522,7 @@ def montar_projecao(dados, inicio, dias, media_dias, mapping):
                 if fim_mes < inicio or ref > fim:
                     continue
 
+                # Dias restantes do mês a partir da data inicial da projeção
                 inicio_rateio = max(inicio, ref)
                 fim_rateio = min(fim, fim_mes)
                 dias_restantes_mes = (fim_mes - inicio_rateio).days + 1
@@ -691,7 +699,7 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
     linhas.append({"label": "(+) Variação líquida do período", "tipo": "item", "dot": None, "vals": s_var})
     linhas.append({"label": "(=) Saldo final projetado", "tipo": "highlight", "vals": s_fim})
 
-    # Montagem HTML interativa com painel alinhado à esquerda (sticky) e auto-resize
+    # Montagem HTML interativa com expansão ao clicar em cada linha
     num_cols = len(col_labels) + 2
     header_cells = "".join([f"<th>{html.escape(lbl)}</th>" for lbl in col_labels]) + "<th>TOTAL PERÍODO</th>"
     body_html = []
@@ -716,32 +724,29 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         rid = f"r_{row_idx}"
         row_idx += 1
 
+        label_esc = html.escape(row["label"])
         if tem_drill:
             detalhes_payload[rid] = detalhes
             lbl_html = (
-                f'<div class="lbl-flex">'
-                f'<span class="lbl-left">'
+                f'<div class="lbl" title="{label_esc}">'
                 f'<span class="caret" id="caret_{rid}">▶</span>'
                 f'<span class="dot {row["dot"]}"></span>'
-                f'<span class="lbl-text" title="{html.escape(row["label"])}">{html.escape(row["label"])}</span>'
-                f'</span>'
+                f'<span class="lbl-text">{label_esc}</span>'
                 f'<span class="badge-cnt">{len(detalhes)}</span>'
                 f'</div>'
             )
-            tr_attr = f'id="row_{rid}" class="{tr_cls} clickable-row" onclick="toggleRow(\'{rid}\')"'
-        elif tipo == "item" and row.get("dot"):
+            tr_attr = f'class="{tr_cls} clickable-row" onclick="toggleRow(\'{rid}\')"'
+        elif tipo == "item":
+            dot_html = f'<span class="dot {row["dot"]}"></span>' if row.get("dot") else '<span class="dot-sp"></span>'
             lbl_html = (
-                f'<div class="lbl-flex">'
-                f'<span class="lbl-left">'
-                f'<span class="caret" style="opacity:.35;">▶</span>'
-                f'<span class="dot {row["dot"]}"></span>'
-                f'<span class="lbl-text">{html.escape(row["label"])}</span>'
-                f'</span>'
+                f'<div class="lbl" title="{label_esc}">'
+                f'<span class="caret-sp"></span>{dot_html}'
+                f'<span class="lbl-text">{label_esc}</span>'
                 f'</div>'
             )
             tr_attr = f'class="{tr_cls}"'
         else:
-            lbl_html = html.escape(row["label"])
+            lbl_html = f'<div class="lbl" title="{label_esc}"><span class="lbl-text">{label_esc}</span></div>'
             tr_attr = f'class="{tr_cls}"'
 
         tds = [f"<td>{lbl_html}</td>"]
@@ -774,19 +779,17 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         export_rows.append(exp_dict)
         body_html.append(f'<tr {tr_attr}>{"".join(tds)}</tr>')
 
-        # Linha oculta de drill-down alinhada à esquerda (sticky) para não exigir scroll horizontal
+        # Linha oculta de drill-down que abre ao clicar na classificação
         if tem_drill:
             body_html.append(
                 f'<tr id="detail_{rid}" class="detail-row" style="display:none;">'
                 f'<td colspan="{num_cols}" class="detail-cell">'
-                f'<div class="detail-sticky">'
                 f'<div id="box_{rid}" class="detail-container"></div>'
-                f'</div>'
                 f'</td></tr>'
             )
 
     payload_json = json.dumps(detalhes_payload, ensure_ascii=False)
-    altura_inicial = min(1300, max(540, 115 + len(linhas) * 35))
+    altura_estimada = min(1200, max(540, 90 + len(linhas) * 33))
 
     component_html = f"""
     <!DOCTYPE html>
@@ -796,13 +799,7 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     * {{ box-sizing: border-box; }}
-    body {{
-        margin:0;
-        padding:0;
-        font-family: Inter, Segoe UI, Arial, sans-serif;
-        background:transparent;
-        color:#0f172a;
-    }}
+    body {{ margin:0; padding:0; font-family: Inter, Segoe UI, Arial, sans-serif; background:transparent; color:#0f172a; }}
     .matrix-bar {{
         background:#e2e8f0;
         color:#334155;
@@ -817,19 +814,12 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         display:flex;
         justify-content:space-between;
         align-items:center;
-        gap:12px;
     }}
-    .matrix-hint {{
-        font-size:10.5px;
-        font-weight:600;
-        color:#475569;
-        text-transform:none;
-        letter-spacing:0;
-        white-space:nowrap;
-    }}
+    .matrix-hint {{ font-size:10.5px; font-weight:600; color:#475569; text-transform:none; letter-spacing:0; }}
     .fcx-wrap {{
         width:100%;
-        overflow-x:auto;
+        overflow:auto;
+        max-height:calc(100vh - 40px);
         background:#fff;
         border:1px solid #cbd5e1;
         border-radius:0 0 8px 8px;
@@ -837,46 +827,81 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
     }}
     table.fcx-table {{
         width:100%;
-        border-collapse:collapse;
+        border-collapse:separate;
+        border-spacing:0;
         font-size:12px;
         white-space:nowrap;
     }}
-    table.fcx-table th {{
+
+    /* ---- Cabeçalho fixo (topo) ---- */
+    table.fcx-table > thead > tr > th {{
+        position:sticky;
+        top:0;
+        z-index:3;
         background:#f1f5f9;
         color:#475569;
         font-size:10.5px;
         font-weight:800;
         text-transform:uppercase;
         padding:9px 12px;
+        height:34px;
+        min-width:104px;
         border-bottom:1px solid #cbd5e1;
         text-align:right;
     }}
-    table.fcx-table th:first-child {{
-        text-align:left;
-        position:sticky;
-        left:0;
-        z-index:3;
-        background:#f1f5f9;
-        min-width:320px;
-        max-width:340px;
-        border-right:1px solid #cbd5e1;
-    }}
-    table.fcx-table td {{
-        padding:8px 12px;
+
+    /* ---- Células ---- */
+    table.fcx-table > tbody > tr > td {{
+        padding:0 12px;
+        height:33px;
+        min-width:104px;
         border-bottom:1px solid #f1f5f9;
         text-align:right;
         font-variant-numeric:tabular-nums;
+        vertical-align:middle;
     }}
-    table.fcx-table td:first-child {{
-        text-align:left;
+
+    /* ---- 1ª coluna fixa à esquerda, largura padronizada ---- */
+    table.fcx-table > thead > tr > th:first-child,
+    table.fcx-table > tbody > tr > td:first-child {{
         position:sticky;
         left:0;
-        z-index:2;
-        min-width:320px;
+        width:340px;
+        min-width:340px;
         max-width:340px;
-        border-right:1px solid #cbd5e1;
+        text-align:left;
+        border-right:1px solid #e2e8f0;
     }}
-    tr.row-section td {{
+    table.fcx-table > thead > tr > th:first-child {{ z-index:5; }}
+    table.fcx-table > tbody > tr > td:first-child {{ z-index:2; overflow:hidden; }}
+
+    /* ---- Coluna TOTAL fixa à direita ---- */
+    table.fcx-table > thead > tr > th:last-child,
+    table.fcx-table > tbody > tr:not(.detail-row) > td:last-child {{
+        position:sticky;
+        right:0;
+        min-width:124px;
+        border-left:1px solid #cbd5e1;
+        font-weight:800;
+    }}
+    table.fcx-table > thead > tr > th:last-child {{ z-index:5; }}
+    table.fcx-table > tbody > tr:not(.detail-row) > td:last-child {{ z-index:2; }}
+
+    /* ---- Rótulo: caret | dot | texto | contador (colunas alinhadas) ---- */
+    .lbl {{ display:flex; align-items:center; width:100%; min-width:0; }}
+    .lbl-text {{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .caret, .caret-sp {{ flex:0 0 18px; width:18px; }}
+    .dot, .dot-sp {{ flex:0 0 7px; width:7px; height:7px; margin-right:8px; }}
+    .badge-cnt {{ flex:0 0 auto; }}
+
+    /* ---- Hierarquia de recuo ---- */
+    tr.row-section .lbl {{ padding-left:0; }}
+    tr.row-subtotal .lbl {{ padding-left:14px; }}
+    tr.row-item .lbl {{ padding-left:30px; }}
+    tr.row-highlight .lbl {{ padding-left:0; }}
+
+    /* ---- Tipos de linha ---- */
+    tr.row-section > td {{
         background:#cbd5e1 !important;
         color:#0f172a;
         font-weight:800;
@@ -884,208 +909,123 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         border-top:1px solid #94a3b8;
         border-bottom:1px solid #94a3b8;
     }}
-    tr.row-subtotal td {{
+    tr.row-subtotal > td {{
         background:#e2e8f0 !important;
         color:#1e293b;
         font-weight:750;
         border-top:1px solid #cbd5e1;
         border-bottom:1px solid #cbd5e1;
     }}
-    tr.row-highlight td {{
+    tr.row-highlight > td {{
         background:#f1f5f9 !important;
         color:#0f172a;
         font-weight:800;
         border-top:1px solid #cbd5e1;
         border-bottom:1px solid #cbd5e1;
     }}
-    tr.row-item td {{
+    tr.row-item > td {{
         background:#ffffff;
         color:#334155;
         font-weight:500;
     }}
     tr.clickable-row {{ cursor:pointer; }}
-    tr.clickable-row:hover td {{ background:#eff6ff !important; }}
-    tr.clickable-row.expanded td {{
-        background:#dbeafe !important;
-        color:#1e3a8a;
-        font-weight:700;
-        border-bottom-color:#93c5fd;
-    }}
-    tr.row-item td:first-child {{ padding-left:18px; }}
-
-    /* Alinhamento flex do rótulo + badge de contagem na coluna esquerda */
-    .lbl-flex {{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:8px;
-        width:100%;
-    }}
-    .lbl-left {{
-        display:flex;
-        align-items:center;
-        min-width:0;
-        overflow:hidden;
-    }}
-    .lbl-text {{
-        overflow:hidden;
-        text-overflow:ellipsis;
-        white-space:nowrap;
-    }}
+    tr.clickable-row:hover > td {{ background:#eff6ff !important; }}
 
     .v-pos {{ color:#059669; font-weight:700; }}
     .v-neg {{ color:#dc2626; font-weight:700; }}
     .v-zero {{ color:#94a3b8; font-weight:400; }}
 
-    .dot {{
-        display:inline-block;
-        flex-shrink:0;
-        width:7px;
-        height:7px;
-        border-radius:50%;
-        margin-right:7px;
-    }}
+    .dot, .dot-sp {{ display:inline-block; border-radius:50%; }}
     .dot-blue {{ background:#2563eb; }}
     .dot-green {{ background:#10b981; }}
     .dot-red {{ background:#ef4444; }}
     .dot-amber {{ background:#f59e0b; }}
     .dot-purple {{ background:#8b5cf6; }}
-
-    .caret {{
-        display:inline-block;
-        flex-shrink:0;
-        color:#2563eb;
-        font-size:9px;
-        margin-right:6px;
-        transition:transform 0.16s ease;
-    }}
+    .caret {{ display:inline-block; color:#2563eb; font-size:9px; transition:transform 0.15s ease; }}
+    .caret-sp {{ display:inline-block; }}
     .caret.open {{ transform:rotate(90deg); }}
-
     .badge-cnt {{
-        flex-shrink:0;
+        margin-left:8px;
         background:#f1f5f9;
         color:#475569;
-        border:1px solid #cbd5e1;
+        border:1px solid #e2e8f0;
         border-radius:10px;
-        padding:1px 7px;
+        padding:1px 6px;
         font-size:10px;
         font-weight:700;
     }}
-    tr.clickable-row.expanded .badge-cnt {{
-        background:#2563eb;
-        color:#ffffff;
-        border-color:#2563eb;
-    }}
 
-    /* Bloco de abertura ancorado à esquerda (sem necessidade de scroll horizontal) */
-    td.detail-cell {{
+    /* Painel interno de transações ao expandir a linha */
+    table.fcx-table > tbody > tr.detail-row > td.detail-cell {{
         padding:0 !important;
+        height:auto !important;
         background:#f8fafc !important;
         text-align:left !important;
         position:static !important;
-        border-bottom:1px solid #cbd5e1 !important;
+        width:auto !important;
+        min-width:0 !important;
+        max-width:none !important;
+        overflow:visible !important;
+        border-right:none !important;
     }}
-    .detail-sticky {{
+    .detail-container {{
         position:sticky;
         left:0;
-        width:min(96vw, 1040px);
-        padding:10px 14px 14px 26px;
-        border-left:3px solid #2563eb;
+        width:var(--vw, 100%);
+        padding:10px 18px 14px 34px;
+        border-bottom:1px solid #cbd5e1;
         background:#f8fafc;
-    }}
-    .detail-toolbar {{
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        gap:12px;
-        margin-bottom:8px;
-        flex-wrap:wrap;
-    }}
-    .detail-summary {{
-        font-size:11px;
-        color:#475569;
-        font-weight:650;
-    }}
-    .detail-search {{
-        border:1px solid #cbd5e1;
-        border-radius:6px;
-        padding:4px 9px;
-        font-size:11.5px;
-        font-family:inherit;
-        color:#0f172a;
-        background:#fff;
-        min-width:230px;
-        outline:none;
-    }}
-    .detail-search:focus {{
-        border-color:#2563eb;
-        box-shadow:0 0 0 2px rgba(37,99,235,0.12);
-    }}
-    .sub-scroll {{
-        max-height:290px;
-        overflow-y:auto;
-        border:1px solid #cbd5e1;
-        border-radius:6px;
-        background:#fff;
+        white-space:normal;
     }}
     table.sub-table {{
         width:100%;
-        border-collapse:collapse;
-        font-size:11.5px;
+        max-width:1100px;
         table-layout:fixed;
+        border-collapse:collapse;
+        background:#fff;
+        border:1px solid #e2e8f0;
+        border-radius:6px;
+        font-size:11.5px;
     }}
-    table.sub-table thead th {{
-        position:sticky;
-        top:0;
-        z-index:2;
+    table.sub-table th {{
         background:#f1f5f9;
         color:#475569;
         font-size:10px;
-        font-weight:800;
-        text-transform:uppercase;
-        padding:7px 10px;
+        font-weight:750;
+        padding:6px 10px;
         text-align:left;
-        border-bottom:1px solid #cbd5e1;
-        min-width:auto !important;
-        max-width:none !important;
-        border-right:none !important;
+        position:static !important;
+        min-width:0 !important;
+        height:auto;
+        border-bottom:1px solid #e2e8f0;
     }}
-    table.sub-table thead th:last-child,
-    table.sub-table tbody td:last-child {{
-        text-align:right;
-    }}
-    table.sub-table tbody td {{
+    table.sub-table th:nth-child(1) {{ width:92px; }}
+    table.sub-table th:nth-child(2) {{ width:170px; }}
+    table.sub-table th:nth-child(3) {{ width:200px; }}
+    table.sub-table th:nth-child(5) {{ width:130px; }}
+    table.sub-table th:last-child, table.sub-table td:last-child {{ text-align:right; white-space:nowrap; font-weight:700; }}
+    table.sub-table td {{
         padding:6px 10px;
         border-bottom:1px solid #f1f5f9;
         text-align:left;
         position:static !important;
-        min-width:auto !important;
-        max-width:none !important;
-        border-right:none !important;
         white-space:normal;
         word-break:break-word;
-        vertical-align:middle;
-    }}
-    table.sub-table tbody tr:nth-child(even) td {{
-        background:#fcfdfe;
-    }}
-    table.sub-table tbody tr:hover td {{
-        background:#eff6ff;
+        height:auto;
+        min-width:0;
     }}
     </style>
     </head>
     <body>
-    <div id="app-root">
-        <div class="matrix-bar">
-            <span>DEMONSTRATIVO PROJETADO • FCO / FCI / FCF / SALDO DE CAIXA • POR CLASSIFICAÇÃO FINANCEIRA</span>
-            <span class="matrix-hint">Clique em qualquer linha com ▶ para detalhar</span>
-        </div>
-        <div class="fcx-wrap">
-            <table class="fcx-table">
-                <thead><tr><th>DESCRIÇÃO</th>{header_cells}</tr></thead>
-                <tbody>{"".join(body_html)}</tbody>
-            </table>
-        </div>
+    <div class="matrix-bar">
+        <span>DEMONSTRATIVO PROJETADO • FCO / FCI / FCF / SALDO DE CAIXA • POR CLASSIFICAÇÃO FINANCEIRA</span>
+        <span class="matrix-hint">Clique em qualquer linha com ▶ para abrir as transações</span>
+    </div>
+    <div class="fcx-wrap">
+        <table class="fcx-table">
+            <thead><tr><th>DESCRIÇÃO</th>{header_cells}</tr></thead>
+            <tbody>{"".join(body_html)}</tbody>
+        </table>
     </div>
 
     <script>
@@ -1099,64 +1039,16 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
             .replace(/"/g, "&quot;");
     }}
 
-    function formatBRL(val) {{
-        const num = Number(val || 0);
-        const sign = num < -0.005 ? "-" : "";
-        const abs = Math.abs(num).toLocaleString("pt-BR", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
-        return `R$ ${{sign}}${{abs}}`;
+    function ajustarLargura() {{
+        const wrap = document.querySelector(".fcx-wrap");
+        if (wrap) document.documentElement.style.setProperty("--vw", (wrap.clientWidth - 2) + "px");
     }}
-
-    function resizeFrame() {{
-        const root = document.getElementById("app-root");
-        if (!root) return;
-        const h = Math.ceil(root.getBoundingClientRect().height) + 16;
-        if (window.parent) {{
-            window.parent.postMessage({{
-                isStreamlitMessage: true,
-                type: "streamlit:setFrameHeight",
-                height: h
-            }}, "*");
-        }}
-    }}
-
-    function renderSubRows(rid, termo) {{
-        const itens = DETALHES[rid] || [];
-        const q = (termo || "").toLowerCase().trim();
-        const filtrados = q
-            ? itens.filter(it =>
-                (it.data + " " + it.fonte + " " + it.classificacao + " " + it.detalhe + " " + it.valor_fmt)
-                    .toLowerCase()
-                    .includes(q)
-              )
-            : itens;
-
-        const tbody = document.getElementById("sub_body_" + rid);
-        const sumEl = document.getElementById("sub_sum_" + rid);
-        if (!tbody) return;
-
-        let total = 0;
-        tbody.innerHTML = filtrados.map(it => {{
-            total += Number(it.valor || 0);
-            const cls = it.valor >= 0 ? "v-pos" : "v-neg";
-            return `<tr>
-                <td>${{escapeHtml(it.data)}}</td>
-                <td>${{escapeHtml(it.fonte)}}</td>
-                <td>${{escapeHtml(it.classificacao)}}</td>
-                <td>${{escapeHtml(it.detalhe)}}</td>
-                <td class="${{cls}}">${{escapeHtml(it.valor_fmt)}}</td>
-            </tr>`;
-        }}).join("");
-
-        if (sumEl) {{
-            const clsTot = total >= 0 ? "v-pos" : "v-neg";
-            sumEl.innerHTML = `Exibindo <b>${{filtrados.length}}</b> de <b>${{itens.length}}</b> lançamento(s) · Total: <span class="${{clsTot}}">${{formatBRL(total)}}</span>`;
-        }}
-        resizeFrame();
-    }}
+    window.addEventListener("load", ajustarLargura);
+    window.addEventListener("resize", ajustarLargura);
+    ajustarLargura();
 
     function toggleRow(rid) {{
         const tr = document.getElementById("detail_" + rid);
-        const parentRow = document.getElementById("row_" + rid);
         const caret = document.getElementById("caret_" + rid);
         const box = document.getElementById("box_" + rid);
         if (!tr) return;
@@ -1165,60 +1057,46 @@ def construir_matriz_component(base_mov, inicio, dias, saldo_inicial, granularid
         if (isHidden) {{
             if (!box.dataset.rendered) {{
                 const itens = DETALHES[rid] || [];
-                const showSearch = itens.length > 6;
-                const searchInput = showSearch
-                    ? `<input type="text" class="detail-search" placeholder="Filtrar lançamentos..." oninput="renderSubRows('${{rid}}', this.value)" onclick="event.stopPropagation()">`
-                    : "";
+                let rowsHtml = itens.map(it => {{
+                    const cls = it.valor >= 0 ? "v-pos" : "v-neg";
+                    return `<tr>
+                        <td>${{escapeHtml(it.data)}}</td>
+                        <td>${{escapeHtml(it.fonte)}}</td>
+                        <td>${{escapeHtml(it.classificacao)}}</td>
+                        <td>${{escapeHtml(it.detalhe)}}</td>
+                        <td class="${{cls}}">${{escapeHtml(it.valor_fmt)}}</td>
+                    </tr>`;
+                }}).join("");
 
                 box.innerHTML = `
-                    <div class="detail-toolbar">
-                        <div class="detail-summary" id="sub_sum_${{rid}}"></div>
-                        ${{searchInput}}
-                    </div>
-                    <div class="sub-scroll">
-                        <table class="sub-table">
-                            <colgroup>
-                                <col style="width:95px;">
-                                <col style="width:165px;">
-                                <col style="width:210px;">
-                                <col style="width:auto;">
-                                <col style="width:130px;">
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th>Data</th>
-                                    <th>Origem</th>
-                                    <th>Classificação</th>
-                                    <th>Descrição / Composição</th>
-                                    <th>Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sub_body_${{rid}}"></tbody>
-                        </table>
-                    </div>
+                    <table class="sub-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Origem</th>
+                                <th>Classificação</th>
+                                <th>Descrição / Composição</th>
+                                <th>Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody>${{rowsHtml}}</tbody>
+                    </table>
                 `;
                 box.dataset.rendered = "1";
-                renderSubRows(rid, "");
             }}
             tr.style.display = "table-row";
             if (caret) caret.classList.add("open");
-            if (parentRow) parentRow.classList.add("expanded");
         }} else {{
             tr.style.display = "none";
             if (caret) caret.classList.remove("open");
-            if (parentRow) parentRow.classList.remove("expanded");
         }}
-        setTimeout(resizeFrame, 20);
     }}
-
-    window.addEventListener("load", () => setTimeout(resizeFrame, 60));
-    window.addEventListener("resize", () => setTimeout(resizeFrame, 60));
     </script>
     </body>
     </html>
     """
 
-    return component_html, altura_inicial, pd.DataFrame(export_rows), float(s_var.sum())
+    return component_html, altura_estimada, pd.DataFrame(export_rows), float(s_var.sum())
 
 def gerar_excel_bytes(df_matriz, df_detalhe):
     buf = io.BytesIO()
