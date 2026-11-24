@@ -1778,15 +1778,22 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
 def linha_tot(label, s, cor, cls="tot"):
     def fmt(v):
         return "—" if pd.isna(v) else moeda(float(v))
+    def resolver_cor(v):
+        if cls == "caixa-total" or cor == "dinamico":
+            if pd.isna(v) or abs(float(v)) < 0.005:
+                return TXT
+            return VERMELHO if float(v) < 0 else VERDE
+        return cor
     tot_val = float(s.iloc[0] if label == "(+) Saldo inicial" else s.iloc[-1]) if len(s) else 0.0
     if cls == "saldo":
-        tot_html = f"<td><span style='color:{cor}'><b>{fmt(tot_val)}</b></span></td>"
+        tot_html = f"<td><span style='color:{resolver_cor(tot_val)}'><b>{fmt(tot_val)}</b></span></td>"
     else:
-        tot_html = f"<td><span style='color:{cor}'><b>{moeda(float(s.sum()))}</b></span></td>"
+        tot_sum = float(s.sum())
+        tot_html = f"<td><span style='color:{resolver_cor(tot_sum)}'><b>{moeda(tot_sum)}</b></span></td>"
     return (
         f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
-            f"<td><span style='color:{cor}'>{fmt(s.get(m, float('nan')))}</span></td>"
+            f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
             for m in refs_sel
         )
         + tot_html
@@ -1818,9 +1825,13 @@ else:
         return out
 
     def cabecalho_total(label, valores, sec_id):
-        cor = VERDE if float(valores.sum()) >= 0 else VERMELHO
         def fmt(v):
             return "—" if pd.isna(v) else moeda(float(v))
+        def cor_val(v):
+            if pd.isna(v) or abs(float(v)) < 0.005:
+                return TXT
+            return VERMELHO if float(v) < 0 else VERDE
+        tot_s = float(valores.sum())
         label_html = (
             f"<label class='sec-drill-label' for='{sec_id}'>"
             f"<input type='checkbox' id='{sec_id}' class='sec-toggle'>"
@@ -1830,10 +1841,10 @@ else:
         return (
             f"<tr class='caixa-total'><td>{label_html}</td>"
             + "".join(
-                f"<td><span style='color:{cor}'>{fmt(valores.get(m, float('nan')))}</span></td>"
+                f"<td><span style='color:{cor_val(valores.get(m, float('nan')))}'>{fmt(valores.get(m, float('nan')))}</span></td>"
                 for m in refs_sel
             )
-            + f"<td><span style='color:{cor}'><b>{moeda(float(valores.sum()))}</b></span></td>"
+            + f"<td><span style='color:{cor_val(tot_s)}'><b>{moeda(tot_s)}</b></span></td>"
             + "</tr>"
         )
 
