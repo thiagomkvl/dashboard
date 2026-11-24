@@ -265,6 +265,24 @@ css = """
     .grp .sub-row { display: none; }
     .grp:has(.toggle-checkbox:checked) .sub-row { display: table-row; }
     .grp:has(.toggle-checkbox:checked) .indicator { transform: rotate(90deg); }
+
+    .sec-drill-label {
+        cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+        margin: 0; font-weight: 800; color: #0f172a; user-select: none;
+    }
+    .sec-toggle { display: none; }
+    .sec-indicator {
+        display: inline-block; font-size: 10px; color: #1e40af;
+        transition: transform 0.15s ease; width: 12px;
+    }
+    .tbl:has(#sec_fco:checked) tr.sec-fco { display: none !important; }
+    .tbl:has(#sec_fco:checked) #sec_fco + .sec-indicator { transform: rotate(-90deg); }
+
+    .tbl:has(#sec_fci:checked) tr.sec-fci { display: none !important; }
+    .tbl:has(#sec_fci:checked) #sec_fci + .sec-indicator { transform: rotate(-90deg); }
+
+    .tbl:has(#sec_fcf:checked) tr.sec-fcf { display: none !important; }
+    .tbl:has(#sec_fcf:checked) #sec_fcf + .sec-indicator { transform: rotate(-90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
 </style>
 """
@@ -1682,7 +1700,7 @@ except ImportError:
     st.error("Para habilitar o Excel, instale a dependência: pip install XlsxWriter")
 
 st.markdown(
-    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique na seta para composição</div>",
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
     unsafe_allow_html=True,
 )
 
@@ -1783,37 +1801,75 @@ if df.empty:
 else:
     html = []
 
-    def cabecalho_total(label, valores):
+    def marcar_secao(linhas_html, classe_sec):
+        out = []
+        for item in linhas_html:
+            item_mod = re.sub(
+                r"<tr class='([^']*)'",
+                lambda m: f"<tr class='{m.group(1)} {classe_sec}'",
+                item,
+            )
+            item_mod = re.sub(
+                r"<tr>",
+                f"<tr class='{classe_sec}'>",
+                item_mod,
+            )
+            out.append(item_mod)
+        return out
+
+    def cabecalho_total(label, valores, sec_id):
         cor = VERDE if float(valores.sum()) >= 0 else VERMELHO
-        return linha_tot(label, valores, cor, cls="caixa-total")
+        def fmt(v):
+            return "—" if pd.isna(v) else moeda(float(v))
+        label_html = (
+            f"<label class='sec-drill-label' for='{sec_id}'>"
+            f"<input type='checkbox' id='{sec_id}' class='sec-toggle'>"
+            f"<span class='sec-indicator'>▼</span>"
+            f"<span>{label}</span></label>"
+        )
+        return (
+            f"<tr class='caixa-total'><td>{label_html}</td>"
+            + "".join(
+                f"<td><span style='color:{cor}'>{fmt(valores.get(m, float('nan')))}</span></td>"
+                for m in refs_sel
+            )
+            + f"<td><span style='color:{cor}'><b>{moeda(float(valores.sum()))}</b></span></td>"
+            + "</tr>"
+        )
 
-    def bloco_total(dados, label, valores, cor, uid, exibir_abs=False):
-        html.append(linha_tot(label, valores, cor, cls="subsec"))
-        html.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
+    def bloco_total(buf, dados, label, valores, cor, uid, exibir_abs=False):
+        buf.append(linha_tot(label, valores, cor, cls="subsec"))
+        buf.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
-    # Os totais ficam nos cabeçalhos, sem repetir linhas ao pé dos blocos.
-    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco))
-    bloco_total(df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
-    bloco_total(df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
-    bloco_total(df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, "i")
-    bloco_total(df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
+    # 1. FCO (recolhível ao clicar no título)
+    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco"))
+    fco_rows = []
+    bloco_total(fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
+    bloco_total(fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
+    bloco_total(fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, "i")
+    bloco_total(fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
                 VERDE if float(s_vap.sum()) >= 0 else VERMELHO, "v")
+    html.extend(marcar_secao(fco_rows, "sec-fco"))
 
-    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci))
+    # 2. FCI (recolhível ao clicar no título)
+    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "sec_fci"))
+    fci_rows = []
     df_receitas_inv = df[df["Papel"] == "receita_inv"].copy()
     if not df_receitas_inv.empty:
-        bloco_total(df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, "ri")
+        bloco_total(fci_rows, df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, "ri")
     df_capex = df[df["Papel"] == "capex"].copy()
-    # Preserva a apresentação e a compensação existentes do CAPEX.
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
-    bloco_total(df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
+    bloco_total(fci_rows, df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
+    html.extend(marcar_secao(fci_rows, "sec-fci"))
 
-    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf))
-    bloco_total(df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, "p")
-    # Mantém apenas as categorias com abertura, sem cabeçalhos duplicados.
-    html.extend(linhas_df(df_amort, None, "a"))
-    html.extend(linhas_df(df_juros, None, "j"))
-    html.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
+    # 3. FCF (recolhível ao clicar no título)
+    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "sec_fcf"))
+    fcf_rows = []
+    bloco_total(fcf_rows, df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, "p")
+    fcf_rows.extend(linhas_df(df_amort, None, "a"))
+    fcf_rows.extend(linhas_df(df_juros, None, "j"))
+    fcf_rows.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
+    html.extend(marcar_secao(fcf_rows, "sec-fcf"))
 
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
