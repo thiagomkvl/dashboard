@@ -1436,9 +1436,38 @@ saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
 
 def entradas_saidas_resumo(dados, papeis, referencias):
-    """Compensa reclassificações por conta/mês antes de abrir entradas e saídas."""
+    """Calcula Entradas e Saídas do resumo espelhando o demonstrativo detalhado."""
+    entradas_idx = pd.Series(0.0, index=referencias, dtype=float)
+    saidas_idx = pd.Series(0.0, index=referencias, dtype=float)
+    if dados.empty:
+        return entradas_idx, saidas_idx
+
+    # Caso específico do FCF:
+    # - (+) Entrada = apenas captações de entrada (mesma base de df_captacao / s_cpt)
+    # - (−) Saída   = amortizações + juros/encargos financeiros (compensados no detalhe)
+    if set(papeis) == {"captacao", "amortizacao", "juros"}:
+        d_cap = dados[(dados["Papel"] == "captacao") & (dados["Tipo"] == "Entrada")]
+        if not d_cap.empty:
+            liq_cap = d_cap.groupby(["Ref", "Categoria", "Detalhe"])["Valor"].sum()
+            entradas_idx = liq_cap.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+            estornos_cap = (-liq_cap.clip(upper=0)).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+        else:
+            estornos_cap = pd.Series(0.0, index=referencias, dtype=float)
+
+        d_enc = dados[dados["Papel"].isin(["amortizacao", "juros"])]
+        if not d_enc.empty:
+            liq_enc = d_enc.groupby(["Ref", "Papel", "Categoria", "Detalhe"])["Valor"].sum()
+            saidas_enc = liq_enc.clip(lower=0).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+            estornos_enc = (-liq_enc.clip(upper=0)).groupby(level="Ref").sum().reindex(referencias, fill_value=0.0)
+        else:
+            saidas_enc = pd.Series(0.0, index=referencias, dtype=float)
+            estornos_enc = pd.Series(0.0, index=referencias, dtype=float)
+
+        entradas_tot = (entradas_idx + estornos_enc).clip(lower=0.0)
+        saidas_tot = (saidas_enc + estornos_cap).clip(lower=0.0)
+        return entradas_tot, saidas_tot
+
     movimentos = dados[dados["Papel"].isin(papeis)].copy()
-    # Mesma seleção aplicada nas fórmulas do FCF.
     movimentos = movimentos[(movimentos["Papel"] != "captacao") | (movimentos["Tipo"] == "Entrada")]
     movimentos["Caixa"] = movimentos["Valor"] * movimentos["Papel"].map(
         lambda papel: 1.0 if papel in ("receita_op", "receita_inv", "captacao", "var_ap") else -1.0
