@@ -19,6 +19,7 @@ import unicodedata
 from datetime import datetime
 
 import pandas as pd
+import plotly.graph_objects as go
 
 try:
     from database import conectar_sheets
@@ -284,6 +285,19 @@ css = """
     .tbl:has(#sec_fcf:checked) tr.sec-fcf { display: none !important; }
     .tbl:has(#sec_fcf:checked) #sec_fcf + .sec-indicator { transform: rotate(-90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background: #1e40af !important; color: #ffffff !important;
+        border: 1px solid #1e40af !important; border-radius: 8px !important;
+        font-weight: 700 !important; font-size: 12px !important;
+    }
+    div[data-testid="stButton"] > button[kind="secondary"] {
+        background: #ffffff !important; color: #334155 !important;
+        border: 1px solid #cbd5e1 !important; border-radius: 8px !important;
+        font-weight: 600 !important; font-size: 12px !important;
+    }
+    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        border-color: #2563eb !important; color: #1e40af !important;
+    }
 </style>
 """
 st.markdown(
@@ -1699,10 +1713,40 @@ try:
 except ImportError:
     st.error("Para habilitar o Excel, instale a dependência: pip install XlsxWriter")
 
-st.markdown(
-    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
-    unsafe_allow_html=True,
-)
+if "visao_fcx" not in st.session_state:
+    st.session_state["visao_fcx"] = "resumida"
+if "visao_fcx_ver" not in st.session_state:
+    st.session_state["visao_fcx_ver"] = 0
+
+c_tit, c_btn1, c_btn2 = st.columns([5.5, 1.35, 1.35], vertical_alignment="center")
+with c_tit:
+    st.markdown(
+        "<div class='section-title' style='margin:6px 0;'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
+        unsafe_allow_html=True,
+    )
+with c_btn1:
+    if st.button(
+        "Visão Resumida",
+        key="btn_visao_resumida",
+        type="primary" if st.session_state["visao_fcx"] == "resumida" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state["visao_fcx"] = "resumida"
+        st.session_state["visao_fcx_ver"] += 1
+        st.rerun()
+with c_btn2:
+    if st.button(
+        "Visão Analítica",
+        key="btn_visao_analitica",
+        type="primary" if st.session_state["visao_fcx"] == "analitica" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state["visao_fcx"] = "analitica"
+        st.session_state["visao_fcx_ver"] += 1
+        st.rerun()
+
+esta_resumido = st.session_state["visao_fcx"] == "resumida"
+_v_ui = st.session_state["visao_fcx_ver"]
 
 
 def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
@@ -1824,7 +1868,7 @@ else:
             out.append(item_mod)
         return out
 
-    def cabecalho_total(label, valores, sec_id):
+    def cabecalho_total(label, valores, sec_id, recolhido=True):
         def fmt(v):
             return "—" if pd.isna(v) else moeda(float(v))
         def cor_val(v):
@@ -1832,9 +1876,10 @@ else:
                 return TXT
             return VERMELHO if float(v) < 0 else VERDE
         tot_s = float(valores.sum())
+        chk_attr = " checked" if recolhido else ""
         label_html = (
             f"<label class='sec-drill-label' for='{sec_id}'>"
-            f"<input type='checkbox' id='{sec_id}' class='sec-toggle'>"
+            f"<input type='checkbox' id='{sec_id}' class='sec-toggle'{chk_attr}>"
             f"<span class='sec-indicator'>▼</span>"
             f"<span>{label}</span></label>"
         )
@@ -1852,33 +1897,33 @@ else:
         buf.append(linha_tot(label, valores, cor, cls="subsec"))
         buf.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
-    # 1. FCO (recolhível ao clicar no título)
-    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco"))
+    # 1. FCO (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
+    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco", recolhido=esta_resumido))
     fco_rows = []
-    bloco_total(fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, "r")
-    bloco_total(fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, "c")
-    bloco_total(fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, "i")
+    bloco_total(fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, f"r_{_v_ui}")
+    bloco_total(fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, f"c_{_v_ui}")
+    bloco_total(fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, f"i_{_v_ui}")
     bloco_total(fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
-                VERDE if float(s_vap.sum()) >= 0 else VERMELHO, "v")
+                "dinamico", f"v_{_v_ui}")
     html.extend(marcar_secao(fco_rows, "sec-fco"))
 
-    # 2. FCI (recolhível ao clicar no título)
-    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "sec_fci"))
+    # 2. FCI (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
+    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "sec_fci", recolhido=esta_resumido))
     fci_rows = []
     df_receitas_inv = df[df["Papel"] == "receita_inv"].copy()
     if not df_receitas_inv.empty:
-        bloco_total(fci_rows, df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, "ri")
+        bloco_total(fci_rows, df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, f"ri_{_v_ui}")
     df_capex = df[df["Papel"] == "capex"].copy()
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
-    bloco_total(fci_rows, df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, "k", exibir_abs=True)
+    bloco_total(fci_rows, df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, f"k_{_v_ui}", exibir_abs=True)
     html.extend(marcar_secao(fci_rows, "sec-fci"))
 
-    # 3. FCF (recolhível ao clicar no título)
-    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "sec_fcf"))
+    # 3. FCF (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
+    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "sec_fcf", recolhido=esta_resumido))
     fcf_rows = []
-    bloco_total(fcf_rows, df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, "p")
-    fcf_rows.extend(linhas_df(df_amort, None, "a"))
-    fcf_rows.extend(linhas_df(df_juros, None, "j"))
+    bloco_total(fcf_rows, df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, f"p_{_v_ui}")
+    fcf_rows.extend(linhas_df(df_amort, None, f"a_{_v_ui}"))
+    fcf_rows.extend(linhas_df(df_juros, None, f"j_{_v_ui}"))
     fcf_rows.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
     html.extend(marcar_secao(fcf_rows, "sec-fcf"))
 
@@ -1903,7 +1948,7 @@ else:
         linha_tot(
             "(+) Variação líquida do mês",
             s_var,
-            VERDE if float(s_var.sum()) >= 0 else VERMELHO,
+            "dinamico",
             cls="tot",
         )
     )
@@ -1925,7 +1970,7 @@ else:
             "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
             + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
         )
-        html.extend(linhas_df(d_out, None, "o"))
+        html.extend(linhas_df(d_out, None, f"o_{_v_ui}"))
 
     th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
     st.markdown(
@@ -1934,22 +1979,115 @@ else:
         unsafe_allow_html=True,
     )
 
+    # ==========================================================================
+    # GRÁFICOS E INDICADORES EXECUTIVOS (ABAIXO DA TABELA)
+    # ==========================================================================
+    st.markdown(
+        "<div class='section-title'>Indicadores e Tendências Mensais</div>",
+        unsafe_allow_html=True,
+    )
 
-    with st.expander("Resumo do fluxo de caixa", expanded=True):
-        resumo = [linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo")]
-        for nome, papeis, total in (
-            ("1- (=) FCO", ["receita_op", "custo_op", "imposto", "var_ap"], s_fco),
-            ("2- (=) FCI", ["receita_inv", "capex"], s_fci),
-            ("3- (=) FCF", ["captacao", "amortizacao", "juros"], s_fcf),
-        ):
-            entradas, saidas = entradas_saidas_resumo(df, papeis, refs_sel)
-            resumo.append(linha_tot(nome, total, VERDE if float(total.sum()) >= 0 else VERMELHO, cls="caixa-total"))
-            resumo.append(linha_tot("(+) Entrada", entradas, VERDE))
-            resumo.append(linha_tot("(−) Saída", saidas, VERMELHO))
-        resumo.append(linha_tot("(=) Saldo final", s_fim, VERDE if saldo_fim_periodo >= 0 else VERMELHO, cls="saldo"))
-        st.markdown(
-            f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
-            f"{''.join(resumo)}</table></div>", unsafe_allow_html=True,
+    def criar_grafico_tendencia(titulo, serie_vals, cor_linha, area=False):
+        vals = [float(serie_vals.get(m, 0.0)) for m in refs_sel]
+        cores_pts = [VERDE if v >= 0 else VERMELHO for v in vals]
+        textos_pts = [moeda_curta(v) for v in vals]
+
+        fig = go.Figure()
+        fig.add_hline(y=0, line_dash="dot", line_color="#94a3b8", line_width=1)
+
+        r_hex = int(cor_linha[1:3], 16)
+        g_hex = int(cor_linha[3:5], 16)
+        b_hex = int(cor_linha[5:7], 16)
+
+        fig.add_trace(
+            go.Scatter(
+                x=x_lab,
+                y=vals,
+                mode="lines+markers+text",
+                line=dict(color=cor_linha, width=3, shape="spline", smoothing=0.35),
+                marker=dict(
+                    size=9,
+                    color=cores_pts,
+                    line=dict(color="#ffffff", width=2),
+                ),
+                text=textos_pts,
+                textposition="top center",
+                textfont=dict(size=10, color="#334155", family="Inter, Arial"),
+                fill="tozeroy" if area else None,
+                fillcolor=f"rgba({r_hex},{g_hex},{b_hex},0.09)" if area else None,
+                hovertemplate="<b>%{x}</b><br>Valor: R$ %{y:,.2f}<extra></extra>",
+            )
+        )
+
+        y_min = min(vals + [0.0])
+        y_max = max(vals + [0.0])
+        amp = (y_max - y_min) if (y_max - y_min) > 0 else max(abs(y_max), 1000.0)
+
+        fig.update_layout(
+            title=dict(
+                text=f"<b>{titulo}</b>",
+                font=dict(size=13, color=TXT, family="Inter, Arial"),
+                x=0.01,
+                y=0.95,
+            ),
+            height=290,
+            margin=dict(l=14, r=14, t=44, b=18),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            showlegend=False,
+            hovermode="x unified",
+            separators=",.",
+            xaxis=dict(
+                showgrid=False,
+                tickfont=dict(size=11, color=MUTED),
+                linecolor=BORDA,
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor="#f1f5f9",
+                zeroline=False,
+                tickfont=dict(size=10, color=MUTED),
+                tickprefix="R$ ",
+                tickformat=",.0f",
+                range=[y_min - amp * 0.16, y_max + amp * 0.24],
+            ),
+        )
+        return fig
+
+    # Linha 1: Saldo Final Mensal + Variação Líquida Mensal
+    g_col1, g_col2 = st.columns(2)
+    with g_col1:
+        st.plotly_chart(
+            criar_grafico_tendencia("Saldo Final de Caixa (Mensal)", s_fim, AZUL, area=True),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+    with g_col2:
+        st.plotly_chart(
+            criar_grafico_tendencia("Variação Líquida de Caixa (FCO + FCI + FCF)", s_var, CIANO, area=False),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+
+    # Linha 2: FCO, FCI e FCF em indicadores individuais
+    g_col3, g_col4, g_col5 = st.columns(3)
+    with g_col3:
+        st.plotly_chart(
+            criar_grafico_tendencia("1. FCO · Fluxo Operacional", s_fco, VERDE, area=True),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+    with g_col4:
+        st.plotly_chart(
+            criar_grafico_tendencia("2. FCI · Fluxo de Investimentos", s_fci, AMBAR, area=True),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+    with g_col5:
+        st.plotly_chart(
+            criar_grafico_tendencia("3. FCF · Fluxo de Financiamento", s_fcf, ROXO, area=True),
+            use_container_width=True,
+            config={"displayModeBar": False},
         )
 
 
