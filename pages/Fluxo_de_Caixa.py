@@ -164,10 +164,26 @@ css = """
     li[role="option"]:hover, li[aria-selected="true"] { background: #f1f5f9 !important; }
     span[data-baseweb="tag"] { background: #2563eb !important; color: #fff !important; }
 
-    [data-testid="stSidebar"] .stButton > button {
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
-        color: #fff !important; border: none !important; border-radius: 10px !important;
+        color: #ffffff !important; border: 1px solid #1d4ed8 !important; border-radius: 10px !important;
+        font-weight: 700 !important; padding: 0.5rem 0.9rem !important;
+    }
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+        background: #ffffff !important;
+        color: #334155 !important; border: 1px solid #cbd5e1 !important; border-radius: 10px !important;
+        font-weight: 600 !important; padding: 0.5rem 0.9rem !important;
+    }
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+        border-color: #2563eb !important; color: #1e40af !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stDownloadButton"] > button {
+        background: #0f172a !important;
+        color: #ffffff !important; border: none !important; border-radius: 10px !important;
         font-weight: 700 !important; padding: 0.55rem 1rem !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stDownloadButton"] > button:hover {
+        background: #1e293b !important;
     }
 
     .top {
@@ -1350,21 +1366,38 @@ if not base_ajustes.empty:
 meses_all = sorted(base["Ref"].unique())
 rot = {m: rot_mes(m) for m in meses_all}
 
+if "visao_fcx" not in st.session_state:
+    st.session_state["visao_fcx"] = "resumida"
+if "visao_fcx_ver" not in st.session_state:
+    st.session_state["visao_fcx_ver"] = 0
+
 with st.sidebar:
-    st.markdown("<div class='side-sec'>Filtros</div>", unsafe_allow_html=True)
+    st.markdown("<div class='side-sec'>Período</div>", unsafe_allow_html=True)
     c_a, c_b = st.columns(2)
     ini = c_a.selectbox("De", meses_all, index=0, format_func=rot.get)
     fim = c_b.selectbox("Até", meses_all, index=len(meses_all) - 1, format_func=rot.get)
-    grupos_all = sorted(base["Grupo"].unique().tolist())
-    grupo_sel = st.multiselect("Grupo", grupos_all, default=grupos_all)
-    if st.button("↻ Atualizar dados", use_container_width=True):
-        st.cache_data.clear()
+
+    st.markdown("<div class='side-sec' style='margin-top:12px;'>Visão</div>", unsafe_allow_html=True)
+    if st.button(
+        "Visão Resumida",
+        key="btn_visao_resumida",
+        type="primary" if st.session_state["visao_fcx"] == "resumida" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state["visao_fcx"] = "resumida"
+        st.session_state["visao_fcx_ver"] += 1
         st.rerun()
-    st.markdown(
-        f"<div class='side-card'><small>De-para</small><b>{len(mapa_cls)} classificações</b></div>"
-        f"<div class='side-card'><small>Saldo inicial (aba)</small><b>{len(mapa_saldo)} mês(es)</b></div>",
-        unsafe_allow_html=True,
-    )
+    if st.button(
+        "Visão Analítica",
+        key="btn_visao_analitica",
+        type="primary" if st.session_state["visao_fcx"] == "analitica" else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state["visao_fcx"] = "analitica"
+        st.session_state["visao_fcx_ver"] += 1
+        st.rerun()
+
+grupo_sel = []
 
 if ini > fim:
     ini, fim = fim, ini
@@ -1701,49 +1734,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-try:
-    st.download_button(
-        label="⬇ Baixar Excel",
-        data=gerar_excel_fluxo(),
-        file_name=f"fluxo_de_caixa_{pd.Timestamp(ini):%Y%m}_{pd.Timestamp(fim):%Y%m}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=False,
-        key="baixar_fluxo_excel",
-    )
-except ImportError:
-    st.error("Para habilitar o Excel, instale a dependência: pip install XlsxWriter")
-
-if "visao_fcx" not in st.session_state:
-    st.session_state["visao_fcx"] = "resumida"
-if "visao_fcx_ver" not in st.session_state:
-    st.session_state["visao_fcx_ver"] = 0
-
-c_tit, c_btn1, c_btn2 = st.columns([5.5, 1.35, 1.35], vertical_alignment="center")
-with c_tit:
-    st.markdown(
-        "<div class='section-title' style='margin:6px 0;'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
-        unsafe_allow_html=True,
-    )
-with c_btn1:
-    if st.button(
-        "Visão Resumida",
-        key="btn_visao_resumida",
-        type="primary" if st.session_state["visao_fcx"] == "resumida" else "secondary",
-        use_container_width=True,
-    ):
-        st.session_state["visao_fcx"] = "resumida"
-        st.session_state["visao_fcx_ver"] += 1
-        st.rerun()
-with c_btn2:
-    if st.button(
-        "Visão Analítica",
-        key="btn_visao_analitica",
-        type="primary" if st.session_state["visao_fcx"] == "analitica" else "secondary",
-        use_container_width=True,
-    ):
-        st.session_state["visao_fcx"] = "analitica"
-        st.session_state["visao_fcx_ver"] += 1
-        st.rerun()
+st.markdown(
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
+    unsafe_allow_html=True,
+)
 
 esta_resumido = st.session_state["visao_fcx"] == "resumida"
 _v_ui = st.session_state["visao_fcx_ver"]
@@ -2092,18 +2086,15 @@ else:
 
 
 with st.sidebar:
-    st.markdown(
-        f"<div class='side-card'><small>FCO</small>"
-        f"<b style='color:{'#059669' if fco >= 0 else '#dc2626'}'>{moeda(fco)}</b></div>"
-        f"<div class='side-card'><small>Var. Ativos/Passivos</small>"
-        f"<b style='color:{'#059669' if var_ap >= 0 else '#dc2626'}'>{moeda(var_ap)}</b></div>"
-        f"<div class='side-card'><small>FCI</small>"
-        f"<b style='color:{'#059669' if fci >= 0 else '#dc2626'}'>{moeda(fci)}</b></div>"
-        f"<div class='side-card'><small>FCF</small>"
-        f"<b style='color:{'#059669' if fcf >= 0 else '#dc2626'}'>{moeda(fcf)}</b></div>"
-        f"<div class='side-card'><small>Saldo final</small>"
-        f"<b style='color:{'#059669' if saldo_fim_periodo >= 0 else '#dc2626'}'>{moeda(saldo_fim_periodo)}</b></div>"
-        f"<div class='side-card'><small>Última atualização</small>"
-        f"<b>{datetime.now():%d/%m/%Y %H:%M}</b></div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div class='side-sec' style='margin-top:12px;'>Exportação</div>", unsafe_allow_html=True)
+    try:
+        st.download_button(
+            label="⬇ Baixar Excel",
+            data=gerar_excel_fluxo(),
+            file_name=f"fluxo_de_caixa_{pd.Timestamp(ini):%Y%m}_{pd.Timestamp(fim):%Y%m}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="baixar_fluxo_excel",
+        )
+    except ImportError:
+        st.error("Para habilitar o Excel, instale a dependência: pip install XlsxWriter")
