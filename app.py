@@ -141,14 +141,9 @@ if not st.session_state["autenticado"]:
 # ==============================================================================
 candidatos = [
     (
-        "pages/Dash_Adiantamentos.py",
-        "Adiantamentos Pagos",
-        "Dash_Adiantamentos",
-    ),
-    (
-        "pages/Análise_Faturamento.py",
-        "Análise Faturamento",
-        "Análise_Faturamento",
+        "pages/Fluxo_de_Caixa.py",
+        "Fluxo de Caixa Realizado",
+        "Fluxo_de_Caixa",
     ),
     (
         "pages/Dashboard_Saldo.py",
@@ -157,23 +152,18 @@ candidatos = [
     ),
     (
         "pages/Acompanhamento_Obra.py",
-        "Despesas Com Obras",
+        "Despesas com Obras",
         "Acompanhamento_Obra",
     ),
     (
-        "pages/Fluxo_de_Caixa.py",
-        "Fluxo de Caixa Realizado",
-        "Fluxo_de_Caixa",
+        "pages/Análise_Faturamento.py",
+        "Análise Faturamento",
+        "Análise_Faturamento",
     ),
     (
-        "pages/Fluxo_de_Caixa_Projetado.py",
-        "Fluxo de Caixa Projetado",
-        "Fluxo_de_Caixa_Projetado",
-    ),
-    (
-        "pages/Fluxo_Não_Realizado.py",
-        "Fluxo de Caixa Não Realizado",
-        "Fluxo_Nao_Realizado",
+        "pages/Dash_Adiantamentos.py",
+        "Adiantamentos Pagos",
+        "Dash_Adiantamentos",
     ),
 ]
 
