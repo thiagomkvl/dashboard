@@ -300,6 +300,23 @@ css = """
 
     .tbl:has(#sec_fcf:checked) tr.sec-fcf { display: none !important; }
     .tbl:has(#sec_fcf:checked) #sec_fcf + .sec-indicator { transform: rotate(-90deg); }
+
+    .subsec-drill-label {
+        cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+        margin: 0; font-weight: 700; color: #334155; user-select: none;
+    }
+    .subsec-indicator {
+        display: inline-block; font-size: 9px; color: #2563eb;
+        transition: transform 0.15s ease; width: 11px;
+    }
+    .tbl:has(#sub_rec_op:checked) tr.sub-rec-op { display: none !important; }
+    .tbl:has(#sub_rec_op:checked) #sub_rec_op + .subsec-indicator { transform: rotate(-90deg); }
+
+    .tbl:has(#sub_custo_op:checked) tr.sub-custo-op { display: none !important; }
+    .tbl:has(#sub_custo_op:checked) #sub_custo_op + .subsec-indicator { transform: rotate(-90deg); }
+
+    .tbl:has(#sub_var_ap:checked) tr.sub-var-ap { display: none !important; }
+    .tbl:has(#sub_var_ap:checked) #sub_var_ap + .subsec-indicator { transform: rotate(-90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
     div[data-testid="stButton"] > button[kind="primary"] {
         background: #1e40af !important; color: #ffffff !important;
@@ -1735,7 +1752,7 @@ st.markdown(
 )
 
 st.markdown(
-    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos (FCO/FCI/FCF) ou nas setas para recolher/expandir</div>",
+    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos, subgrupos ou setas para recolher/expandir</div>",
     unsafe_allow_html=True,
 )
 
@@ -1887,18 +1904,58 @@ else:
             + "</tr>"
         )
 
-    def bloco_total(buf, dados, label, valores, cor, uid, exibir_abs=False):
-        buf.append(linha_tot(label, valores, cor, cls="subsec"))
-        buf.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
+    def linha_subsec_recolhivel(label, s, cor, sub_id, recolhido=False):
+        def fmt(v):
+            return "—" if pd.isna(v) else moeda(float(v))
+        def resolver_cor(v):
+            if cor == "dinamico":
+                if pd.isna(v) or abs(float(v)) < 0.005:
+                    return TXT
+                return VERMELHO if float(v) < 0 else VERDE
+            return cor
+        tot_sum = float(s.sum())
+        chk_attr = " checked" if recolhido else ""
+        label_html = (
+            f"<label class='subsec-drill-label' for='{sub_id}'>"
+            f"<input type='checkbox' id='{sub_id}' class='sec-toggle'{chk_attr}>"
+            f"<span class='subsec-indicator'>▼</span>"
+            f"<b>{label}</b></label>"
+        )
+        return (
+            f"<tr class='subsec'><td>{label_html}</td>"
+            + "".join(
+                f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
+                for m in refs_sel
+            )
+            + f"<td><span style='color:{resolver_cor(tot_sum)}'><b>{moeda(tot_sum)}</b></span></td>"
+            + "</tr>"
+        )
+
+    def bloco_total(buf, dados, label, valores, cor, uid, exibir_abs=False, sub_id=None, sub_cls=None):
+        if sub_id and sub_cls:
+            buf.append(linha_subsec_recolhivel(label, valores, cor, sub_id, recolhido=False))
+            filhas = linhas_df(dados, None, uid, exibir_abs=exibir_abs)
+            buf.extend(marcar_secao(filhas, sub_cls))
+        else:
+            buf.append(linha_tot(label, valores, cor, cls="subsec"))
+            buf.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
     # 1. FCO (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
     html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco", recolhido=esta_resumido))
     fco_rows = []
-    bloco_total(fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, f"r_{_v_ui}")
-    bloco_total(fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, f"c_{_v_ui}")
+    bloco_total(
+        fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, f"r_{_v_ui}",
+        sub_id="sub_rec_op", sub_cls="sub-rec-op"
+    )
+    bloco_total(
+        fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, f"c_{_v_ui}",
+        sub_id="sub_custo_op", sub_cls="sub-custo-op"
+    )
     bloco_total(fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, f"i_{_v_ui}")
-    bloco_total(fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap,
-                "dinamico", f"v_{_v_ui}")
+    bloco_total(
+        fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap, "dinamico", f"v_{_v_ui}",
+        sub_id="sub_var_ap", sub_cls="sub-var-ap"
+    )
     html.extend(marcar_secao(fco_rows, "sec-fco"))
 
     # 2. FCI (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
