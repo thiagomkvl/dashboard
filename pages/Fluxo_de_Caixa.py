@@ -239,10 +239,23 @@ css = """
         text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
         white-space: nowrap; text-transform: uppercase;
     }
+    .tbl th.col-pct {
+        background: #f1f5f9; color: #64748b; font-size: 10px;
+        padding: 8px 7px; border-right: 1px solid #e2e8f0;
+    }
     .tbl td {
         padding: 8px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap;
         font-variant-numeric: tabular-nums;
     }
+    .tbl td.col-pct {
+        background: rgba(241, 245, 249, 0.55); font-size: 11px;
+        padding: 8px 7px; border-right: 1px solid #e2e8f0;
+    }
+    .tbl tr.caixa-total td.col-pct { background: rgba(203, 213, 225, 0.65); }
+    .tbl tr.subsec td.col-pct { background: rgba(241, 245, 249, 0.75); }
+    .tbl tr.tot td.col-pct { background: rgba(226, 232, 240, 0.55); }
+    .tbl tr.res td.col-pct { background: rgba(241, 245, 249, 0.75); }
+    .tbl tr.saldo td.col-pct { background: rgba(236, 253, 245, 0.65); }
     .tbl tbody tr:hover td { background: #f8fafc; }
     .tbl tr.tot td {
         font-weight: 800; color: #0f172a; background: #f1f5f9; border-top: 1px solid #e2e8f0;
@@ -1851,6 +1864,21 @@ esta_resumido = st.session_state["visao_fcx"] == "resumida"
 _v_ui = st.session_state["visao_fcx_ver"]
 
 
+def celula_pct(pct, inverter_cor=False, ref_mes=None):
+    if pct is None or pd.isna(pct):
+        return "<td class='col-pct'><span style='color:#94a3b8;font-weight:500;'>—</span></td>"
+    positivo = pct >= 0
+    bom = (not positivo) if inverter_cor else positivo
+    cor_b = "#15803d" if bom else "#b91c1c"
+    seta = "▲" if positivo else "▼"
+    sinal = "+" if positivo else ""
+    sufixo_mtd = f" (até dia {dia_corte_atual:02d})" if ref_mes == mes_corrente_ref else ""
+    return (
+        f"<td class='col-pct' title='Variação vs. mesmo período do mês anterior{sufixo_mtd}'>"
+        f"<span style='color:{cor_b};font-weight:700;'>{seta} {sinal}{_br(pct, 1)}%</span></td>"
+    )
+
+
 def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     rows = []
     if x.empty:
@@ -1863,7 +1891,7 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     if titulo:
         rows.append(
             f"<tr class='subsec'><td>{titulo}</td>"
-            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+            + "".join("<td></td><td class='col-pct'></td>" for _ in refs_sel) + "<td></td></tr>"
         )
     det = x.groupby(["Classif", "Detalhe", "Ref"], as_index=False)["Valor"].sum()
     if exibir_abs:
@@ -1897,11 +1925,14 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
             )
         else:
             label = f"<span class='dot' style='background:{cor}'></span>{classif}"
-        cells = [moeda(r[m]) for m in refs_sel] + [f"<b>{moeda(r['__t__'])}</b>"]
+        cells_html = (
+            "".join(f"<td>{moeda(r[m])}</td><td class='col-pct'></td>" for m in refs_sel)
+            + f"<td><b>{moeda(r['__t__'])}</b></td>"
+        )
         if tem:
             rows.append(
                 f"<tbody class='grp'><tr><td>{label}</td>"
-                + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+                + cells_html + "</tr>"
             )
             ps = sub.pivot_table(index="Detalhe", columns="Ref", values="Valor", aggfunc="sum", fill_value=0.0)
             ps = ps.reindex(columns=refs_sel, fill_value=0.0)
@@ -1910,31 +1941,18 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
             ps["__t__"] = ps.sum(axis=1)
             ps = ps.sort_values("__t__", ascending=False)
             for dn, rd in ps.iterrows():
-                sc = [moeda(rd[m]) for m in refs_sel] + [f"<b>{moeda(rd['__t__'])}</b>"]
+                sc_html = (
+                    "".join(f"<td>{moeda(rd[m])}</td><td class='col-pct'></td>" for m in refs_sel)
+                    + f"<td><b>{moeda(rd['__t__'])}</b></td>"
+                )
                 rows.append(
                     f"<tr class='sub-row'><td>↳ {dn}</td>"
-                    + "".join(f"<td>{c}</td>" for c in sc) + "</tr>"
+                    + sc_html + "</tr>"
                 )
             rows.append("</tbody>")
         else:
-            rows.append(f"<tr><td>{label}</td>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+            rows.append(f"<tr><td>{label}</td>" + cells_html + "</tr>")
     return rows
-
-
-def badge_pct(pct, inverter_cor=False, ref_mes=None):
-    if pct is None or pd.isna(pct):
-        return ""
-    positivo = pct >= 0
-    bom = (not positivo) if inverter_cor else positivo
-    cor_b = VERDE if bom else VERMELHO
-    seta = "▲" if positivo else "▼"
-    sinal = "+" if positivo else ""
-    sufixo_mtd = f" (até dia {dia_corte_atual:02d})" if ref_mes == mes_corrente_ref else ""
-    return (
-        f"<div style='font-size:10px;font-weight:700;color:{cor_b};margin-top:2px;line-height:1.15;' "
-        f"title='Variação vs. mesmo período do mês anterior{sufixo_mtd}'>"
-        f"{seta} {sinal}{_br(pct, 1)}%</div>"
-    )
 
 
 def linha_tot(label, s, cor, cls="tot", pct_map=None, inverter_cor=False):
@@ -1955,8 +1973,12 @@ def linha_tot(label, s, cor, cls="tot", pct_map=None, inverter_cor=False):
     return (
         f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
-            f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span>"
-            f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=inverter_cor, ref_mes=m)}</td>"
+            f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
+            + (
+                celula_pct(pct_map.get(m), inverter_cor=inverter_cor, ref_mes=m)
+                if pct_map is not None
+                else "<td class='col-pct'></td>"
+            )
             for m in refs_sel
         )
         + tot_html
@@ -2005,8 +2027,12 @@ else:
         return (
             f"<tr class='caixa-total'><td>{label_html}</td>"
             + "".join(
-                f"<td><span style='color:{cor_val(valores.get(m, float('nan')))}'>{fmt(valores.get(m, float('nan')))}</span>"
-                f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=False, ref_mes=m)}</td>"
+                f"<td><span style='color:{cor_val(valores.get(m, float('nan')))}'>{fmt(valores.get(m, float('nan')))}</span></td>"
+                + (
+                    celula_pct(pct_map.get(m), inverter_cor=False, ref_mes=m)
+                    if pct_map is not None
+                    else "<td class='col-pct'></td>"
+                )
                 for m in refs_sel
             )
             + f"<td><span style='color:{cor_val(tot_s)}'><b>{moeda(tot_s)}</b></span></td>"
@@ -2033,8 +2059,12 @@ else:
         return (
             f"<tr class='subsec'><td>{label_html}</td>"
             + "".join(
-                f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span>"
-                f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=inverter_cor, ref_mes=m)}</td>"
+                f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
+                + (
+                    celula_pct(pct_map.get(m), inverter_cor=inverter_cor, ref_mes=m)
+                    if pct_map is not None
+                    else "<td class='col-pct'></td>"
+                )
                 for m in refs_sel
             )
             + f"<td><span style='color:{resolver_cor(tot_sum)}'><b>{moeda(tot_sum)}</b></span></td>"
@@ -2095,8 +2125,8 @@ else:
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
             f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
-            f"{moeda(float(s_var.get(m, 0)))}</span>"
-            f"{badge_pct(var_pcts['var'].get(m), inverter_cor=False, ref_mes=m)}</td>"
+            f"{moeda(float(s_var.get(m, 0)))}</span></td>"
+            + celula_pct(var_pcts["var"].get(m), inverter_cor=False, ref_mes=m)
             for m in refs_sel
         )
         + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
@@ -2106,7 +2136,7 @@ else:
     # ---- 4. SALDO ----
     html.append(
         "<tr class='sec'><td>4. SALDO DE CAIXA</td>"
-        + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+        + "".join("<td></td><td class='col-pct'></td>" for _ in refs_sel) + "<td></td></tr>"
     )
     html.append(linha_tot("(+) Saldo inicial", s_ini, AZUL, cls="saldo"))
     html.append(
@@ -2133,11 +2163,15 @@ else:
     if not d_out.empty:
         html.append(
             "<tr class='sec'><td>ITENS SEM CLASSIFICAÇÃO GERENCIAL</td>"
-            + "".join("<td></td>" for _ in refs_sel) + "<td></td></tr>"
+            + "".join("<td></td><td class='col-pct'></td>" for _ in refs_sel) + "<td></td></tr>"
         )
         html.extend(linhas_df(d_out, None, f"o_{_v_ui}"))
 
-    th = "".join(f"<th>{h}</th>" for h in (["Descrição"] + x_lab + ["Total"]))
+    th = (
+        "<th>Descrição</th>"
+        + "".join(f"<th>{lbl}</th><th class='col-pct'>Var. %</th>" for lbl in x_lab)
+        + "<th>Total</th>"
+    )
     st.markdown(
         f"<div class='tbl-wrap'><table class='tbl'><thead><tr>{th}</tr></thead>"
         f"{''.join(html)}</table></div>",
