@@ -16,6 +16,7 @@ import re
 import textwrap
 import time
 import unicodedata
+import calendar
 from datetime import datetime
 
 import pandas as pd
@@ -498,7 +499,7 @@ def cor_cat(nome, mapa):
 
 
 def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref=None):
-    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Detalhe"]
+    cols_out = ["Ref", "Dia", "Categoria", "Valor", "Tipo", "Detalhe"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
 
@@ -589,7 +590,7 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
             val = limpa_valor(row[j] if j < len(row) else 0)
             if abs(val) <= 0.005:
                 continue
-            reg.append({"Ref": ref, "Categoria": cat_s, "Valor": val, "Tipo": tipo, "Detalhe": cat_s})
+            reg.append({"Ref": ref, "Dia": 1, "Categoria": cat_s, "Valor": val, "Tipo": tipo, "Detalhe": cat_s})
 
     if not reg:
         return pd.DataFrame(columns=cols_out)
@@ -597,7 +598,7 @@ def melt_matriz(raw, col_label_idx, header_row_idx, start_col_idx, tipo, ano_ref
 
 
 def parse_fcx_obra(raw, ano_ref=None):
-    cols_out = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    cols_out = ["Ref", "Dia", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols_out)
 
@@ -666,6 +667,7 @@ def parse_fcx_obra(raw, ano_ref=None):
             # 1. Abatimento proporcional no FCO
             reg.append({
                 "Ref": ref,
+                "Dia": 1,
                 "Categoria": conta_s,
                 "Valor": -val,
                 "Tipo": "Saída",
@@ -676,6 +678,7 @@ def parse_fcx_obra(raw, ano_ref=None):
             nome_obra = current_obra if current_obra else "Diversas"
             reg.append({
                 "Ref": ref,
+                "Dia": 1,
                 "Categoria": f"Obra: {nome_obra}",
                 "Valor": val,
                 "Tipo": "Saída",
@@ -1089,7 +1092,7 @@ def papel_classif(classif, fluxo=""):
 # ==============================================================================
 @st.cache_data(ttl=60, show_spinner="Carregando fluxo de caixa…")
 def carregar_fluxo_legado():
-    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    cols = ["Ref", "Dia", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     vazio = pd.DataFrame(columns=cols)
     avisos = []
     conn = conectar_sheets()
@@ -1123,7 +1126,8 @@ def carregar_fluxo_legado():
             tmp = tmp[tmp["Data"].notna() & (tmp["Valor"].abs() > 0.005)]
             if not tmp.empty:
                 tmp["Ref"] = tmp["Data"].apply(lambda d: pd.Timestamp(d.year, d.month, 1))
-                g = tmp.groupby(["Ref", "Categoria"], as_index=False)["Valor"].sum()
+                tmp["Dia"] = tmp["Data"].dt.day.astype(int)
+                g = tmp.groupby(["Ref", "Dia", "Categoria"], as_index=False)["Valor"].sum()
                 g["Tipo"], g["Grupo"] = "Saída", "Despesas"
                 g["Detalhe"] = g["Categoria"]
                 partes.append(g[cols])
@@ -1220,8 +1224,11 @@ def carregar_fluxo_legado():
     base_full = consolidar_devolucoes(base_full)
     base_full["Categoria"] = base_full["Categoria"].replace({"": "(Sem classificação)", "nan": "(Sem classificação)"})
     
+    if "Dia" not in base_full.columns:
+        base_full["Dia"] = 1
+    base_full["Dia"] = base_full["Dia"].fillna(1).astype(int)
     base_grouped = base_full.groupby(
-        ["Ref", "Categoria", "Tipo", "Grupo", "Detalhe"],
+        ["Ref", "Dia", "Categoria", "Tipo", "Grupo", "Detalhe"],
         as_index=False
     )["Valor"].sum()
     
@@ -1231,7 +1238,7 @@ def carregar_fluxo_legado():
 
 def parse_extratos_bancos(raw):
     """Movimentos bancários a partir do corte; sem cruzar as bases antigas."""
-    cols = ["Ref", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
+    cols = ["Ref", "Dia", "Categoria", "Valor", "Tipo", "Grupo", "Detalhe"]
     avisos, reg = [], []
     if raw is None or raw.empty:
         return pd.DataFrame(columns=cols), ["Extratos_Bancos: aba vazia."]
@@ -1277,6 +1284,7 @@ def parse_extratos_bancos(raw):
                 continue
             reg.append({
                 "Ref": data.to_period("M").to_timestamp(),
+                "Dia": int(data.day),
                 "Categoria": f"Obra: {obra}" if tem_obra else categoria,
                 "Valor": valor,
                 "Tipo": tipo,
@@ -1378,7 +1386,13 @@ except Exception as erro_ajustes:
     st.error(f"Não foi possível validar os ajustes aprovados: {erro_ajustes}")
     st.stop()
 if not base_ajustes.empty:
+    if "Dia" not in base_ajustes.columns:
+        base_ajustes = base_ajustes.copy()
+        base_ajustes["Dia"] = 1
     base = pd.concat([base, base_ajustes], ignore_index=True)
+if "Dia" not in base.columns:
+    base["Dia"] = 1
+base["Dia"] = base["Dia"].fillna(1).astype(int)
 
 # ==============================================================================
 # SIDEBAR
@@ -1519,6 +1533,79 @@ s_tasy = pd.Series({m: mapa_tasy_fim.get(m, float("nan")) for m in refs_sel}, dt
 s_diferenca = s_fim - s_tasy
 saldo_fim_periodo = float(s_fim.iloc[-1]) if len(s_fim) else 0.0
 saldo_ini_periodo = float(s_ini.iloc[0]) if len(s_ini) else 0.0
+
+hoje_ref = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).normalize()
+mes_corrente_ref = pd.Timestamp(hoje_ref.year, hoje_ref.month, 1)
+dia_corte_atual = int(hoje_ref.day)
+
+
+def serie_ate_dia(d, papel, dia_max, tipo=None):
+    x = d[(d["Papel"] == papel) & (d["Dia"] <= dia_max)]
+    if tipo:
+        x = x[x["Tipo"] == tipo]
+    return x.groupby("Ref")["Valor"].sum()
+
+
+def calcular_var_pct_series(base_completa, refs_tabela):
+    papeis_config = {
+        "fco": [("receita_op", 1.0, None), ("custo_op", -1.0, None), ("imposto", -1.0, None), ("var_ap", 1.0, None)],
+        "rec": [("receita_op", 1.0, None)],
+        "cus": [("custo_op", 1.0, None)],
+        "imp": [("imposto", 1.0, None)],
+        "vap": [("var_ap", 1.0, None)],
+        "fci": [("receita_inv", 1.0, None), ("capex", -1.0, None)],
+        "rec_inv": [("receita_inv", 1.0, None)],
+        "capex": [("capex", 1.0, None)],
+        "fcf": [("captacao", 1.0, "Entrada"), ("amortizacao", -1.0, None), ("juros", -1.0, None)],
+        "cpt": [("captacao", 1.0, "Entrada")],
+        "amo_jur": [("amortizacao", 1.0, None), ("juros", 1.0, None)],
+    }
+    pcts = {k: {} for k in list(papeis_config.keys()) + ["var"]}
+    refs_disponiveis = set(base_completa["Ref"])
+
+    for m in refs_tabela:
+        m_ant = (m - pd.DateOffset(months=1)).replace(day=1)
+        if m_ant not in refs_disponiveis:
+            for k in pcts:
+                pcts[k][m] = None
+            continue
+
+        if m == mes_corrente_ref:
+            ult_dia_ant = calendar.monthrange(m_ant.year, m_ant.month)[1]
+            corte_atual = dia_corte_atual
+            corte_ant = min(dia_corte_atual, ult_dia_ant)
+        else:
+            corte_atual = 31
+            corte_ant = 31
+
+        vals_atual = {}
+        vals_ant = {}
+        for chave, itens in papeis_config.items():
+            tot_at = 0.0
+            tot_an = 0.0
+            for papel, sinal, tipo in itens:
+                tot_at += float(serie_ate_dia(base_completa, papel, corte_atual, tipo).get(m, 0.0)) * sinal
+                tot_an += float(serie_ate_dia(base_completa, papel, corte_ant, tipo).get(m_ant, 0.0)) * sinal
+            if chave == "capex":
+                tot_at, tot_an = abs(tot_at), abs(tot_an)
+            vals_atual[chave] = tot_at
+            vals_ant[chave] = tot_an
+
+        vals_atual["var"] = vals_atual["fco"] + vals_atual["fci"] + vals_atual["fcf"]
+        vals_ant["var"] = vals_ant["fco"] + vals_ant["fci"] + vals_ant["fcf"]
+
+        for chave in pcts:
+            v_at = vals_atual[chave]
+            v_an = vals_ant[chave]
+            if abs(v_an) < 0.01:
+                pcts[chave][m] = None
+            else:
+                pcts[chave][m] = ((v_at - v_an) / abs(v_an)) * 100.0
+
+    return pcts
+
+
+var_pcts = calcular_var_pct_series(base, refs_sel)
 
 def entradas_saidas_resumo(dados, papeis, referencias):
     """Calcula Entradas e Saídas do resumo espelhando o demonstrativo detalhado."""
@@ -1754,8 +1841,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+info_mtd = f" · % vs. mês anterior (mês atual comparado até dia {dia_corte_atual:02d})" if mes_corrente_ref in refs_sel else " · % vs. mês anterior"
 st.markdown(
-    "<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa · clique nos títulos, subgrupos ou setas para recolher/expandir</div>",
+    f"<div class='section-title'>Demonstrativo · FCO / FCI / FCF · Saldo de caixa{info_mtd} · clique nos títulos, subgrupos ou setas para recolher/expandir</div>",
     unsafe_allow_html=True,
 )
 
@@ -1833,7 +1921,23 @@ def linhas_df(x, titulo, uid_prefix, exibir_abs=False):
     return rows
 
 
-def linha_tot(label, s, cor, cls="tot"):
+def badge_pct(pct, inverter_cor=False, ref_mes=None):
+    if pct is None or pd.isna(pct):
+        return ""
+    positivo = pct >= 0
+    bom = (not positivo) if inverter_cor else positivo
+    cor_b = VERDE if bom else VERMELHO
+    seta = "▲" if positivo else "▼"
+    sinal = "+" if positivo else ""
+    sufixo_mtd = f" (até dia {dia_corte_atual:02d})" if ref_mes == mes_corrente_ref else ""
+    return (
+        f"<div style='font-size:10px;font-weight:700;color:{cor_b};margin-top:2px;line-height:1.15;' "
+        f"title='Variação vs. mesmo período do mês anterior{sufixo_mtd}'>"
+        f"{seta} {sinal}{_br(pct, 1)}%</div>"
+    )
+
+
+def linha_tot(label, s, cor, cls="tot", pct_map=None, inverter_cor=False):
     def fmt(v):
         return "—" if pd.isna(v) else moeda(float(v))
     def resolver_cor(v):
@@ -1851,7 +1955,8 @@ def linha_tot(label, s, cor, cls="tot"):
     return (
         f"<tr class='{cls}'><td><b>{label}</b></td>"
         + "".join(
-            f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
+            f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span>"
+            f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=inverter_cor, ref_mes=m)}</td>"
             for m in refs_sel
         )
         + tot_html
@@ -1882,7 +1987,7 @@ else:
             out.append(item_mod)
         return out
 
-    def cabecalho_total(label, valores, sec_id, recolhido=True):
+    def cabecalho_total(label, valores, sec_id, recolhido=True, pct_map=None):
         def fmt(v):
             return "—" if pd.isna(v) else moeda(float(v))
         def cor_val(v):
@@ -1900,14 +2005,15 @@ else:
         return (
             f"<tr class='caixa-total'><td>{label_html}</td>"
             + "".join(
-                f"<td><span style='color:{cor_val(valores.get(m, float('nan')))}'>{fmt(valores.get(m, float('nan')))}</span></td>"
+                f"<td><span style='color:{cor_val(valores.get(m, float('nan')))}'>{fmt(valores.get(m, float('nan')))}</span>"
+                f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=False, ref_mes=m)}</td>"
                 for m in refs_sel
             )
             + f"<td><span style='color:{cor_val(tot_s)}'><b>{moeda(tot_s)}</b></span></td>"
             + "</tr>"
         )
 
-    def linha_subsec_recolhivel(label, s, cor, sub_id, recolhido=False):
+    def linha_subsec_recolhivel(label, s, cor, sub_id, recolhido=False, pct_map=None, inverter_cor=False):
         def fmt(v):
             return "—" if pd.isna(v) else moeda(float(v))
         def resolver_cor(v):
@@ -1927,68 +2033,70 @@ else:
         return (
             f"<tr class='subsec'><td>{label_html}</td>"
             + "".join(
-                f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span></td>"
+                f"<td><span style='color:{resolver_cor(s.get(m, float('nan')))}'>{fmt(s.get(m, float('nan')))}</span>"
+                f"{badge_pct(pct_map.get(m) if pct_map else None, inverter_cor=inverter_cor, ref_mes=m)}</td>"
                 for m in refs_sel
             )
             + f"<td><span style='color:{resolver_cor(tot_sum)}'><b>{moeda(tot_sum)}</b></span></td>"
             + "</tr>"
         )
 
-    def bloco_total(buf, dados, label, valores, cor, uid, exibir_abs=False, sub_id=None, sub_cls=None):
+    def bloco_total(buf, dados, label, valores, cor, uid, exibir_abs=False, sub_id=None, sub_cls=None, pct_map=None, inverter_cor=False):
         if sub_id and sub_cls:
-            buf.append(linha_subsec_recolhivel(label, valores, cor, sub_id, recolhido=False))
+            buf.append(linha_subsec_recolhivel(label, valores, cor, sub_id, recolhido=False, pct_map=pct_map, inverter_cor=inverter_cor))
             filhas = linhas_df(dados, None, uid, exibir_abs=exibir_abs)
             buf.extend(marcar_secao(filhas, sub_cls))
         else:
-            buf.append(linha_tot(label, valores, cor, cls="subsec"))
+            buf.append(linha_tot(label, valores, cor, cls="subsec", pct_map=pct_map, inverter_cor=inverter_cor))
             buf.extend(linhas_df(dados, None, uid, exibir_abs=exibir_abs))
 
     # 1. FCO (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
-    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco", recolhido=esta_resumido))
+    html.append(cabecalho_total("1. FLUXO DE CAIXA OPERACIONAL (FCO)", s_fco, "sec_fco", recolhido=esta_resumido, pct_map=var_pcts["fco"]))
     fco_rows = []
     bloco_total(
         fco_rows, df[df["Papel"] == "receita_op"], "(+) Receitas operacionais", s_rec, VERDE, f"r_{_v_ui}",
-        sub_id="sub_rec_op", sub_cls="sub-rec-op"
+        sub_id="sub_rec_op", sub_cls="sub-rec-op", pct_map=var_pcts["rec"]
     )
     bloco_total(
         fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, f"c_{_v_ui}",
-        sub_id="sub_custo_op", sub_cls="sub-custo-op"
+        sub_id="sub_custo_op", sub_cls="sub-custo-op", pct_map=var_pcts["cus"]
     )
     bloco_total(
         fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, f"i_{_v_ui}",
-        sub_id="sub_imposto", sub_cls="sub-imposto"
+        sub_id="sub_imposto", sub_cls="sub-imposto", pct_map=var_pcts["imp"]
     )
     bloco_total(
         fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap, "dinamico", f"v_{_v_ui}",
-        sub_id="sub_var_ap", sub_cls="sub-var-ap"
+        sub_id="sub_var_ap", sub_cls="sub-var-ap", pct_map=var_pcts["vap"]
     )
     html.extend(marcar_secao(fco_rows, "sec-fco"))
 
     # 2. FCI (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
-    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "sec_fci", recolhido=esta_resumido))
+    html.append(cabecalho_total("2. FLUXO DE CAIXA DE INVESTIMENTOS (FCI)", s_fci, "sec_fci", recolhido=esta_resumido, pct_map=var_pcts["fci"]))
     fci_rows = []
     df_receitas_inv = df[df["Papel"] == "receita_inv"].copy()
     if not df_receitas_inv.empty:
-        bloco_total(fci_rows, df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, f"ri_{_v_ui}")
+        bloco_total(fci_rows, df_receitas_inv, "(+) Receitas de aplicações financeiras", s_rec_inv, VERDE, f"ri_{_v_ui}", pct_map=var_pcts["rec_inv"])
     df_capex = df[df["Papel"] == "capex"].copy()
     s_capex_visual = s_cap.abs().reindex(refs_sel, fill_value=0.0)
-    bloco_total(fci_rows, df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, f"k_{_v_ui}", exibir_abs=True)
+    bloco_total(fci_rows, df_capex, "(−) Desembolsos em CAPEX", s_capex_visual, VERMELHO, f"k_{_v_ui}", exibir_abs=True, pct_map=var_pcts["capex"], inverter_cor=True)
     html.extend(marcar_secao(fci_rows, "sec-fci"))
 
     # 3. FCF (recolhível ao clicar no título ou pelo botão Visão Resumida/Analítica)
-    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "sec_fcf", recolhido=esta_resumido))
+    html.append(cabecalho_total("3. FLUXO DE CAIXA DE FINANCIAMENTO (FCF)", s_fcf, "sec_fcf", recolhido=esta_resumido, pct_map=var_pcts["fcf"]))
     fcf_rows = []
-    bloco_total(fcf_rows, df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, f"p_{_v_ui}")
+    bloco_total(fcf_rows, df_captacao, "(+) Empréstimos e Financiamentos", s_cpt, VERDE, f"p_{_v_ui}", pct_map=var_pcts["cpt"])
     fcf_rows.extend(linhas_df(df_amort, None, f"a_{_v_ui}"))
     fcf_rows.extend(linhas_df(df_juros, None, f"j_{_v_ui}"))
-    fcf_rows.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO))
+    fcf_rows.append(linha_tot("Total amortizações e juros/encargos financeiros", s_amo + s_jur, VERMELHO, pct_map=var_pcts["amo_jur"], inverter_cor=True))
     html.extend(marcar_secao(fcf_rows, "sec-fcf"))
 
     html.append(
         "<tr class='res'><td><b>VARIAÇÃO LÍQUIDA DE CAIXA (FCO + FCI + FCF)</b></td>"
         + "".join(
             f"<td><span style='color:{VERDE if float(s_var.get(m, 0)) >= 0 else VERMELHO};font-weight:800'>"
-            f"{moeda(float(s_var.get(m, 0)))}</span></td>"
+            f"{moeda(float(s_var.get(m, 0)))}</span>"
+            f"{badge_pct(var_pcts['var'].get(m), inverter_cor=False, ref_mes=m)}</td>"
             for m in refs_sel
         )
         + f"<td><span style='color:{VERDE if float(s_var.sum()) >= 0 else VERMELHO}'><b>"
