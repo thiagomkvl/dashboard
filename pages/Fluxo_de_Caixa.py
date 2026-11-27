@@ -315,6 +315,9 @@ css = """
     .tbl:has(#sub_custo_op:checked) tr.sub-custo-op { display: none !important; }
     .tbl:has(#sub_custo_op:checked) #sub_custo_op + .subsec-indicator { transform: rotate(-90deg); }
 
+    .tbl:has(#sub_imposto:checked) tr.sub-imposto { display: none !important; }
+    .tbl:has(#sub_imposto:checked) #sub_imposto + .subsec-indicator { transform: rotate(-90deg); }
+
     .tbl:has(#sub_var_ap:checked) tr.sub-var-ap { display: none !important; }
     .tbl:has(#sub_var_ap:checked) #sub_var_ap + .subsec-indicator { transform: rotate(-90deg); }
     .vazio { color: #64748b; font-size: 12px; padding: 28px 8px; text-align: center; }
@@ -1951,7 +1954,10 @@ else:
         fco_rows, df[df["Papel"] == "custo_op"], "(−) Custos e despesas operacionais", s_cus, VERMELHO, f"c_{_v_ui}",
         sub_id="sub_custo_op", sub_cls="sub-custo-op"
     )
-    bloco_total(fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, f"i_{_v_ui}")
+    bloco_total(
+        fco_rows, df[df["Papel"] == "imposto"], "(−) Impostos", s_imp, VERMELHO, f"i_{_v_ui}",
+        sub_id="sub_imposto", sub_cls="sub-imposto"
+    )
     bloco_total(
         fco_rows, df_var_ap, "(±) Variações de Ativos e Passivos", s_vap, "dinamico", f"v_{_v_ui}",
         sub_id="sub_var_ap", sub_cls="sub-var-ap"
